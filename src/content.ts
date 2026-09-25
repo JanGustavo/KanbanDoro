@@ -18,8 +18,23 @@ function render() {
   host.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:2147483647;display:block';
   const remaining = Math.max(0, session!.endsAt - Date.now());
   const clock = `${String(Math.floor(remaining / 60_000)).padStart(2, '0')}:${String(Math.floor(remaining / 1_000) % 60).padStart(2, '0')}`;
+  const accent = session!.phase === 'break' ? '#c98a1c' : '#9c5065';
   bubble.replaceChildren();
-  bubble.style.cssText = 'background:#17181b;color:#f5eee8;padding:12px;border-radius:14px;border:1px solid #9c5065;box-shadow:0 8px 22px #0009;font:14px system-ui,sans-serif;min-width:145px';
+  if (mode === 'compact') {
+    bubble.style.cssText = `background:#17181b;color:#f5eee8;padding:8px 10px;border-radius:12px;border:1px solid ${accent};box-shadow:0 8px 22px #0009;font:13px system-ui,sans-serif;display:flex;align-items:center;gap:8px;cursor:pointer;min-width:0`;
+    const dot = document.createElement('span');
+    dot.style.cssText = `width:8px;height:8px;border-radius:50%;background:${accent};flex:0 0 auto`;
+    bubble.appendChild(dot);
+    const time = document.createElement('strong');
+    time.textContent = clock;
+    time.style.cssText = 'font-variant-numeric:tabular-nums';
+    bubble.appendChild(time);
+    bubble.title = 'Expandir';
+    bubble.onclick = () => { mode = 'open'; render(); };
+    return;
+  }
+  bubble.onclick = null;
+  bubble.style.cssText = `background:#17181b;color:#f5eee8;padding:12px;border-radius:14px;border:1px solid ${accent};box-shadow:0 8px 22px #0009;font:14px system-ui,sans-serif;min-width:145px`;
   const title = document.createElement('strong');
   title.textContent = `${session!.phase === 'running' ? 'FOCO' : 'PAUSA'} · ${clock}`;
   bubble.appendChild(title);
@@ -33,8 +48,8 @@ function render() {
     actions.appendChild(element);
   };
   button('Abrir', () => chrome.runtime.sendMessage({ type: 'OPEN_BOARD' }));
-  button(mode === 'open' ? 'Recolher' : 'Expandir', () => { mode = mode === 'open' ? 'compact' : 'open'; render(); });
-  if (mode === 'open') button('Ocultar', () => { mode = 'hidden'; render(); });
+  button('Recolher', () => { mode = 'compact'; render(); });
+  button('Ocultar', () => { mode = 'hidden'; render(); });
   bubble.appendChild(actions);
 }
 

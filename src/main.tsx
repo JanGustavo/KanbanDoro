@@ -74,6 +74,11 @@ function App() {
     if (ready) void chrome.storage.local.set(data);
   }, [data, ready]);
   useEffect(() => {
+    if (ready && !data.breakPreferences.includes(breakType)) {
+      setBreakType(data.breakPreferences[0] ?? 'Outra');
+    }
+  }, [data.breakPreferences, ready]);
+  useEffect(() => {
     if (restart && !active) {
       startFocus(restart);
       setRestart(null);
