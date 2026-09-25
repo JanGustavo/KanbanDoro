@@ -28,7 +28,16 @@ async function reconcile() {
 chrome.runtime.onInstalled.addListener(reconcile);
 chrome.runtime.onStartup.addListener(reconcile);
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === 'timer-end') reconcile();
+  if (alarm.name === 'timer-end') {
+    reconcile();
+    chrome.notifications.create({
+      type: 'basic',
+      iconUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+      title: 'KanbanDoro',
+      message: 'O tempo do seu ciclo acabou!',
+      silent: false
+    });
+  }
 });
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.session) reconcile();

@@ -51,4 +51,6 @@ Este documento é vivo. Uma solução melhor pode substituir a regra anterior de
 - Rodar foco; recolher interface; recarregar/fechar e recuperar tempo correto.
 - Extensões respeitam contagem e limite total; tentativas falhas e interrupções registradas separadamente.
 - Preferências de pausa customizáveis e badge indicador de status de pausa.
+- Bolha opcional e não intrusiva exibida nos sites, sincronizada com o estado local.
+- Notificação sonora ao fim do foco/pausa.
 - IA só altera dados após revisão; saída inválida não corrompe tarefa.

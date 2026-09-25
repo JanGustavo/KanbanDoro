@@ -3,7 +3,13 @@
   "name": "KanbanDoro",
   "version": "0.1.0",
   "description": "Tarefas e ciclos de foco em um só lugar.",
-  "permissions": ["storage", "alarms"],
+  "permissions": ["storage", "alarms", "notifications"],
   "background": { "service_worker": "background.js" },
-  "action": { "default_title": "Abrir KanbanDoro" }
+  "action": { "default_title": "Abrir KanbanDoro" },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ]
 }
