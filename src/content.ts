@@ -42,7 +42,11 @@ chrome.runtime.sendMessage({ type: 'GET_TIMER' }).then((response) => {
   session = response?.session || null;
   render();
 }).catch(() => {});
-chrome.runtime.onMessage.addListener((message: { type?: string; session?: TimerSession }) => {
+chrome.runtime.onMessage.addListener((message: { type?: string; session?: TimerSession }, _sender, sendResponse) => {
+  if (message.type === 'PING_TIMER') {
+    sendResponse({ ready: true });
+    return;
+  }
   if (message.type === 'SHOW_TIMER') {
     mode = 'open';
     render();

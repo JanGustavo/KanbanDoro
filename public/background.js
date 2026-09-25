@@ -17,18 +17,48 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     openBoard();
   }
   if (message?.type === 'SHOW_TIMER') {
-    chrome.tabs.query({}).then(tabs => Promise.all(tabs.filter(tab => tab.id).map(tab =>
-      chrome.tabs.sendMessage(tab.id, { type: 'SHOW_TIMER' }).catch(() => {})
-    )));
+    showTimerInActiveTab();
   }
 });
+
+async function ensureTimerInTab(tabId) {
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: 'PING_TIMER' });
+    return true;
+  } catch {
+    try {
+      await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
+      return true;
+    } catch {
+      // Browser-internal and other restricted pages do not allow injection.
+      return false;
+    }
+  }
+}
+
+async function showTimerInActiveTab() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (tab?.id && await ensureTimerInTab(tab.id)) {
+    await chrome.tabs.sendMessage(tab.id, { type: 'SHOW_TIMER' }).catch(() => {});
+  }
+}
 
 async function broadcastTimer(session) {
   const tabs = await chrome.tabs.query({});
   await Promise.all(tabs.filter(tab => tab.id).map(tab =>
     chrome.tabs.sendMessage(tab.id, { type: 'TIMER_CHANGED', session }).catch(() => {})
   ));
+  // An existing tab can predate installation or reload of the extension.
+  const activeTabs = await chrome.tabs.query({ active: true });
+  await Promise.all(activeTabs.filter(tab => tab.id).map(tab => ensureTimerInTab(tab.id)));
 }
+
+chrome.tabs.onActivated.addListener(async ({ tabId }) => {
+  const { session } = await chrome.storage.local.get('session');
+  if (session && (session.phase === 'running' || session.phase === 'break')) {
+    await ensureTimerInTab(tabId);
+  }
+});
 
 async function reconcile() {
   const { session } = await chrome.storage.local.get('session');
