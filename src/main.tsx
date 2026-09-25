@@ -50,6 +50,7 @@ function App() {
   const [scope, setScope] = useState<'whole' | 'slices'>('whole');
   const [selectedSlices, setSelectedSlices] = useState<string[]>([]);
   const [breakMinutes, setBreakMinutes] = useState(5);
+  const [requestedExtension, setRequestedExtension] = useState(5);
   const [breakType, setBreakType] = useState('Descanso');
   const [error, setError] = useState('');
   const [restart, setRestart] = useState<Task | null>(null);
@@ -151,7 +152,7 @@ function App() {
       <div className="focus-actions">
         {phase === 'running' && <><button onClick={() => stopFocus('completed')}>Concluí</button><button onClick={() => stopFocus('interrupted')}>Interromper e deixar para depois</button><button onClick={() => { stopFocus('interrupted'); if (activeTask) setRestart(activeTask); }}>Interromper e recomeçar</button></>}
         {phase === 'decision' && <><button onClick={() => stopFocus('completed')}>Concluí</button>
-          {active.extensions < 2 && <button onClick={() => extend(Math.min(5, Math.floor(active.originalMinutes * .5) - active.extensionMinutes))}>+ até 5 min</button>}
+          {active.extensions < 2 && active.extensionMinutes < Math.floor(active.originalMinutes * .5) && <><label>Extensão (min) <input type="number" min="1" max={Math.floor(active.originalMinutes * .5) - active.extensionMinutes} value={requestedExtension} onChange={e => setRequestedExtension(+e.target.value)} /></label><button onClick={() => extend(requestedExtension)}>Estender ({active.extensions}/2)</button></>}
           <button onClick={() => stopFocus('failed')}>Não consegui terminar</button></>}
         {phase === 'post-focus' && <>
           <label>Pausa <select value={breakType} onChange={e => setBreakType(e.target.value)}>{['Descanso', 'Água', 'Comida', 'Detox', 'Outra'].map(x => <option key={x}>{x}</option>)}</select></label>
