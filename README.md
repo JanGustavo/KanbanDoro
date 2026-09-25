@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="./public/icon.svg" alt="KanbanDoro Logo" width="128" height="128" />
+</div>
+
 # KanbanDoro
 
 Extensão Manifest V3 que reúne Kanban, ciclos de foco vinculados a tarefas e assistência de IA. O projeto está na fase de esqueleto e validação do fluxo principal.

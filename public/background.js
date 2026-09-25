@@ -32,7 +32,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     reconcile();
     chrome.notifications.create({
       type: 'basic',
-      iconUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+      iconUrl: chrome.runtime.getURL('icon128.png'),
       title: 'KanbanDoro',
       message: 'O tempo do seu ciclo acabou!',
       silent: false
