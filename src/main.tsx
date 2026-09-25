@@ -37,7 +37,7 @@ const columns: { id: Column; label: string }[] = [
   { id: 'late', label: 'Em atraso' }, { id: 'done', label: 'Concluído' },
 ];
 const initial: Data = { tasks: [], session: null, history: [], breakPreferences: ['Descanso', 'Água', 'Comida', 'Detox'] };
-const id = () => crypto.randomUUID();
+const id = () => (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).substring(2) + Date.now().toString(36);
 const minutes = (seconds: number) => `${Math.floor(Math.max(0, seconds) / 60).toString().padStart(2, '0')}:${Math.floor(Math.max(0, seconds) % 60).toString().padStart(2, '0')}`;
 
 function App() {
