@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
+import { getAISettings, setAISettings, AI_PROVIDERS, type AISettings, type ProviderKey } from './aiSettings';
 
 type Column = 'todo' | 'doing' | 'late' | 'done';
 type Slice = { id: string; name: string; done: boolean };
@@ -55,18 +56,25 @@ function App() {
   const [error, setError] = useState('');
   const [restart, setRestart] = useState<Task | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<'breaks' | 'ai'>('breaks');
+  const [aiSettings, setAiSettings] = useState<AISettings>({ provider: '', apiKey: '', model: '', customEndpoint: '' });
+  const [aiKeyVisible, setAiKeyVisible] = useState(false);
 
   useEffect(() => {
     chrome.storage.local.get(['tasks', 'session', 'history', 'breakPreferences']).then((stored) => {
       setData({ tasks: (stored.tasks as Task[] | undefined) ?? [], session: (stored.session as Session | undefined) ?? null, history: (stored.history as HistoryEntry[] | undefined) ?? [], breakPreferences: (stored.breakPreferences as string[] | undefined) ?? ['Descanso', 'Água', 'Comida', 'Detox'] });
       setReady(true);
     });
+    getAISettings().then(setAiSettings);
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
   useEffect(() => {
     if (ready) void chrome.storage.local.set(data);
   }, [data, ready]);
+  useEffect(() => {
+    void setAiSettings(aiSettings);
+  }, [aiSettings]);
   useEffect(() => {
     if (restart && !active) {
       startFocus(restart);
@@ -164,16 +172,87 @@ function App() {
       </div>
     </section>}
     <form className="create" onSubmit={addTask}><input aria-label="Nome da tarefa" placeholder="Qual é a próxima tarefa?" value={name} onChange={e => setName(e.target.value)} /><button type="submit">+ Criar tarefa</button></form>
-    {showSettings && <div className="backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setShowSettings(false); }}><section className="dialog" role="dialog" aria-modal="true" aria-label="Preferências de pausa">
+    {showSettings && <div className="backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setShowSettings(false); }}><section className="dialog" role="dialog" aria-modal="true" aria-label="Preferências">
       <button className="close" onClick={() => setShowSettings(false)}>✕</button><span className="eyebrow">PREFERÊNCIAS</span>
-      <h3>Categorias de pausa</h3>
-      <ul className="break-prefs-list">
-        {data.breakPreferences.map(pref => <li key={pref}><span>{pref}</span> <button onClick={() => update(old => ({ ...old, breakPreferences: old.breakPreferences.filter(p => p !== pref) }))}>Remover</button></li>)}
-      </ul>
-      <form onSubmit={e => { e.preventDefault(); const val = new FormData(e.currentTarget).get('pref') as string; if (val && !data.breakPreferences.includes(val)) update(old => ({ ...old, breakPreferences: [...old.breakPreferences, val] })); e.currentTarget.reset(); }} className="add-slice">
-        <input name="pref" placeholder="Nova categoria de pausa" />
-        <button>Adicionar</button>
-      </form>
+      <div className="settings-tabs" role="tablist">
+        <button role="tab" aria-selected={settingsTab === 'breaks'} onClick={() => setSettingsTab('breaks')}>Pausas</button>
+        <button role="tab" aria-selected={settingsTab === 'ai'} onClick={() => setSettingsTab('ai')}>IA</button>
+      </div>
+      {settingsTab === 'breaks' && (
+        <>
+          <h3>Categorias de pausa</h3>
+          <ul className="break-prefs-list">
+            {data.breakPreferences.map(pref => <li key={pref}><span>{pref}</span> <button onClick={() => update(old => ({ ...old, breakPreferences: old.breakPreferences.filter(p => p !== pref) }))}>Remover</button></li>)}
+          </ul>
+          <form onSubmit={e => { e.preventDefault(); const val = new FormData(e.currentTarget).get('pref') as string; if (val && !data.breakPreferences.includes(val)) update(old => ({ ...old, breakPreferences: [...old.breakPreferences, val] })); e.currentTarget.reset(); }} className="add-slice">
+            <input name="pref" placeholder="Nova categoria de pausa" />
+            <button>Adicionar</button>
+          </form>
+        </>
+      )}
+      {settingsTab === 'ai' && (
+        <>
+          <h3>Integração com IA</h3>
+          <p className="settings-hint">Sua chave de API fica salva apenas localmente no navegador (chrome.storage.local).<br />Nunca enviamos sua chave para servidores externos.</p>
+          <div className="ai-settings-form">
+            <label>
+              Provedor
+              <select value={aiSettings.provider} onChange={e => setAiSettings((s: AISettings) => ({ ...s, provider: e.target.value as ProviderKey, model: AI_PROVIDERS[e.target.value as ProviderKey]?.defaultModel || '' }))}>
+                <option value="">Selecionar provedor</option>
+                {Object.entries(AI_PROVIDERS).map(([key, provider]) => (
+                  <option key={key} value={key}>{provider.name}</option>
+                ))}
+              </select>
+            </label>
+            {aiSettings.provider && (
+              <>
+                <label>
+                  Modelo
+                  <select value={aiSettings.model} onChange={e => setAiSettings((s: AISettings) => ({ ...s, model: e.target.value }))}>
+                    {AI_PROVIDERS[aiSettings.provider as ProviderKey]?.models.map(m => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                    {AI_PROVIDERS[aiSettings.provider as ProviderKey] === AI_PROVIDERS.custom && (
+                      <option value="">Definir manualmente</option>
+                    )}
+                  </select>
+                </label>
+                {aiSettings.provider === 'custom' && (
+                  <label>
+                    Endpoint personalizado (OpenAI-compatível)
+                    <input type="url" placeholder="https://api.exemplo.com/v1" value={aiSettings.customEndpoint} onChange={e => setAiSettings((s: AISettings) => ({ ...s, customEndpoint: e.target.value }))} />
+                  </label>
+                )}
+                <label>
+                  Chave da API
+                  <div className="api-key-input">
+                    <input
+                      type={aiKeyVisible ? 'text' : 'password'}
+                      placeholder="sk-... ou sua chave"
+                      value={aiSettings.apiKey}
+                      onChange={e => setAiSettings((s: AISettings) => ({ ...s, apiKey: e.target.value }))}
+                      autoComplete="off"
+                    />
+                    <button type="button" onClick={() => setAiKeyVisible(v => !v)} aria-label={aiKeyVisible ? 'Ocultar chave' : 'Mostrar chave'}>
+                      {aiKeyVisible ? '🙈' : '👁'}
+                    </button>
+                  </div>
+                </label>
+                <div className="ai-actions">
+                  <button className="primary" onClick={() => { setAiSettings(aiSettings); }} disabled={!aiSettings.provider || !aiSettings.apiKey || !aiSettings.model}>
+                    Salvar configuração
+                  </button>
+                  {aiSettings.apiKey && (
+                    <button className="danger" onClick={() => setAiSettings({ provider: '', apiKey: '', model: '', customEndpoint: '' })}>
+                      Remover chave
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </>
+      )}
     </section></div>}
     <div className="board">{columns.map(column => <section className="lane" key={column.id}>
       <h2>{column.label} <span>{data.tasks.filter(t => t.column === column.id).length}</span></h2>
