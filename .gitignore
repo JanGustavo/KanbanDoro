@@ -78,7 +78,8 @@ deploy.sh
 deploy/
 !deploy/*.service
 !deploy/*_nginx
-scripts/backup_db.sh
+scripts/
+!scripts/*.sh
 
 # Keys & Secrets
 *.pem
