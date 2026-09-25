@@ -12,7 +12,7 @@ Este documento é vivo. Uma solução melhor pode substituir a regra anterior de
 
 ## Sessões
 
-- Um ciclo escolhe tarefa inteira ou subconjunto de slices. Tempo de seleção múltipla permanece compartilhado.
+- Um ciclo escolhe tarefa inteira ou subconjunto de slices. Tempo de seleção múltipla permanece compartilhado. Concluir o escopo de slices marca apenas os slices selecionados; a tarefa só vai para Concluído se todos os slices estiverem completos. Concluir a tarefa inteira move o card para Concluído.
 - Persistir timestamps, duração original, extensão acumulada, status e histórico de eventos. Evitar usar intervalos de tela como relógio de verdade.
 - Ao zerar: pedir decisão; descanso não começa sozinho. Permitir até duas extensões, total máximo de metade da duração original.
 - Ao esgotar as extensões: permitir registrar falha de conclusão e abrir ciclo novo mais tarde.

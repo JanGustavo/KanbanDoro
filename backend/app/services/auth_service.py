@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -24,9 +24,10 @@ def get_password_hash(password: str) -> str:
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(UTC) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=settings.access_token_expire_minutes)
+        expire = datetime.now(UTC) + timedelta(minutes=settings.access_token_expire_minutes)
+    to_encode["sub"] = str(to_encode["sub"])
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm)
     return encoded_jwt
@@ -51,14 +52,12 @@ async def authenticate_user(db: AsyncSession, email: str, password: str) -> User
     return user
 
 
-async def create_user(db: AsyncSession, email: str, password: str, ai_provider: str | None = None, ai_api_key: str | None = None) -> User:
+async def create_user(db: AsyncSession, email: str, password: str) -> User:
     hashed_password = get_password_hash(password)
-    now = int(datetime.utcnow().timestamp())
+    now = int(datetime.now(UTC).timestamp())
     user = User(
         email=email,
         hashed_password=hashed_password,
-        ai_provider=ai_provider,
-        ai_api_key_encrypted=ai_api_key,
         created_at=now,
         updated_at=now,
     )
@@ -72,8 +71,8 @@ def decode_token(token: str) -> TokenData | None:
     try:
         payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
         user_id = payload.get("sub")
-        if not isinstance(user_id, int):
+        if not isinstance(user_id, str) or not user_id.isdecimal():
             return None
-        return TokenData(user_id=user_id)
+        return TokenData(user_id=int(user_id))
     except JWTError:
         return None

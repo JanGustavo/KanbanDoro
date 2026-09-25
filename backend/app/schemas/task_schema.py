@@ -1,13 +1,6 @@
-from enum import Enum
+from pydantic import BaseModel, ConfigDict, Field
 
-from pydantic import BaseModel, Field
-
-
-class ColumnEnum(str, Enum):
-    TODO = "todo"
-    DOING = "doing"
-    LATE = "late"
-    DONE = "done"
+from app.models.task_model import ColumnEnum
 
 
 class SliceBase(BaseModel):
@@ -28,8 +21,7 @@ class SliceResponse(SliceBase):
     done: bool
     created_at: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TaskBase(BaseModel):
@@ -62,10 +54,4 @@ class TaskResponse(TaskBase):
     created_at: int
     updated_at: int
 
-    class Config:
-        from_attributes = True
-
-
-class TaskListResponse(BaseModel):
-    tasks: list[TaskResponse]
-    total: int
+    model_config = ConfigDict(from_attributes=True)

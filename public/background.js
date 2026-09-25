@@ -1,9 +1,34 @@
-chrome.action.onClicked.addListener(async () => {
+async function openBoard() {
   const url = chrome.runtime.getURL('index.html');
   const tabs = await chrome.tabs.query({ url });
   if (tabs[0]?.id) return chrome.tabs.update(tabs[0].id, { active: true });
   return chrome.tabs.create({ url });
+}
+chrome.action.onClicked.addListener(openBoard);
+
+// Content scripts display the floating timer and must not access saved API keys.
+chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === 'GET_TIMER') {
+    chrome.storage.local.get('session').then(({ session }) => sendResponse({ session: session || null }));
+    return true;
+  }
+  if (message?.type === 'OPEN_BOARD') {
+    openBoard();
+  }
+  if (message?.type === 'SHOW_TIMER') {
+    chrome.tabs.query({}).then(tabs => Promise.all(tabs.filter(tab => tab.id).map(tab =>
+      chrome.tabs.sendMessage(tab.id, { type: 'SHOW_TIMER' }).catch(() => {})
+    )));
+  }
 });
+
+async function broadcastTimer(session) {
+  const tabs = await chrome.tabs.query({});
+  await Promise.all(tabs.filter(tab => tab.id).map(tab =>
+    chrome.tabs.sendMessage(tab.id, { type: 'TIMER_CHANGED', session }).catch(() => {})
+  ));
+}
 
 async function reconcile() {
   const { session } = await chrome.storage.local.get('session');
@@ -40,5 +65,8 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   }
 });
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes.session) reconcile();
+  if (area === 'local' && changes.session) {
+    reconcile();
+    broadcastTimer(changes.session.newValue || null);
+  }
 });

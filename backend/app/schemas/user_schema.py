@@ -1,5 +1,5 @@
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class UserBase(BaseModel):
@@ -8,23 +8,14 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str = Field(..., min_length=8)
-    ai_provider: str | None = None
-    ai_api_key: str | None = None
-
-
-class UserUpdate(BaseModel):
-    ai_provider: str | None = None
-    ai_api_key: str | None = None
 
 
 class UserResponse(UserBase):
     id: int
-    ai_provider: str | None = None
     created_at: int
     updated_at: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class Token(BaseModel):

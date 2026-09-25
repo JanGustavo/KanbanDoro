@@ -1,25 +1,12 @@
-from enum import Enum
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from pydantic import BaseModel, Field
-
-
-class SessionPhase(str, Enum):
-    RUNNING = "running"
-    DECISION = "decision"
-    POST_FOCUS = "post-focus"
-    BREAK = "break"
-    BREAK_DONE = "break-done"
-
-
-class FocusScope(str, Enum):
-    WHOLE = "whole"
-    SLICES = "slices"
+from app.models.session_model import FocusScope, SessionPhase
 
 
 class SessionBase(BaseModel):
     task_id: str
     scope: FocusScope = FocusScope.WHOLE
-    selected_slice_ids: list[str] = []
+    selected_slice_ids: list[str] = Field(default_factory=list)
     original_minutes: int = Field(..., ge=1, le=480)
     break_type: str = ""
 
@@ -28,14 +15,17 @@ class SessionCreate(SessionBase):
     pass
 
 
-class SessionUpdate(BaseModel):
-    phase: SessionPhase | None = None
-    ends_at: int | None = None
-    extension_minutes: int | None = None
-    extensions: int | None = None
-    break_type: str | None = None
-    credited_seconds: int | None = None
-    excluded_seconds: int | None = None
+class ExtendRequest(BaseModel):
+    minutes: int = Field(..., ge=1)
+
+
+class ResolveRequest(BaseModel):
+    outcome: str = Field(..., pattern="^(completed|failed|interrupted)$")
+
+
+class BreakRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=50)
+    minutes: int = Field(..., ge=1, le=120)
 
 
 class SessionResponse(SessionBase):
@@ -50,15 +40,19 @@ class SessionResponse(SessionBase):
     created_at: int
     updated_at: int
 
-    class Config:
-        from_attributes = True
+    @field_validator("selected_slice_ids", mode="before")
+    @classmethod
+    def split_slice_ids(cls, value: object) -> object:
+        return value.split(",") if isinstance(value, str) and value else value if value else []
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class HistoryEntryBase(BaseModel):
     task_id: str
     kind: str
     seconds: int
-    slice_ids: list[str] = []
+    slice_ids: list[str] = Field(default_factory=list)
 
 
 class HistoryEntryCreate(HistoryEntryBase):
@@ -69,8 +63,12 @@ class HistoryEntryResponse(HistoryEntryBase):
     id: str
     at: int
 
-    class Config:
-        from_attributes = True
+    @field_validator("slice_ids", mode="before")
+    @classmethod
+    def split_slice_ids(cls, value: object) -> object:
+        return value.split(",") if isinstance(value, str) and value else value if value else []
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BreakPreferenceBase(BaseModel):
@@ -85,5 +83,4 @@ class BreakPreferenceResponse(BreakPreferenceBase):
     id: str
     created_at: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

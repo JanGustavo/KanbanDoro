@@ -8,6 +8,8 @@ from app.core.config import get_settings
 from app.core.database import init_db
 
 settings = get_settings()
+if settings.app_env != "development" and settings.jwt_secret == "development-only-change-before-deploy":
+    raise RuntimeError("Configure JWT_SECRET before running outside development")
 
 
 @asynccontextmanager

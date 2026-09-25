@@ -12,6 +12,7 @@ class SessionPhase(str, enum.Enum):
     POST_FOCUS = "post-focus"
     BREAK = "break"
     BREAK_DONE = "break-done"
+    FINISHED = "finished"
 
 
 class FocusScope(str, enum.Enum):

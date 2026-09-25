@@ -1,6 +1,6 @@
 import enum
 
-from sqlalchemy import Enum, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -53,6 +53,3 @@ class Slice(Base):
     def generate_id() -> str:
         import uuid
         return str(uuid.uuid4())[:32]
-
-
-Index("ix_slices_task_id", Slice.task_id)
