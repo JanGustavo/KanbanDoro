@@ -31,12 +31,12 @@ type Session = {
   excludedSeconds: number;
 };
 type HistoryEntry = { id: string; taskId: string; kind: string; seconds: number; at: number; sliceIds: string[] };
-type Data = { tasks: Task[]; session: Session | null; history: HistoryEntry[] };
+type Data = { tasks: Task[]; session: Session | null; history: HistoryEntry[]; breakPreferences: string[] };
 const columns: { id: Column; label: string }[] = [
   { id: 'todo', label: 'A fazer' }, { id: 'doing', label: 'Em andamento' },
   { id: 'late', label: 'Em atraso' }, { id: 'done', label: 'Concluído' },
 ];
-const initial: Data = { tasks: [], session: null, history: [] };
+const initial: Data = { tasks: [], session: null, history: [], breakPreferences: ['Descanso', 'Água', 'Comida', 'Detox'] };
 const id = () => crypto.randomUUID();
 const minutes = (seconds: number) => `${Math.floor(Math.max(0, seconds) / 60).toString().padStart(2, '0')}:${Math.floor(Math.max(0, seconds) % 60).toString().padStart(2, '0')}`;
 
@@ -54,10 +54,11 @@ function App() {
   const [breakType, setBreakType] = useState('Descanso');
   const [error, setError] = useState('');
   const [restart, setRestart] = useState<Task | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
-    chrome.storage.local.get(['tasks', 'session', 'history']).then((stored) => {
-      setData({ tasks: (stored.tasks as Task[] | undefined) ?? [], session: (stored.session as Session | undefined) ?? null, history: (stored.history as HistoryEntry[] | undefined) ?? [] });
+    chrome.storage.local.get(['tasks', 'session', 'history', 'breakPreferences']).then((stored) => {
+      setData({ tasks: (stored.tasks as Task[] | undefined) ?? [], session: (stored.session as Session | undefined) ?? null, history: (stored.history as HistoryEntry[] | undefined) ?? [], breakPreferences: (stored.breakPreferences as string[] | undefined) ?? ['Descanso', 'Água', 'Comida', 'Detox'] });
       setReady(true);
     });
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -143,7 +144,7 @@ function App() {
   if (!ready) return <main>Carregando KanbanDoro…</main>;
 
   return <main className="shell">
-    <header><div><span className="eyebrow">TRABALHO COM RITMO</span><h1>Kanban<span>Doro</span></h1><p>Organize a tarefa. Dê tempo ao que importa.</p></div><div className="status">{active ? '● Ciclo ativo' : '○ Pronto para começar'}</div></header>
+    <header><div><span className="eyebrow">TRABALHO COM RITMO</span><h1>Kanban<span>Doro</span></h1><p>Organize a tarefa. Dê tempo ao que importa.</p></div><div className="status"><button onClick={() => setShowSettings(true)}>Preferências de pausa</button>{active ? '● Ciclo ativo' : '○ Pronto para começar'}</div></header>
     {error && <p className="warning" role="alert">{error} <button onClick={() => setError('')}>Fechar</button></p>}
     {active && <section className="focus" aria-label="Ciclo atual">
       <div><span className="eyebrow">{phase === 'break' || phase === 'break-done' ? active.breakType : 'FOCO EM ANDAMENTO'}</span>
@@ -155,7 +156,7 @@ function App() {
           {active.extensions < 2 && active.extensionMinutes < Math.floor(active.originalMinutes * .5) && <><label>Extensão (min) <input type="number" min="1" max={Math.floor(active.originalMinutes * .5) - active.extensionMinutes} value={requestedExtension} onChange={e => setRequestedExtension(+e.target.value)} /></label><button onClick={() => extend(requestedExtension)}>Estender ({active.extensions}/2)</button></>}
           <button onClick={() => stopFocus('failed')}>Não consegui terminar</button></>}
         {phase === 'post-focus' && <>
-          <label>Pausa <select value={breakType} onChange={e => setBreakType(e.target.value)}>{['Descanso', 'Água', 'Comida', 'Detox', 'Outra'].map(x => <option key={x}>{x}</option>)}</select></label>
+          <label>Pausa <select value={breakType} onChange={e => setBreakType(e.target.value)}>{[...data.breakPreferences, 'Outra'].map(x => <option key={x} value={x}>{x}</option>)}</select></label>
           <label>min <input type="number" min="1" max="120" value={breakMinutes} onChange={e => setBreakMinutes(+e.target.value)} /></label>
           <button onClick={startBreak}>Iniciar pausa</button><button onClick={() => update(old => ({ ...old, session: null }))}>Finalizar ciclo</button></>}
         {phase === 'break' && <button onClick={() => update(old => ({ ...old, session: null }))}>Encerrar pausa</button>}
@@ -163,6 +164,17 @@ function App() {
       </div>
     </section>}
     <form className="create" onSubmit={addTask}><input aria-label="Nome da tarefa" placeholder="Qual é a próxima tarefa?" value={name} onChange={e => setName(e.target.value)} /><button type="submit">+ Criar tarefa</button></form>
+    {showSettings && <div className="backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setShowSettings(false); }}><section className="dialog" role="dialog" aria-modal="true" aria-label="Preferências de pausa">
+      <button className="close" onClick={() => setShowSettings(false)}>✕</button><span className="eyebrow">PREFERÊNCIAS</span>
+      <h3>Categorias de pausa</h3>
+      <ul className="break-prefs-list">
+        {data.breakPreferences.map(pref => <li key={pref}><span>{pref}</span> <button onClick={() => update(old => ({ ...old, breakPreferences: old.breakPreferences.filter(p => p !== pref) }))}>Remover</button></li>)}
+      </ul>
+      <form onSubmit={e => { e.preventDefault(); const val = new FormData(e.currentTarget).get('pref') as string; if (val && !data.breakPreferences.includes(val)) update(old => ({ ...old, breakPreferences: [...old.breakPreferences, val] })); e.currentTarget.reset(); }} className="add-slice">
+        <input name="pref" placeholder="Nova categoria de pausa" />
+        <button>Adicionar</button>
+      </form>
+    </section></div>}
     <div className="board">{columns.map(column => <section className="lane" key={column.id}>
       <h2>{column.label} <span>{data.tasks.filter(t => t.column === column.id).length}</span></h2>
       {column.id === 'doing' && doingCount > 5 && <p className="warning">WIP acima de 5. Vale revisar a capacidade antes de assumir outra tarefa.</p>}

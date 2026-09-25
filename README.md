@@ -8,7 +8,7 @@ Extensão Manifest V3 que reúne Kanban, ciclos de foco vinculados a tarefas e a
 2. No Chrome/Chromium, abra `chrome://extensions`, habilite o modo de desenvolvedor e carregue a pasta `dist` como extensão sem compactação.
 3. Clique no ícone da extensão para abrir o quadro. Nesta primeira versão, tarefas, slices e sessões ficam em `chrome.storage.local` no próprio navegador.
 
-**Implementado neste marco:** quadro local editável, slices, registro de foco, uma sessão por vez, dois pedidos de extensão com teto combinado de 50%, tentativa falha, interrupção e pausa com confirmação. O badge indica foco ativo ou ciclo vencido. **Ainda pendente:** servidor, IA, fala, som de pausa, bolha sobre sites, sincronização, alerta de prazo e relatórios. O protótipo não envia dados para fora do navegador.
+**Implementado neste marco:** quadro local editável, slices, registro de foco, uma sessão por vez, dois pedidos de extensão com teto combinado de 50%, tentativa falha, interrupção e pausa com confirmação. O badge indica foco ativo, pausa e ciclo/pausa vencido. Preferências de pausa são editáveis no cabeçalho. **Ainda pendente:** servidor, IA, fala, som de pausa, bolha sobre sites, sincronização, alerta de prazo e relatórios. O protótipo não envia dados para fora do navegador.
 
 ## Produto
 

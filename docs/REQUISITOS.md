@@ -50,4 +50,5 @@ Este documento é vivo. Uma solução melhor pode substituir a regra anterior de
 - Criar e editar tarefa/slices; mover entre colunas; prazo opcional.
 - Rodar foco; recolher interface; recarregar/fechar e recuperar tempo correto.
 - Extensões respeitam contagem e limite total; tentativas falhas e interrupções registradas separadamente.
+- Preferências de pausa customizáveis e badge indicador de status de pausa.
 - IA só altera dados após revisão; saída inválida não corrompe tarefa.
