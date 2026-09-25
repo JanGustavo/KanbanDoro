@@ -27,8 +27,6 @@ async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
         db,
         email=user_in.email,
         password=user_in.password,
-        ai_provider=user_in.ai_provider,
-        ai_api_key=user_in.ai_api_key,
     )
     return user
 
@@ -39,7 +37,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
 
-    access_token = create_access_token(data={"sub": user.id})
+    access_token = create_access_token(data={"sub": str(user.id)})
     return {"access_token": access_token, "token_type": "bearer"}
 
 

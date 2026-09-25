@@ -12,7 +12,7 @@ Extensão Manifest V3 que reúne Kanban, ciclos de foco vinculados a tarefas e a
 2. No Chrome/Chromium, abra `chrome://extensions`, habilite o modo de desenvolvedor e carregue a pasta `dist` como extensão sem compactação.
 3. Clique no ícone da extensão para abrir o quadro. Nesta primeira versão, tarefas, slices e sessões ficam em `chrome.storage.local` no próprio navegador.
 
-**Implementado neste marco:** quadro local editável, slices, registro de foco, uma sessão por vez, dois pedidos de extensão com teto combinado de 50%, tentativa falha, interrupção e pausa com confirmação. O badge indica foco ativo, pausa e ciclo/pausa vencido. Preferências de pausa são editáveis no cabeçalho. Bolha flutuante nos sites e notificação sonora ao fim do timer implementados. **Ainda pendente:** servidor, IA, fala, sincronização, alerta de prazo e relatórios. O protótipo não envia dados para fora do navegador.
+**Implementado neste marco:** quadro local editável, slices, registro de foco, uma sessão por vez, dois pedidos de extensão com teto combinado de 50%, tentativa falha, interrupção e pausa com confirmação. O badge indica foco ativo, pausa e ciclo/pausa vencido. Preferências de pausa são editáveis no cabeçalho. Bolha flutuante nos sites permitidos e notificação do sistema ao fim do timer implementadas. O som depende da configuração de notificações do navegador e do sistema. **Ainda pendente:** ligação do quadro à API, IA, fala, sincronização, alerta automático de prazo e relatórios. O quadro ainda não envia dados para a API.
 
 ## Produto
 
@@ -29,7 +29,7 @@ Base neutra escura; vinho para foco e amarelo queimado para Kanban. Card com nom
 
 ## Arquitetura pretendida
 
-Extensão em TypeScript/React, com quadro em página própria, badge no ícone e, posteriormente, bolha injetada nos sites permitidos. O timer deve armazenar timestamps de início e fim e recalcular o estado após suspensão do service worker ou reinício do navegador. Backend FastAPI e SQLite para conta, sincronização, histórico e adaptadores de provedores de IA. Sem credenciais embutidas no pacote da extensão.
+Extensão em TypeScript/React, com quadro em página própria, badge no ícone e bolha leve injetada nos sites permitidos. O timer deve armazenar timestamps de início e fim e recalcular o estado após suspensão do service worker ou reinício do navegador. Backend FastAPI e SQLite com autenticação e endpoints preliminares de tarefas e sessões; a extensão ainda não o utiliza. Ao integrar, migraremos os dados locais explicitamente para evitar perda ou duplicação. Sem credenciais embutidas no pacote da extensão.
 
 A IA nunca muda a tarefa sem revisão: criação abre modal; ajuda comum responde e aponta riscos; resposta do tipo proposta entra na caixa de propostas, com aplicação após aceite. Durante foco ou descanso, propostas aguardam. Perguntas sobre uma tarefa recebem o JSON da tarefa; decisões podem receber histórico e estatísticas relevantes. O provedor padrão é configurável e a disponibilidade ou gratuidade de APIs externas não é presumida.
 
@@ -37,7 +37,13 @@ A IA nunca muda a tarefa sem revisão: criação abre modal; ajuda comum respond
 
 1. **Base:** quadro, slices, persistência local e ciclos com histórico e recuperação.
 2. **Extensão completa:** bolha opcional nos sites permitidos, badge, alertas e preferências de pausa.
-3. **IA e servidor:** revisão antes de salvar, contratos estruturados validados, propostas e chaves por usuário.
+3. **Integração:** migração local → servidor, revisão de tarefas antes de salvar, contratos de IA estruturados e propostas com aprovação. O cadastro da API não recebe chaves de IA; a configuração de provedor na extensão é apenas uma preparação, sem chamadas externas.
 4. **Após histórico real:** score transparente de eficiência e WIP, voz local em tempo real, relatórios, exportação e modos da comunidade.
 
 Veja [docs/REQUISITOS.md](docs/REQUISITOS.md) para regras e decisões em aberto. Ideias novas dentro deste conceito podem substituir o desenho atual; registre a motivação e atualize requisitos antes da implementação.
+
+## API experimental
+
+Em `backend/`, execute `python -m pip install -e ".[dev]"`, configure `.env` a partir de `.env.example` e inicie com `uvicorn app.main:app --reload --host 127.0.0.1`. A documentação interativa está em `/docs`. Use `POST /auth/register`, `POST /auth/login` e o Bearer token nas demais rotas. O servidor mantém uma sessão ativa por conta e decide as transições pelo próprio relógio; o cliente não altera diretamente tempo, fase, pontuação ou histórico. `GET /sessions/active` retoma o estado. Os horários de sessão usam milissegundos desde a época Unix; campos de criação/histórico usam segundos.
+
+A API ainda cria tabelas com `create_all`; alterações futuras de esquema exigirão migrações antes de servir dados de produção. A chave informada na extensão fica em `chrome.storage.local` com acesso restrito aos contextos da extensão; a tela da bolha recebe somente estado do timer.

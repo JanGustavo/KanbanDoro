@@ -1,101 +1,22 @@
-# Dependencies
 node_modules/
-.pnp
-.pnp.js
-
-# Build outputs
 dist/
 build/
 *.tsbuildinfo
-
-# Environment files - NEVER commit these
 .env
 .env.*
-.env.local
-.env.production
-.env.development
-.env.test
-!.env.example
-
-# IDE / Editor
+!**/.env.example
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+backend/kanbandoro.db*
+.coverage
+htmlcov/
+coverage/
+*.log
+.DS_Store
 .idea/
 .vscode/
-*.swp
-*.swo
-*~
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Logs
-logs/
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-# Coverage
-coverage/
-.nyc_output/
-
-# Test
-.test-results/
-
-# TypeScript cache
-*.tsbuildinfo
-
-# Vite
-.vite/
-
-# Backend
-backend/.venv/
-backend/venv/
-backend/env/
-backend/__pycache__/
-backend/.pytest_cache/
-backend/.mypy_cache/
-backend/.ruff_cache/
-backend/*.pyc
-backend/*.pyo
-backend/*.pyd
-backend/.coverage
-backend/htmlcov/
-backend/.env
-backend/.env.*
-backend/kanbandoro.db
-backend/kanbandoro.db.*
-backend/kanbandoro.db-shm
-backend/kanbandoro.db-wal
-backend/LogsDeploy/
-backend/logs/
-backend/*.egg-info/
-
-# Deploy
-deploy.sh
-deploy/
-!deploy/*.service
-!deploy/*_nginx
-scripts/
-!scripts/*.sh
-
-# Keys & Secrets
-*.pem
-*.key
-*.crt
-*.p12
-*.pfx
-*.cer
-*.der
-id_rsa
-id_ed25519
-*.kdbx
-
-# Misc
-*.local
-*.bak
-*.tmp
-*.temp
-.cache/

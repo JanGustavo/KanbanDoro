@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
-import { getAISettings, setAISettings, AI_PROVIDERS, type AISettings, type ProviderKey } from './aiSettings';
+import { getAISettings, saveAISettings, clearAISettings, AI_PROVIDERS, type AISettings, type AIProvider } from './aiSettings';
 
 type Column = 'todo' | 'doing' | 'late' | 'done';
 type Slice = { id: string; name: string; done: boolean };
@@ -59,6 +59,7 @@ function App() {
   const [settingsTab, setSettingsTab] = useState<'breaks' | 'ai'>('breaks');
   const [aiSettings, setAiSettings] = useState<AISettings>({ provider: '', apiKey: '', model: '', customEndpoint: '' });
   const [aiKeyVisible, setAiKeyVisible] = useState(false);
+  const [aiNotice, setAiNotice] = useState('');
 
   useEffect(() => {
     chrome.storage.local.get(['tasks', 'session', 'history', 'breakPreferences']).then((stored) => {
@@ -72,9 +73,6 @@ function App() {
   useEffect(() => {
     if (ready) void chrome.storage.local.set(data);
   }, [data, ready]);
-  useEffect(() => {
-    void setAiSettings(aiSettings);
-  }, [aiSettings]);
   useEffect(() => {
     if (restart && !active) {
       startFocus(restart);
@@ -135,9 +133,16 @@ function App() {
     if (!active) return;
     update(old => {
       const credited = credit(old, kind);
-      const tasks = credited.tasks.map(t => t.id === active.taskId
-        ? { ...t, column: kind === 'failed' ? 'late' as Column : kind === 'completed' ? 'done' as Column : t.column,
-          failures: t.failures + (kind === 'failed' ? 1 : 0) } : t);
+      const tasks = credited.tasks.map(t => {
+        if (t.id !== active.taskId) return t;
+        const slices = kind === 'completed' && active.scope === 'slices'
+          ? t.slices.map(s => active.selectedSliceIds.includes(s.id) ? { ...s, done: true } : s)
+          : t.slices;
+        const done = kind === 'completed' && (active.scope === 'whole' || (slices.length > 0 && slices.every(s => s.done)));
+        return { ...t, slices,
+          column: kind === 'failed' ? 'late' as Column : done ? 'done' as Column : t.column,
+          failures: t.failures + (kind === 'failed' ? 1 : 0) };
+      });
       return { ...credited, tasks, session: kind === 'completed' || kind === 'failed'
         ? { ...active, phase: 'post-focus', creditedSeconds: Math.floor((Date.now() - active.startedAt) / 1000) }
         : null };
@@ -152,15 +157,15 @@ function App() {
   if (!ready) return <main>Carregando KanbanDoro…</main>;
 
   return <main className="shell">
-    <header><div><span className="eyebrow">TRABALHO COM RITMO</span><h1>Kanban<span>Doro</span></h1><p>Organize a tarefa. Dê tempo ao que importa.</p></div><div className="status"><button onClick={() => setShowSettings(true)}>Preferências de pausa</button>{active ? '● Ciclo ativo' : '○ Pronto para começar'}</div></header>
+    <header><div><span className="eyebrow">TRABALHO COM RITMO</span><h1>Kanban<span>Doro</span></h1><p>Organize a tarefa. Dê tempo ao que importa.</p></div><div className="status"><button onClick={() => chrome.runtime.sendMessage({ type: 'SHOW_TIMER' })}>Mostrar bolha</button><button onClick={() => setShowSettings(true)}>Preferências</button>{active ? '● Ciclo ativo' : '○ Pronto para começar'}</div></header>
     {error && <p className="warning" role="alert">{error} <button onClick={() => setError('')}>Fechar</button></p>}
     {active && <section className="focus" aria-label="Ciclo atual">
       <div><span className="eyebrow">{phase === 'break' || phase === 'break-done' ? active.breakType : 'FOCO EM ANDAMENTO'}</span>
         <h2>{activeTask?.name ?? 'Tarefa removida'}</h2><small>{active.scope === 'whole' ? 'Tarefa inteira' : `${active.selectedSliceIds.length} slices • tempo compartilhado`}</small></div>
       <strong className="clock">{phase === 'decision' || phase === 'break-done' ? '00:00' : minutes(Math.ceil((active.endsAt - now) / 1000))}</strong>
       <div className="focus-actions">
-        {phase === 'running' && <><button onClick={() => stopFocus('completed')}>Concluí</button><button onClick={() => stopFocus('interrupted')}>Interromper e deixar para depois</button><button onClick={() => { stopFocus('interrupted'); if (activeTask) setRestart(activeTask); }}>Interromper e recomeçar</button></>}
-        {phase === 'decision' && <><button onClick={() => stopFocus('completed')}>Concluí</button>
+        {phase === 'running' && <><button onClick={() => stopFocus('completed')}>Concluí o escopo</button><button onClick={() => stopFocus('interrupted')}>Interromper e deixar para depois</button><button onClick={() => { stopFocus('interrupted'); if (activeTask) setRestart(activeTask); }}>Interromper e recomeçar</button></>}
+        {phase === 'decision' && <><button onClick={() => stopFocus('completed')}>Concluí o escopo</button>
           {active.extensions < 2 && active.extensionMinutes < Math.floor(active.originalMinutes * .5) && <><label>Extensão (min) <input type="number" min="1" max={Math.floor(active.originalMinutes * .5) - active.extensionMinutes} value={requestedExtension} onChange={e => setRequestedExtension(+e.target.value)} /></label><button onClick={() => extend(requestedExtension)}>Estender ({active.extensions}/2)</button></>}
           <button onClick={() => stopFocus('failed')}>Não consegui terminar</button></>}
         {phase === 'post-focus' && <>
@@ -192,15 +197,15 @@ function App() {
       )}
       {settingsTab === 'ai' && (
         <>
-          <h3>Integração com IA</h3>
-          <p className="settings-hint">Sua chave de API fica salva apenas localmente no navegador (chrome.storage.local).<br />Nunca enviamos sua chave para servidores externos.</p>
+          <h3>Configuração futura de IA</h3>
+          <p className="settings-hint">A assistência ainda não está conectada. A configuração fica no armazenamento local da extensão e só será usada após implementarmos o fluxo de IA.</p>
           <div className="ai-settings-form">
             <label>
               Provedor
-              <select value={aiSettings.provider} onChange={e => setAiSettings((s: AISettings) => ({ ...s, provider: e.target.value as ProviderKey, model: AI_PROVIDERS[e.target.value as ProviderKey]?.defaultModel || '' }))}>
+              <select value={aiSettings.provider} onChange={e => setAiSettings((s: AISettings) => ({ ...s, provider: e.target.value as AIProvider, model: '', customEndpoint: '' }))}>
                 <option value="">Selecionar provedor</option>
                 {Object.entries(AI_PROVIDERS).map(([key, provider]) => (
-                  <option key={key} value={key}>{provider.name}</option>
+                  <option key={key} value={key}>{provider}</option>
                 ))}
               </select>
             </label>
@@ -208,14 +213,7 @@ function App() {
               <>
                 <label>
                   Modelo
-                  <select value={aiSettings.model} onChange={e => setAiSettings((s: AISettings) => ({ ...s, model: e.target.value }))}>
-                    {AI_PROVIDERS[aiSettings.provider as ProviderKey]?.models.map(m => (
-                      <option key={m} value={m}>{m}</option>
-                    ))}
-                    {AI_PROVIDERS[aiSettings.provider as ProviderKey] === AI_PROVIDERS.custom && (
-                      <option value="">Definir manualmente</option>
-                    )}
-                  </select>
+                  <input value={aiSettings.model} placeholder="ID do modelo no seu provedor" onChange={e => setAiSettings(s => ({ ...s, model: e.target.value }))} />
                 </label>
                 {aiSettings.provider === 'custom' && (
                   <label>
@@ -239,15 +237,16 @@ function App() {
                   </div>
                 </label>
                 <div className="ai-actions">
-                  <button className="primary" onClick={() => { setAiSettings(aiSettings); }} disabled={!aiSettings.provider || !aiSettings.apiKey || !aiSettings.model}>
+                  <button className="primary" onClick={async () => { await saveAISettings(aiSettings); setAiNotice('Configuração salva neste navegador.'); }} disabled={!aiSettings.provider || !aiSettings.apiKey || !aiSettings.model || (aiSettings.provider === 'custom' && !aiSettings.customEndpoint)}>
                     Salvar configuração
                   </button>
                   {aiSettings.apiKey && (
-                    <button className="danger" onClick={() => setAiSettings({ provider: '', apiKey: '', model: '', customEndpoint: '' })}>
+                    <button className="danger" onClick={async () => { await clearAISettings(); setAiSettings({ provider: '', apiKey: '', model: '', customEndpoint: '' }); setAiNotice('Chave removida deste navegador.'); }}>
                       Remover chave
                     </button>
                   )}
                 </div>
+                {aiNotice && <p role="status">{aiNotice}</p>}
               </>
             )}
           </div>
