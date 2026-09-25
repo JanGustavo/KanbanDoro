@@ -162,7 +162,13 @@ function App() {
   if (!ready) return <main>Carregando KanbanDoro…</main>;
 
   return <main className="shell">
-    <header><div><span className="eyebrow">TRABALHO COM RITMO</span><h1>Kanban<span>Doro</span></h1><p>Organize a tarefa. Dê tempo ao que importa.</p></div><div className="status"><button onClick={() => chrome.runtime.sendMessage({ type: 'SHOW_TIMER' })}>Mostrar bolha</button><button onClick={() => setShowSettings(true)}>Preferências</button>{active ? '● Ciclo ativo' : '○ Pronto para começar'}</div></header>
+    <header><div><span className="eyebrow">TRABALHO COM RITMO</span><h1>Kanban<span>Doro</span></h1><p>Organize a tarefa. Dê tempo ao que importa.</p></div>
+      <div className="header-actions">
+        <button className="ghost" onClick={() => chrome.runtime.sendMessage({ type: 'SHOW_TIMER' })}>Mostrar bolha</button>
+        <button className="ghost" onClick={() => setShowSettings(true)}>Preferências</button>
+        <div className="status">{active ? '● Ciclo ativo' : '○ Pronto para começar'}</div>
+      </div>
+    </header>
     {error && <p className="warning" role="alert">{error} <button onClick={() => setError('')}>Fechar</button></p>}
     {active && <section className="focus" aria-label="Ciclo atual">
       <div><span className="eyebrow">{phase === 'break' || phase === 'break-done' ? active.breakType : 'FOCO EM ANDAMENTO'}</span>
