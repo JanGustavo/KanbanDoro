@@ -344,9 +344,12 @@ function App() {
       <button onClick={() => { setTipsDismissed(true); void chrome.storage.local.set({ tipsDismissed: true }); }}>Entendi</button>
     </aside>}
     {active && <section className="focus" aria-label="Ciclo atual">
-      <div><span className="eyebrow">{phase === 'break' || phase === 'break-done' ? active.breakType : 'FOCO EM ANDAMENTO'}</span>
-        <h2>{activeTask?.name ?? 'Tarefa removida'}</h2><small>{active.scope === 'whole' ? 'Tarefa inteira' : `${active.selectedSliceIds.length} slices • tempo compartilhado`}</small></div>
-      <strong className="clock">{phase === 'decision' || phase === 'break-done' ? '00:00' : minutes(Math.ceil((active.endsAt - now) / 1000))}</strong>
+      <div className="focus-top"><span className="focus-lights" aria-hidden="true"><i /><i /><i /></span><span>KANBANDORO / CICLO ATUAL</span><span className="focus-state">● {phase === 'break' || phase === 'break-done' ? 'EM PAUSA' : phase === 'running' ? 'EM FOCO' : 'AGUARDANDO VOCÊ'}</span></div>
+      <div className="focus-content"><div className="focus-task"><div className="focus-task-heading"><span>{phase === 'break' || phase === 'break-done' ? active.breakType : 'SEU PRÓXIMO PASSO'}</span><span>{active.originalMinutes + active.extensionMinutes} MIN</span></div>
+        <h2>{activeTask?.name ?? 'Tarefa removida'}</h2><p>{activeTask?.description || (active.scope === 'whole' ? 'Tarefa inteira' : `${active.selectedSliceIds.length} slices · tempo compartilhado`)}</p>
+        {!!activeTask?.slices.length && <div className="focus-slices" aria-label="Etapas da tarefa">{activeTask.slices.map(slice => <span className={slice.done ? 'finished' : ''} key={slice.id}>{slice.name}{slice.done ? ' ✓' : ''}</span>)}</div>}</div>
+      <div className="focus-progress"><div className="focus-ring" style={{ '--ring-progress': `${Math.min(100, Math.max(0, ((now - active.startedAt) / Math.max(1, active.endsAt - active.startedAt)) * 100))}%` } as React.CSSProperties}><div><small>{phase === 'break' || phase === 'break-done' ? 'PAUSA' : 'FOCO'}</small><strong className="clock">{phase === 'decision' || phase === 'break-done' ? '00:00' : minutes(Math.ceil((active.endsAt - now) / 1000))}</strong><span>do ciclo atual</span></div></div>
+        <div className="focus-next"><span className="eyebrow">EM SEGUIDA</span><strong>{phase === 'running' ? 'Continue do ponto em que parou.' : phase === 'break' ? 'Aproveite sua pausa.' : 'Escolha o próximo passo.'}</strong><p>{active.scope === 'whole' ? 'Tempo associado à tarefa inteira.' : `Tempo compartilhado entre ${active.selectedSliceIds.length} slices.`}</p><div className="focus-progress-line"><span style={{ width: `${activeTask?.slices.length ? (activeTask.slices.filter(slice => slice.done).length / activeTask.slices.length) * 100 : 0}%` }} /></div><small>{activeTask?.slices.filter(slice => slice.done).length ?? 0} DE {activeTask?.slices.length ?? 0} ETAPAS CONCLUÍDAS</small></div></div></div>
       <div className="focus-actions">
         {phase === 'running' && <><button onClick={() => stopFocus('completed')}>Concluí o escopo</button><button onClick={() => stopFocus('interrupted')}>Interromper e deixar para depois</button><button onClick={() => { stopFocus('interrupted'); if (activeTask) setRestart(activeTask); }}>Interromper e recomeçar</button></>}
         {phase === 'decision' && <><button onClick={() => stopFocus('completed')}>Concluí o escopo</button>
@@ -488,10 +491,11 @@ function App() {
     </section> : <div className="board">{columns.map(column => <section className="lane" key={column.id}>
       <h2>{column.label} <span>{shownTasks.filter(t => t.column === column.id).length}</span></h2>
       {column.id === 'doing' && doingCount > 5 && <p className="warning">WIP acima de 5. Vale revisar a capacidade antes de assumir outra tarefa.</p>}
-      {shownTasks.filter(t => t.column === column.id).map(item => <article className="card" key={item.id}>
+      {shownTasks.filter(t => t.column === column.id).map((item, index) => <article className="card" key={item.id}>
+        <div className="card-heading"><span>{String(index + 1).padStart(2, '0')} / {column.label.toUpperCase()}</span><span className="card-time">{item.estimate} MIN</span></div>
         <button className="card-title" onClick={() => { setSelectedTask(item.id); setScope('whole'); setSelectedSlices([]); }}>{item.name}</button>
         <div className="meta"><span>Dificuldade {item.difficulty}</span><span>{item.estimate} min</span>{item.deadline && <span>{item.deadline}</span>}{item.planId && <span>↻ {item.occurrenceDate}</span>}{item.column === 'done' && <span>Feita em {displayDate(item.completedAt)}</span>}</div>
-        <div className="slice-strip">{item.slices.map(slice => <span className={slice.done ? 'slice done' : 'slice'} key={slice.id}>{slice.name}</span>)}</div>
+        {!!item.slices.length && <div className="slice-strip" aria-label={`${item.slices.filter(slice => slice.done).length} de ${item.slices.length} etapas concluídas`}>{item.slices.map(slice => <span className={slice.done ? 'slice done' : 'slice'} title={slice.name} key={slice.id}>{slice.name}{slice.done ? ' ✓' : ''}</span>)}</div>}
       </article>)}{!shownTasks.some(t => t.column === column.id) && <p className="empty-lane">Nenhuma tarefa nesta coluna.</p>}</section>)}</div>}
     {task && <div className="backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setSelectedTask(null); }}><section className="dialog" role="dialog" aria-modal="true" aria-label="Detalhes da tarefa">
       <button className="close" onClick={() => setSelectedTask(null)}>✕</button><span className="eyebrow">DETALHES DA TAREFA</span>
