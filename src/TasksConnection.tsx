@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import ConnectionItemEditor from './ConnectionItemEditor';
 
 export type GoogleTask = { id: string; title: string; notes: string; due: string };
 type TaskList = { id: string; title: string };
@@ -9,6 +10,7 @@ export default function TasksConnection({ onDraft, onListChange }: { onDraft: (t
   const [tasks, setTasks] = useState<GoogleTask[]>([]);
   const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(false);
+  const [editing, setEditing] = useState<GoogleTask | null>(null);
   async function request(type: 'TASKS_LISTS' | 'TASKS_ITEMS') {
     setLoading(true); setNotice('');
     try {
@@ -31,7 +33,8 @@ export default function TasksConnection({ onDraft, onListChange }: { onDraft: (t
         <button className="primary" disabled={loading || !listId} onClick={() => void request('TASKS_ITEMS')}>Ver tarefas</button></div>}</div>
     <div className="connection-messages">{tasks.map(task => <article key={task.id}><strong>{task.title}</strong>
       {task.due && <small>Prazo: {task.due.slice(0, 10)}</small>}<p>{task.notes}</p>
-      <button onClick={() => onDraft(task)}>Criar tarefa desta tarefa</button></article>)}</div>
+      <div className="connection-item-actions"><button onClick={() => onDraft(task)}>Trazer ao quadro</button><button onClick={() => setEditing(task)}>Editar ou excluir no Google</button></div></article>)}</div>
     {notice && <p role="status" className="connection-notice">{notice}</p>}
+    {editing && <ConnectionItemEditor kind="tasks" item={editing} listId={listId} onClose={() => setEditing(null)} onChanged={() => request('TASKS_ITEMS')} />}
   </section>;
 }

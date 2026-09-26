@@ -58,6 +58,16 @@ async def test_google_exchange_and_read_only_connections(tmp_path, monkeypatch):
             return Response(200, json={"items": [{"id": "list1", "title": "Pessoal"}]})
         return Response(200, json={"items": [{"id": "task1", "title": "Estudar"}]})
 
+    async def fake_request(method, url, json=None, **kwargs):
+        calls.append((url, method, json))
+        assert kwargs['headers']['Authorization'] == 'Bearer google-secret-access'
+        if url.endswith('/missing'):
+            return Response(404)
+        if method == 'DELETE':
+            return Response(204)
+        assert method == 'PATCH' and json and json.get('title', json.get('summary'))
+        return Response(200, json={'id': 'edited-item'})
+
     class GoogleClient:
         def __init__(self, **_kwargs):
             pass
@@ -70,6 +80,7 @@ async def test_google_exchange_and_read_only_connections(tmp_path, monkeypatch):
 
         post = staticmethod(fake_post)
         get = staticmethod(fake_get)
+        request = staticmethod(fake_request)
 
     monkeypatch.setattr(connections.httpx, "AsyncClient", GoogleClient)
     app.dependency_overrides[get_db] = database_override
@@ -100,10 +111,31 @@ async def test_google_exchange_and_read_only_connections(tmp_path, monkeypatch):
             assert (await client.get("/connections/google/tasks/lists/list1")).json()["tasks"][0]["title"] == "Estudar"
             assert (await client.post("/connections/google/calendar/events", json={"title": "Reunião", "description": "Discussão", "start": "2026-09-26T14:00:00-03:00", "end": "2026-09-26T15:00:00-03:00"})).json()["id"] == "created-item"
             assert (await client.post("/connections/google/tasks/lists/list1", json={"title": "Estudar", "notes": "Linux"})).json()["id"] == "created-item"
+            event_draft = {"title": "Reunião editada", "description": "Pauta nova", "start": "2026-09-26T14:00:00-03:00", "end": "2026-09-26T15:00:00-03:00"}
+            assert (await client.patch("/connections/google/calendar/events/event1", json=event_draft)).json()["id"] == "edited-item"
+            assert (await client.patch("/connections/google/calendar/events/event1", json={"title": "Apenas título"})).json()["id"] == "edited-item"
+            assert calls[-1][2] == {"summary": "Apenas título"}, "do not replace existing Google description and dates"
+            assert (await client.delete("/connections/google/calendar/events/event1")).json()["deleted"] is True
+            assert (await client.patch("/connections/google/tasks/lists/list1/tasks/task1", json={"title": "Linux", "notes": "Revisão"})).json()["id"] == "edited-item"
+            assert (await client.patch("/connections/google/tasks/lists/list1/tasks/task1", json={"title": "Apenas título"})).json()["id"] == "edited-item"
+            assert calls[-1][2] == {"title": "Apenas título"}, "do not replace existing Google notes and due date"
+            assert (await client.delete("/connections/google/tasks/lists/list1/tasks/task1")).json()["deleted"] is True
+            assert (await client.delete("/connections/google/tasks/lists/list1/tasks/missing")).status_code == 404
+            assert (await client.delete("/connections/google/calendar/events/bad%21id")).status_code == 400
             assert (await client.post("/connections/google/gmail/send", json={"to": "destino@example.com", "subject": "Teste", "body": "Olá"})).json()["id"] == "sent-mail"
             assert (await client.post("/connections/google/gmail/send", json={"to": "destino@example.com", "subject": "Teste", "body": ""})).status_code == 422
             assert (await client.post("/connections/google/calendar/events", json={"title": "Inválido", "start": "2026-09-26T15:00:00Z", "end": "2026-09-26T14:00:00Z"})).status_code == 400
             assert (await client.get("/connections/google/tasks/lists/bad%21list")).status_code == 400
+            assert (await client.patch("/connections/google/calendar/events/event1", json={"description": None})).status_code == 400
+            assert (await client.patch("/connections/google/tasks/lists/list1/tasks/task1", json={"notes": None})).status_code == 400
+            async with maker() as db:
+                stored = (await db.scalars(select(GoogleConnection))).one()
+                stored.scopes = "https://www.googleapis.com/auth/calendar.readonly"
+                await db.commit()
+            previous_calls = len(calls)
+            assert (await client.delete("/connections/google/calendar/events/event1")).status_code == 403
+            assert (await client.delete("/connections/google/tasks/lists/list1/tasks/task1")).status_code == 403
+            assert len(calls) == previous_calls
             assert (await client.delete("/connections/google")).status_code == 200
             assert (await client.get("/connections/google/status")).status_code == 401
     finally:

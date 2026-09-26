@@ -708,3 +708,6 @@ h1,h2,h3,p {
     transition:none
   }
 }
+
+.brand { color: #d46a81; }
+.site-footer .brand { color: #d46a81; }

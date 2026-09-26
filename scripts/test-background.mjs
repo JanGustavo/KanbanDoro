@@ -45,8 +45,9 @@ vm.runInNewContext(readFileSync('dist/background.js', 'utf8'), { chrome, AbortSi
     if (url.startsWith('http://localhost:8000/connections/google')) {
       if (url.endsWith('/exchange')) { const body = JSON.parse(options.body); assert.equal(body.code, 'code-test'); assert.equal(body.redirect_uri, 'https://extension.chromiumapp.org/'); assert.equal(body.code_verifier.length, 43); return { ok: true, json: async () => ({ session: 'private-server-session' }) }; }
       if (url.endsWith('/status')) return { ok: true, json: async () => ({ connected: true, scopes: authorizedScopes }) };
-      if (options.method === 'DELETE') return { ok: true, json: async () => ({ connected: false }) };
       assert.equal(options.headers.Authorization, 'Bearer private-server-session');
+      if (options.method === 'DELETE') return { ok: true, json: async () => url.endsWith('/connections/google') ? { connected: false } : { deleted: true } };
+      if (options.method === 'PATCH') return { ok: true, json: async () => ({ id: 'edited-item' }) };
       if (url.includes('/gmail/messages')) return { ok: true, json: async () => ({ messages: [{ id: 'msg-1', subject: 'Assunto' }] }) };
       if (url.includes('/calendar/events')) return { ok: true, json: async () => ({ events: [{ id: 'event-1', title: 'Evento' }] }) };
       if (url.includes('/tasks/lists/')) return { ok: true, json: async () => ({ tasks: [{ id: 'task-1', title: 'Tarefa' }] }) };
@@ -85,6 +86,12 @@ assert.equal(inbox.messages[0].subject, 'Assunto');
 assert.equal((await aiMessage({ type: 'CALENDAR_EVENTS', start: '2026-09-26T00:00:00Z', end: '2026-09-27T00:00:00Z' })).events[0].title, 'Evento');
 assert.equal((await aiMessage({ type: 'TASKS_LISTS' })).lists[0].title, 'Lista');
 assert.equal((await aiMessage({ type: 'TASKS_ITEMS', listId: 'list-1' })).tasks[0].title, 'Tarefa');
+assert.equal((await aiMessage({ type: 'CALENDAR_UPDATE', eventId: 'event-1', draft: { title: 'Novo nome' } })).id, 'edited-item');
+assert.equal((await aiMessage({ type: 'CALENDAR_DELETE', eventId: 'event-1' })).deleted, true);
+assert.equal((await aiMessage({ type: 'TASKS_UPDATE', listId: 'list-1', taskId: 'task-1', draft: { title: 'Novo nome' } })).id, 'edited-item');
+assert.equal((await aiMessage({ type: 'TASKS_DELETE', listId: 'list-1', taskId: 'task-1' })).deleted, true);
+assert(requests.some(({ url, options }) => url.endsWith('/calendar/events/event-1') && options.method === 'PATCH' && JSON.parse(options.body).title === 'Novo nome'));
+assert(requests.some(({ url, options }) => url.endsWith('/tasks/lists/list-1/tasks/task-1') && options.method === 'DELETE'));
 assert.equal(JSON.stringify(inbox).includes('private-server-session'), false, 'session must stay in the service worker');
 assert.equal((await aiMessage({ type: 'GMAIL_DISCONNECT' })).connected, false);
 assert.equal((await aiMessage({ type: 'GMAIL_SEARCH' })).error.includes('Conecte'), true);

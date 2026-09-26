@@ -43,6 +43,8 @@ A IA nunca muda a tarefa sem revisão: criação abre modal; ajuda comum respond
 
 A extensão consulta mensagens do Gmail (até 10), eventos do Google Calendar (até 50, intervalo de até 31 dias) e listas/tarefas pendentes do Google Tasks (até 100 por página consultada). Cada item escolhido abre **uma proposta editável** no KanbanDoro. O painel Connections também recebe um pedido escrito, pede à Groq uma proposta de evento, tarefa do Google Tasks ou e-mail, e abre campos editáveis para revisão antes de gravar. E-mails exigem uma confirmação adicional antes do envio. É possível preencher tudo manualmente. Não existe sincronização nos dois sentidos nem execução em segundo plano; nenhuma mensagem consultada é enviada à Groq automaticamente.
 
+Nos resultados de Calendar e Tasks, **Editar ou excluir no Google** abre uma revisão. Só os campos modificados são enviados, e a exclusão exige confirmação. Os eventos de dia inteiro podem ser excluídos, mas ainda não são editados nesta interface. Alterações feitas aqui afetam o item na conta Google; trazer o item ao quadro continua sendo uma ação separada.
+
 ### Configuração local
 
 1. No Google Cloud, habilite **Gmail API**, **Google Calendar API** e **Google Tasks API**. Configure a tela de consentimento OAuth e, no modo de testes, adicione sua conta como usuário de teste.
@@ -81,7 +83,7 @@ Atualize `package.json`, `package-lock.json` e `public/manifest.json` para a mes
 
 ### VPS e estatísticas
 
-O backend agora tem `compose.yaml` e `backend/Dockerfile` com SQLite em volume persistente, migração Alembic e porta ligada a `127.0.0.1:18080`. Consulte [backend/README.md](backend/README.md) antes de configurar a VPS. O painel **Estatísticas** calcula foco semanal, estimativas e resultados a partir das tarefas locais: você pode atribuir uma habilidade ou área na criação ou nos detalhes; tarefas antigas aparecem em “Sem categoria”. Ainda não existe sincronização de tarefas com o backend.
+O backend agora tem `compose.yaml` e `backend/Dockerfile` com SQLite em volume persistente, migração Alembic e porta ligada a `127.0.0.1:18080`. Consulte [backend/README.md](backend/README.md) antes de configurar a VPS. O painel **Estatísticas** mostra foco da semana, dias ativos, tarefas em andamento e atrasos, além de estimativas e resultados a partir das tarefas locais: você pode atribuir uma habilidade ou área na criação ou nos detalhes; tarefas antigas aparecem em “Sem categoria”. Ainda não existe sincronização de tarefas com o backend.
 
 ### Página de apresentação
 

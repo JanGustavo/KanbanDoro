@@ -1,6 +1,6 @@
 import { localDay, weekStart } from './schedule';
 
-type TaskRecord = { id: string; skill?: string; estimate: number; focusSeconds: number; failures: number; column: string; completedAt?: number; createdAt?: number };
+type TaskRecord = { id: string; skill?: string; estimate: number; focusSeconds: number; failures: number; column: string; completedAt?: number; createdAt?: number; archivedAt?: number };
 type FocusRecord = { taskId: string; seconds: number; at: number; kind: string };
 export type AreaMetrics = { name: string; tasks: number; completed: number; measured: number; withinEstimate: number; focusSeconds: number; failures: number; estimatedMinutes: number; actualMinutes: number };
 
@@ -45,5 +45,9 @@ export function calculateStats(tasks: TaskRecord[], history: FocusRecord[], now:
     totalCompleted: values.reduce((sum, area) => sum + area.completed, 0),
     measured: values.reduce((sum, area) => sum + area.measured, 0),
     withinEstimate: values.reduce((sum, area) => sum + area.withinEstimate, 0),
+    weeklyFocusSeconds: daily.reduce((sum, day) => sum + day.seconds, 0),
+    activeDays: daily.filter(day => day.seconds > 0).length,
+    doingCount: tasks.filter(task => task.column === 'doing' && !task.archivedAt).length,
+    lateCount: tasks.filter(task => task.column === 'late' && !task.archivedAt).length,
   };
 }

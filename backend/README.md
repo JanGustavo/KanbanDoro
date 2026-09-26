@@ -2,6 +2,8 @@
 
 API FastAPI e SQLite. O quadro e as estatísticas da extensão continuam no armazenamento local do navegador; **não existe sincronização do quadro com esta API**. A API atende autenticação própria e Connections Google com OAuth, renovação de tokens e consultas ou escritas somente quando a extensão solicitar. A chave de IA fica no navegador.
 
+Calendar e Tasks aceitam criação, edição parcial (`PATCH`) e exclusão (`DELETE`) de itens mediante sessão Google válida e escopo de escrita já autorizado (`calendar.events` e `tasks`). A interface pede revisão e confirma a exclusão, depois refaz a consulta; nenhuma alteração ocorre em segundo plano. O endpoint de edição recebe apenas os campos alterados para preservar outros dados no Google.
+
 ## Desenvolvimento
 
 Na pasta `backend`, copie `.env.example` para `.env`, instale `pip install -e '.[dev]'` e rode `uvicorn app.main:app --reload`. Em desenvolvimento, as tabelas são criadas automaticamente. Para testar o mesmo caminho da VPS: `alembic -c alembic.ini upgrade head` e `pytest -q`.

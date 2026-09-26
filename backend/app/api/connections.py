@@ -45,6 +45,18 @@ class TaskDraft(BaseModel):
     notes: str = Field(default="", max_length=4000)
 
 
+class CalendarUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=180)
+    description: str | None = Field(default=None, max_length=4000)
+    start: datetime | None = None
+    end: datetime | None = None
+
+
+class TaskUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=180)
+    notes: str | None = Field(default=None, max_length=4000)
+
+
 class EmailDraft(BaseModel):
     to: EmailStr
     subject: str = Field(min_length=1, max_length=250)
@@ -121,6 +133,21 @@ async def google_post(record: GoogleConnection, db: AsyncSession, url: str, body
     if response.status_code not in (200, 201):
         raise HTTPException(502, f"Google não confirmou a gravação ({response.status_code}).")
     return response.json()
+
+
+async def google_mutate(record: GoogleConnection, db: AsyncSession, url: str, method: str, scope: str, body: dict | None = None) -> dict:
+    if scope not in record.scopes.split():
+        raise HTTPException(403, "Permissão de escrita ausente. Atualize a conexão Google.")
+    token = await google_access(record, db)
+    async with httpx.AsyncClient(timeout=20) as client:
+        response = await client.request(method, url, json=body, headers={"Authorization": f"Bearer {token}"})
+    if response.status_code == 404:
+        raise HTTPException(404, "Item não encontrado no Google. Atualize a lista.")
+    if response.status_code in (401, 403):
+        raise HTTPException(403, "Google recusou a alteração. Confira as permissões e conecte novamente.")
+    if response.status_code not in (200, 204):
+        raise HTTPException(502, f"Google não confirmou a alteração ({response.status_code}).")
+    return response.json() if response.status_code == 200 else {}
 
 
 @router.post("/exchange")
@@ -235,8 +262,15 @@ def validate_list_id(list_id: str) -> None:
         raise HTTPException(400, "Lista inválida")
 
 
+def validate_item_id(item_id: str) -> None:
+    if not item_id or len(item_id) > 256 or not all(char.isascii() and (char.isalnum() or char in "_-+=:@") for char in item_id):
+        raise HTTPException(400, "Identificador do item inválido")
+
+
 @router.post("/calendar/events")
 async def create_event(draft: CalendarDraft, authorization: str | None = Header(default=None), db: AsyncSession = Depends(get_db)):
+    if not draft.title.strip():
+        raise HTTPException(400, "Informe um título")
     if not draft.start.tzinfo or not draft.end.tzinfo or draft.end <= draft.start or (draft.end - draft.start).days > 7:
         raise HTTPException(400, "Informe começo e fim válidos, com fuso horário e até 7 dias de duração")
     record = await connected(db, authorization)
@@ -250,11 +284,70 @@ async def create_event(draft: CalendarDraft, authorization: str | None = Header(
 @router.post("/tasks/lists/{list_id}")
 async def create_task(list_id: str, draft: TaskDraft, authorization: str | None = Header(default=None), db: AsyncSession = Depends(get_db)):
     validate_list_id(list_id)
+    if not draft.title.strip():
+        raise HTTPException(400, "Informe um título")
     record = await connected(db, authorization)
     result = await google_post(record, db, f"https://tasks.googleapis.com/tasks/v1/lists/{quote(list_id, safe='')}/tasks", {
         "title": draft.title.strip(), "notes": draft.notes,
     }, "https://www.googleapis.com/auth/tasks")
     return {"id": result.get("id")}
+
+
+@router.patch("/calendar/events/{event_id}")
+async def update_event(event_id: str, draft: CalendarUpdate, authorization: str | None = Header(default=None), db: AsyncSession = Depends(get_db)):
+    validate_item_id(event_id)
+    if draft.title is not None and not draft.title.strip():
+        raise HTTPException(400, "Informe um título")
+    changes = draft.model_dump(exclude_unset=True)
+    if not changes:
+        raise HTTPException(400, "Nenhuma alteração informada")
+    if any(value is None for value in changes.values()):
+        raise HTTPException(400, "Campos da alteração não podem ser nulos")
+    if "start" in changes or "end" in changes:
+        if not draft.start or not draft.end or not draft.start.tzinfo or not draft.end.tzinfo or draft.end <= draft.start or (draft.end - draft.start).days > 7:
+            raise HTTPException(400, "Informe começo e fim válidos, com fuso horário e até 7 dias de duração")
+        changes["start"] = {"dateTime": draft.start.isoformat()}
+        changes["end"] = {"dateTime": draft.end.isoformat()}
+    if "title" in changes:
+        changes["summary"] = changes.pop("title").strip()
+    record = await connected(db, authorization)
+    result = await google_mutate(record, db, f"https://www.googleapis.com/calendar/v3/calendars/primary/events/{quote(event_id, safe='')}", "PATCH", "https://www.googleapis.com/auth/calendar.events", changes)
+    return {"id": result.get("id"), "link": result.get("htmlLink", "")}
+
+
+@router.delete("/calendar/events/{event_id}")
+async def delete_event(event_id: str, authorization: str | None = Header(default=None), db: AsyncSession = Depends(get_db)):
+    validate_item_id(event_id)
+    record = await connected(db, authorization)
+    await google_mutate(record, db, f"https://www.googleapis.com/calendar/v3/calendars/primary/events/{quote(event_id, safe='')}", "DELETE", "https://www.googleapis.com/auth/calendar.events")
+    return {"deleted": True}
+
+
+@router.patch("/tasks/lists/{list_id}/tasks/{task_id}")
+async def update_task(list_id: str, task_id: str, draft: TaskUpdate, authorization: str | None = Header(default=None), db: AsyncSession = Depends(get_db)):
+    validate_list_id(list_id)
+    validate_item_id(task_id)
+    if draft.title is not None and not draft.title.strip():
+        raise HTTPException(400, "Informe um título")
+    changes = draft.model_dump(exclude_unset=True)
+    if not changes:
+        raise HTTPException(400, "Nenhuma alteração informada")
+    if any(value is None for value in changes.values()):
+        raise HTTPException(400, "Campos da alteração não podem ser nulos")
+    if "title" in changes:
+        changes["title"] = changes["title"].strip()
+    record = await connected(db, authorization)
+    result = await google_mutate(record, db, f"https://tasks.googleapis.com/tasks/v1/lists/{quote(list_id, safe='')}/tasks/{quote(task_id, safe='')}", "PATCH", "https://www.googleapis.com/auth/tasks", changes)
+    return {"id": result.get("id")}
+
+
+@router.delete("/tasks/lists/{list_id}/tasks/{task_id}")
+async def delete_task(list_id: str, task_id: str, authorization: str | None = Header(default=None), db: AsyncSession = Depends(get_db)):
+    validate_list_id(list_id)
+    validate_item_id(task_id)
+    record = await connected(db, authorization)
+    await google_mutate(record, db, f"https://tasks.googleapis.com/tasks/v1/lists/{quote(list_id, safe='')}/tasks/{quote(task_id, safe='')}", "DELETE", "https://www.googleapis.com/auth/tasks")
+    return {"deleted": True}
 
 
 @router.post("/gmail/send")

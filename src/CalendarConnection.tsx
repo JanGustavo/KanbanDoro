@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import ConnectionItemEditor from './ConnectionItemEditor';
 
 export type CalendarEvent = { id: string; title: string; description: string; start: string; end: string };
 const today = () => new Date().toLocaleDateString('en-CA');
@@ -9,6 +10,7 @@ export default function CalendarConnection({ onDraft }: { onDraft: (event: Calen
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(false);
+  const [editing, setEditing] = useState<CalendarEvent | null>(null);
   async function search() {
     setLoading(true); setNotice('');
     try {
@@ -30,7 +32,8 @@ export default function CalendarConnection({ onDraft }: { onDraft: (event: Calen
         <button className="primary" disabled={loading}>{loading ? 'Consultando…' : 'Buscar eventos'}</button></div>
     </form><div className="connection-messages">{events.map(event => <article key={event.id}>
       <strong>{event.title}</strong><small>{event.start} · {event.end}</small><p>{event.description}</p>
-      <button onClick={() => onDraft(event)}>Criar tarefa deste evento</button>
+      <div className="connection-item-actions"><button onClick={() => onDraft(event)}>Trazer ao quadro</button><button onClick={() => setEditing(event)}>Editar ou excluir no Google</button></div>
     </article>)}</div>{notice && <p role="status" className="connection-notice">{notice}</p>}
+    {editing && <ConnectionItemEditor kind="calendar" item={editing} onClose={() => setEditing(null)} onChanged={search} />}
   </section>;
 }

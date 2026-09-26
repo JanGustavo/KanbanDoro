@@ -328,7 +328,7 @@ function App() {
   if (!ready) return <main className="loading" role="status"><h1>KanbanDoro</h1><p>Preparando seu quadro…</p><small>{loadingTips[tipIndex]}</small></main>;
 
   return <main className="shell">
-    <header><div><span className="eyebrow">TRABALHO COM RITMO</span><h1>Kanban<span>Doro</span></h1><p>Organize a tarefa. Dê tempo ao que importa.</p></div>
+    <header><div><span className="eyebrow">TRABALHO COM RITMO</span><h1><span className="brand-kanban">Kanban</span><span className="brand-doro">Doro</span></h1><p>Organize a tarefa. Dê tempo ao que importa.</p></div>
       <div className="header-actions">
         <button className="ghost" onClick={() => chrome.runtime.sendMessage({ type: 'SHOW_TIMER' })}>Mostrar bolha</button>
         <button className="ghost" onClick={() => setShowConnections(true)}>Connections</button>
@@ -364,7 +364,7 @@ function App() {
     {proposal && <div className="backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setProposal(null); }}><section key={proposalRevision} className="dialog proposal-dialog" role="dialog" aria-modal="true" aria-label={proposalSource === 'ai' ? 'Revisar proposta da IA' : 'Criar tarefa'}>
       <header className="proposal-header"><span className="proposal-spark" aria-hidden="true">{proposalSource === 'ai' ? 'ϟ' : '+'}</span><div><span className="eyebrow">{proposalSource === 'manual' ? 'CRIAR TAREFA' : proposalRevision > 1 ? 'PROPOSTA ATUALIZADA' : 'NOVA PROPOSTA'}</span><h2>{proposalSource === 'manual' ? 'Uma tarefa do seu jeito' : proposalRevision > 1 ? 'Uma nova versão para você' : 'Uma ideia para começar'}</h2><p>Defina as etapas e escolha quando ela deve aparecer.</p></div><button className="close" onClick={() => setProposal(null)} aria-label="Fechar proposta">✕</button></header>
       {error && <p className="warning" role="alert">{error}</p>}
-      <div className="proposal-tabs" role="tablist" aria-label="Conteúdo da proposta"><button role="tab" aria-selected={proposalTab === 'details'} onClick={() => setProposalTab('details')}>Tarefa e etapas</button><button role="tab" aria-selected={proposalTab === 'attachments'} onClick={() => setProposalTab('attachments')}>Anexos <span>{proposal.attachments.length}</span></button></div>
+      <div className="proposal-tabs slide-tabs" role="tablist" aria-label="Conteúdo da proposta" style={{ '--tab-count': 2, '--active-index': proposalTab === 'details' ? 0 : 1 } as React.CSSProperties}><button role="tab" aria-selected={proposalTab === 'details'} onClick={() => setProposalTab('details')}>Tarefa e etapas</button><button role="tab" aria-selected={proposalTab === 'attachments'} onClick={() => setProposalTab('attachments')}>Anexos <span>{proposal.attachments.length}</span></button></div>
       {proposalTab === 'details' ? <div className="proposal-pane">
       <label>Nome <input className="task-name" value={proposal.name} onChange={e => setProposal({ ...proposal, name: e.target.value })} /></label>
       <label>Descrição <textarea value={proposal.description} onChange={e => setProposal({ ...proposal, description: e.target.value })} /></label>
@@ -396,7 +396,7 @@ function App() {
     </section></div>}
     {showSettings && <div className="backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setShowSettings(false); }}><section className="dialog" role="dialog" aria-modal="true" aria-label="Preferências">
       <button className="close" onClick={() => setShowSettings(false)}>✕</button><span className="eyebrow">PREFERÊNCIAS</span>
-      <div className="settings-tabs" role="tablist">
+      <div className="settings-tabs slide-tabs" role="tablist" style={{ '--tab-count': 2, '--active-index': settingsTab === 'breaks' ? 0 : 1 } as React.CSSProperties}>
         <button role="tab" aria-selected={settingsTab === 'breaks'} onClick={() => setSettingsTab('breaks')}>Pausas</button>
         <button role="tab" aria-selected={settingsTab === 'ai'} onClick={() => setSettingsTab('ai')}>IA</button>
       </div>
@@ -470,9 +470,11 @@ function App() {
       )}
     </section></div>}
     <nav className="board-controls" aria-label="Filtrar tarefas">
+      <div className="board-view-scroll"><div className="board-view-slider slide-tabs" style={{ '--tab-count': 5, '--active-index': showStatistics ? 0 : ['today', 'week', 'all', 'archive'].indexOf(view) + 1 } as React.CSSProperties}>
       <button aria-current={showStatistics ? 'page' : undefined} onClick={() => setShowStatistics(true)}>Estatísticas</button>
       {([['today', 'Hoje'], ['week', 'Esta semana'], ['all', 'Todas'], ['archive', 'Arquivo']] as const).map(([key, label]) =>
         <button key={key} aria-current={!showStatistics && view === key ? 'page' : undefined} onClick={() => { setView(key); setShowStatistics(false); }}>{label}</button>)}
+      </div></div>
       <button className="weekly-toggle" aria-expanded={weeklyOpen} onClick={() => setWeeklyOpen(open => !open)}>↻ Rotinas semanais</button>
     </nav>
     {weeklyOpen && <section className="weekly-panel" aria-label="Rotinas semanais"><div><span className="eyebrow">PLANEJAMENTO</span><h2>Programação da semana</h2><p>Escolha os dias na criação da tarefa. Cada ocorrência mantém seu próprio histórico.</p><button onClick={() => openManualDraft('', true)}>+ Nova tarefa programada</button></div>

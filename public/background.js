@@ -26,7 +26,7 @@ async function playAlert(variant) {
 // Content scripts display the floating timer and must not access saved API keys.
 chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (['GROQ_MODELS', 'GROQ_TASK_PROPOSAL', 'GROQ_CONNECTION_PROPOSAL', 'CHECK_ATTACHMENT', 'GOOGLE_STATUS', 'GOOGLE_CONNECT', 'GOOGLE_DISCONNECT', 'GMAIL_STATUS', 'GMAIL_CONNECT', 'GMAIL_SEARCH', 'GMAIL_DISCONNECT', 'CALENDAR_EVENTS', 'CALENDAR_CREATE', 'TASKS_LISTS', 'TASKS_ITEMS', 'TASKS_CREATE', 'GMAIL_SEND'].includes(message?.type)) {
+  if (['GROQ_MODELS', 'GROQ_TASK_PROPOSAL', 'GROQ_CONNECTION_PROPOSAL', 'CHECK_ATTACHMENT', 'GOOGLE_STATUS', 'GOOGLE_CONNECT', 'GOOGLE_DISCONNECT', 'GMAIL_STATUS', 'GMAIL_CONNECT', 'GMAIL_SEARCH', 'GMAIL_DISCONNECT', 'CALENDAR_EVENTS', 'CALENDAR_CREATE', 'CALENDAR_UPDATE', 'CALENDAR_DELETE', 'TASKS_LISTS', 'TASKS_ITEMS', 'TASKS_CREATE', 'TASKS_UPDATE', 'TASKS_DELETE', 'GMAIL_SEND'].includes(message?.type)) {
     if (_sender.url !== chrome.runtime.getURL('index.html')) return;
     (['GMAIL_', 'GOOGLE_', 'CALENDAR_', 'TASKS_'].some(prefix => message.type.startsWith(prefix)) ? handleGoogle(message) : handleGroq(message))
       .then(sendResponse).catch(error => sendResponse({ error: error.message }));
@@ -70,8 +70,8 @@ async function connectionRequest(path, session, options = {}) {
       signal: AbortSignal.timeout(25000)
     });
   } catch {
-    throw Error(options.method === 'POST' && path !== '/exchange'
-      ? 'Não houve confirmação da gravação. Confira no Google antes de tentar de novo para evitar duplicatas.'
+    throw Error(['POST', 'PATCH', 'DELETE'].includes(options.method) && path !== '/exchange'
+      ? 'Não houve confirmação da alteração. Confira o item no Google antes de tentar novamente.'
       : `Não foi possível acessar a API em ${apiUrl}. Confira se o backend está ativo e se a URL do build está correta.`);
   }
   if (!response.ok) {
@@ -136,7 +136,11 @@ async function handleGoogle(message) {
   if (message.type === 'TASKS_LISTS') return connectionRequest('/tasks/lists', session);
   if (message.type === 'TASKS_ITEMS') return connectionRequest(`/tasks/lists/${encodeURIComponent(String(message.listId || ''))}`, session);
   if (message.type === 'CALENDAR_CREATE') return connectionRequest('/calendar/events', session, { method: 'POST', body: JSON.stringify(message.draft) });
+  if (message.type === 'CALENDAR_UPDATE') return connectionRequest(`/calendar/events/${encodeURIComponent(String(message.eventId || ''))}`, session, { method: 'PATCH', body: JSON.stringify(message.draft) });
+  if (message.type === 'CALENDAR_DELETE') return connectionRequest(`/calendar/events/${encodeURIComponent(String(message.eventId || ''))}`, session, { method: 'DELETE' });
   if (message.type === 'TASKS_CREATE') return connectionRequest(`/tasks/lists/${encodeURIComponent(String(message.listId || ''))}`, session, { method: 'POST', body: JSON.stringify(message.draft) });
+  if (message.type === 'TASKS_UPDATE') return connectionRequest(`/tasks/lists/${encodeURIComponent(String(message.listId || ''))}/tasks/${encodeURIComponent(String(message.taskId || ''))}`, session, { method: 'PATCH', body: JSON.stringify(message.draft) });
+  if (message.type === 'TASKS_DELETE') return connectionRequest(`/tasks/lists/${encodeURIComponent(String(message.listId || ''))}/tasks/${encodeURIComponent(String(message.taskId || ''))}`, session, { method: 'DELETE' });
   if (message.type === 'GMAIL_SEND') return connectionRequest('/gmail/send', session, { method: 'POST', body: JSON.stringify(message.draft) });
   throw Error('Operação desconhecida.');
 }

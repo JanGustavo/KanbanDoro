@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import GmailConnection, { type GmailMessage } from './GmailConnection';
 import CalendarConnection, { type CalendarEvent } from './CalendarConnection';
 import TasksConnection, { type GoogleTask } from './TasksConnection';
@@ -54,7 +54,7 @@ export default function Connections({ onClose, onDraft }: { onClose: () => void;
         <button className="connection-disconnect" disabled={loading} onClick={() => void connect('GOOGLE_DISCONNECT')}>Desconectar conta Google</button></div>
         : <button className="primary connection-connect" disabled={loading} onClick={() => void connect('GOOGLE_CONNECT')}>{loading ? 'Conectando…' : 'Conectar conta Google'}</button>}
       {(notice || status?.error) && <p role="status" className="connection-notice">{notice || status?.error}</p>}
-      <div className="proposal-tabs" role="tablist" aria-label="Conexões Google">
+      <div className="proposal-tabs slide-tabs" role="tablist" aria-label="Conexões Google" style={{ '--tab-count': 3, '--active-index': ['gmail', 'calendar', 'tasks'].indexOf(tab) } as CSSProperties}>
         {(['gmail', 'calendar', 'tasks'] as const).map(key => <button key={key} role="tab" aria-selected={tab === key} onClick={() => { setTab(key); setProposal(null); setPrompt(''); }}>{key === 'gmail' ? 'Gmail' : key === 'calendar' ? 'Calendar' : 'Tasks'}</button>)}
       </div>
       {status?.connected && <section className="connection-assistant" aria-label="Assistente de propostas">
