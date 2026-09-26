@@ -107,7 +107,8 @@ chrome.runtime.onInstalled.addListener(reconcile);
 chrome.runtime.onStartup.addListener(reconcile);
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name !== 'timer-end') return;
-  const { session } = await chrome.storage.local.get('session');
+  const { session, soundEnabled } = await chrome.storage.local.get(['session', 'soundEnabled']);
+  if (!session || !['running', 'break'].includes(session.phase) || session.endsAt > Date.now()) return;
   const isBreak = session?.phase === 'break';
   reconcile();
   chrome.notifications.create({
@@ -115,9 +116,9 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     iconUrl: chrome.runtime.getURL('icon128.png'),
     title: 'KanbanDoro',
     message: isBreak ? 'Sua pausa acabou! Hora de voltar ao foco.' : 'O tempo do seu ciclo de foco acabou!',
-    silent: false
+    silent: true
   });
-  playAlert(isBreak ? 'break' : 'focus');
+  if (soundEnabled !== false) playAlert(isBreak ? 'break' : 'focus');
 });
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.session) {

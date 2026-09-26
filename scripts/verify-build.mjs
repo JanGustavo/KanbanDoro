@@ -9,4 +9,7 @@ for (const script of manifest.content_scripts.flatMap(entry => entry.js)) {
     throw new Error(`${path} deve ser independente e executável como script clássico`);
   }
 }
+for (const path of ['offscreen.html', 'offscreen.js']) {
+  if (!existsSync(`dist/${path}`)) throw new Error(`Aviso sonoro ausente: dist/${path}`);
+}
 console.log('Manifest V3: scripts de conteúdo independentes e presentes no dist.');

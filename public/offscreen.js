@@ -1,28 +1,27 @@
-function beep(freq, duration, delay) {
-  setTimeout(() => {
-    const ctx = new AudioContext();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.value = freq;
-    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
-    osc.connect(gain).connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + duration + 0.05);
-    osc.onended = () => ctx.close();
-  }, delay);
-}
-
-chrome.runtime.onMessage.addListener((message) => {
+// Audio lives in an offscreen document because Manifest V3 service workers have no AudioContext.
+let context;
+chrome.runtime.onMessage.addListener(message => {
   if (message?.type !== 'PLAY_ALERT') return;
-  if (message.variant === 'break') {
-    beep(660, 0.18, 0);
-    beep(880, 0.22, 220);
-  } else {
-    beep(520, 0.15, 0);
-    beep(520, 0.15, 200);
-    beep(760, 0.25, 400);
+  try {
+    context ||= new AudioContext();
+    void context.resume().then(() => {
+      const notes = message.variant === 'break' ? [523, 659] : [659, 523, 392];
+      const start = context.currentTime;
+      notes.forEach((frequency, index) => {
+        const oscillator = context.createOscillator();
+        const volume = context.createGain();
+        oscillator.type = 'sine';
+        oscillator.frequency.value = frequency;
+        const at = start + index * 0.19;
+        volume.gain.setValueAtTime(0.0001, at);
+        volume.gain.exponentialRampToValueAtTime(0.10, at + 0.025);
+        volume.gain.exponentialRampToValueAtTime(0.0001, at + 0.17);
+        oscillator.connect(volume).connect(context.destination);
+        oscillator.start(at);
+        oscillator.stop(at + 0.18);
+      });
+    }).catch(() => {});
+  } catch {
+    // System notification is still delivered if the audio device is unavailable.
   }
 });

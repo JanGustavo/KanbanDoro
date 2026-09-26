@@ -40,6 +40,12 @@ const columns: { id: Column; label: string }[] = [
 const initial: Data = { tasks: [], session: null, history: [], breakPreferences: ['Descanso', 'Água', 'Comida', 'Detox'] };
 const id = () => (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).substring(2) + Date.now().toString(36);
 const minutes = (seconds: number) => `${Math.floor(Math.max(0, seconds) / 60).toString().padStart(2, '0')}:${Math.floor(Math.max(0, seconds) % 60).toString().padStart(2, '0')}`;
+const loadingTips = [
+  'Um ciclo de foco pode cobrir a tarefa inteira ou apenas alguns slices.',
+  'Pausas também têm cronômetro. Escolha o tipo e a duração antes de começar.',
+  'Cinco tarefas em andamento são o limite sugerido para manter o foco.',
+  'O tempo registrado continua disponível quando você reabre o navegador.',
+];
 
 function App() {
   const [data, setData] = useState<Data>(initial);
@@ -60,6 +66,10 @@ function App() {
   const [aiSettings, setAiSettings] = useState<AISettings>({ provider: '', apiKey: '', model: '', customEndpoint: '' });
   const [aiKeyVisible, setAiKeyVisible] = useState(false);
   const [aiNotice, setAiNotice] = useState('');
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [tipsDismissed, setTipsDismissed] = useState(true);
+  const [tipIndex, setTipIndex] = useState(0);
+  const [toast, setToast] = useState('');
 
   useEffect(() => {
     chrome.storage.local.get(['tasks', 'session', 'history', 'breakPreferences']).then((stored) => {
@@ -67,9 +77,19 @@ function App() {
       setReady(true);
     });
     getAISettings().then(setAiSettings);
+    chrome.storage.local.get(['soundEnabled', 'tipsDismissed']).then(stored => {
+      setSoundEnabled(stored.soundEnabled !== false);
+      setTipsDismissed(stored.tipsDismissed === true);
+    });
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
+    const tips = window.setInterval(() => setTipIndex(i => (i + 1) % loadingTips.length), 6000);
+    return () => { window.clearInterval(timer); window.clearInterval(tips); };
   }, []);
+  useEffect(() => {
+    if (!toast) return;
+    const timeout = window.setTimeout(() => setToast(''), 4500);
+    return () => window.clearTimeout(timeout);
+  }, [toast]);
   useEffect(() => {
     if (ready) void chrome.storage.local.set(data);
   }, [data, ready]);
@@ -104,6 +124,7 @@ function App() {
     update(old => ({ ...old, tasks: [...old.tasks, item] }));
     setName('');
     setSelectedTask(item.id);
+    setToast('Tarefa criada. Abra os detalhes para definir tempo e slices.');
   }
   function startFocus(item: Task) {
     if (active) return setError('Encerre o ciclo ou descanso atual antes de iniciar outro.');
@@ -116,6 +137,7 @@ function App() {
         scope, selectedSliceIds: scope === 'whole' ? [] : selectedSlices, breakType: '', creditedSeconds: 0, excludedSeconds: 0 },
     }));
     setError('');
+    setToast('Ciclo iniciado. O cronômetro segue mesmo se você fechar o quadro.');
   }
   function credit(old: Data, kind: string): Data {
     const s = old.session;
@@ -136,6 +158,7 @@ function App() {
   }
   function stopFocus(kind: 'completed' | 'failed' | 'interrupted') {
     if (!active) return;
+    setToast(kind === 'completed' ? 'Escopo concluído. Registre uma pausa ou finalize o ciclo.' : kind === 'failed' ? 'Tentativa registrada. A tarefa foi movida para Em atraso.' : 'Ciclo interrompido. O tempo usado foi registrado.');
     update(old => {
       const credited = credit(old, kind);
       const tasks = credited.tasks.map(t => {
@@ -158,8 +181,9 @@ function App() {
     const t = Date.now();
     update(old => ({ ...old, session: { ...active, phase: 'break', breakType, startedAt: t,
       endsAt: t + Math.max(1, breakMinutes) * 60000 } }));
+    setToast(`Pausa de ${breakMinutes} min iniciada.`);
   }
-  if (!ready) return <main>Carregando KanbanDoro…</main>;
+  if (!ready) return <main className="loading" role="status"><h1>KanbanDoro</h1><p>Preparando seu quadro…</p><small>{loadingTips[tipIndex]}</small></main>;
 
   return <main className="shell">
     <header><div><span className="eyebrow">TRABALHO COM RITMO</span><h1>Kanban<span>Doro</span></h1><p>Organize a tarefa. Dê tempo ao que importa.</p></div>
@@ -170,6 +194,11 @@ function App() {
       </div>
     </header>
     {error && <p className="warning" role="alert">{error} <button onClick={() => setError('')}>Fechar</button></p>}
+    {toast && <div className="toast" role="status">{toast}<button aria-label="Dispensar aviso" onClick={() => setToast('')}>✕</button></div>}
+    {!tipsDismissed && data.tasks.length === 0 && <aside className="first-use" aria-label="Primeiros passos">
+      <span className="eyebrow">PRIMEIROS PASSOS</span><p>Crie uma tarefa, ajuste o tempo e os slices nos detalhes e inicie seu primeiro ciclo de foco.</p>
+      <button onClick={() => { setTipsDismissed(true); void chrome.storage.local.set({ tipsDismissed: true }); }}>Entendi</button>
+    </aside>}
     {active && <section className="focus" aria-label="Ciclo atual">
       <div><span className="eyebrow">{phase === 'break' || phase === 'break-done' ? active.breakType : 'FOCO EM ANDAMENTO'}</span>
         <h2>{activeTask?.name ?? 'Tarefa removida'}</h2><small>{active.scope === 'whole' ? 'Tarefa inteira' : `${active.selectedSliceIds.length} slices • tempo compartilhado`}</small></div>
@@ -196,6 +225,7 @@ function App() {
       </div>
       {settingsTab === 'breaks' && (
         <>
+          <label className="sound-option"><input type="checkbox" checked={soundEnabled} onChange={e => { setSoundEnabled(e.target.checked); void chrome.storage.local.set({ soundEnabled: e.target.checked }); }} /> Tocar aviso ao terminar foco ou pausa</label>
           <h3>Categorias de pausa</h3>
           <ul className="break-prefs-list">
             {data.breakPreferences.map(pref => <li key={pref}><span>{pref}</span> <button onClick={() => update(old => ({ ...old, breakPreferences: old.breakPreferences.filter(p => p !== pref) }))}>Remover</button></li>)}
