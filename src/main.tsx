@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import './style.css';
 import { getAISettings, saveAISettings, clearAISettings, AI_PROVIDERS, type AISettings, type AIProvider } from './aiSettings';
 import { dateFromDay, isVisible, localDay, materializeToday, weekEnd, type ViewMode, type WeeklyPlan } from './schedule';
-import GmailConnection, { type GmailMessage } from './GmailConnection';
+import Connections from './Connections';
 
 type Column = 'todo' | 'doing' | 'late' | 'done';
 type Slice = { id: string; name: string; done: boolean };
@@ -41,7 +41,7 @@ type Session = {
   excludedSeconds: number;
 };
 type HistoryEntry = { id: string; taskId: string; kind: string; seconds: number; at: number; sliceIds: string[] };
-type Proposal = { name: string; description: string; difficulty: 1 | 2 | 3; estimate: number; slices: string[]; attachments: Attachment[] };
+type Proposal = { name: string; description: string; difficulty: 1 | 2 | 3; estimate: number; slices: string[]; attachments: Attachment[]; deadline?: string };
 type ScheduleChoice = { mode: 'once' | 'selected-days' | 'weekly'; startDate: string; weekdays: number[] };
 type GroqModel = { id: string; name: string };
 type Data = { tasks: Task[]; session: Session | null; history: HistoryEntry[]; breakPreferences: string[]; weeklyPlans: WeeklyPlan[] };
@@ -178,10 +178,10 @@ function App() {
     setSchedule({ mode: recurring ? 'weekly' : 'once', startDate: localDay(new Date()), weekdays: [1, 2, 3, 4, 5] });
     setProposal({ name: title, description: '', difficulty: 1, estimate: 25, slices: [], attachments: [] });
   }
-  function draftFromEmail(message: GmailMessage) {
-    openManualDraft(message.subject);
-    setProposal(previous => previous && ({ ...previous, description: `Mensagem de: ${message.from}\n\n${message.snippet}` }));
-    setName(message.subject);
+  function draftFromConnection(draft: { name: string; description: string; deadline?: string }) {
+    openManualDraft(draft.name);
+    setProposal(previous => previous && ({ ...previous, description: draft.description, deadline: draft.deadline }));
+    setName(draft.name);
     setShowConnections(false);
   }
   function deleteTask(item: Task) {
@@ -258,7 +258,7 @@ function App() {
       return setToast(schedule.mode === 'weekly' ? 'Tarefa programada para repetir toda semana.' : 'Tarefa programada apenas para os dias escolhidos desta semana.');
     }
     const item: Task = { id: id(), name: proposal.name.trim(), description: proposal.description, difficulty: proposal.difficulty, createdAt: Date.now(),
-      estimate: proposal.estimate, deadline: '', column: 'todo', failures: 0, focusSeconds: 0,
+      estimate: proposal.estimate, deadline: proposal.deadline ?? '', column: 'todo', failures: 0, focusSeconds: 0,
       slices: proposal.slices.filter(s => s.trim()).map(s => ({ id: id(), name: s.trim(), done: false })),
       attachments };
     update(old => ({ ...old, tasks: [...old.tasks, item] }));
@@ -335,7 +335,7 @@ function App() {
     </header>
     {error && <p className="warning" role="alert">{error} <button onClick={() => setError('')}>Fechar</button></p>}
     {toast && <div className="toast" role="status">{toast}<button aria-label="Dispensar aviso" onClick={() => setToast('')}>✕</button></div>}
-    {showConnections && <GmailConnection onClose={() => setShowConnections(false)} onDraft={draftFromEmail} />}
+    {showConnections && <Connections onClose={() => setShowConnections(false)} onDraft={draftFromConnection} />}
     {!tipsDismissed && data.tasks.length === 0 && <aside className="first-use" aria-label="Primeiros passos">
       <span className="eyebrow">PRIMEIROS PASSOS</span><p>Crie uma tarefa, ajuste o tempo e os slices nos detalhes e inicie seu primeiro ciclo de foco.</p>
       <button onClick={() => { setTipsDismissed(true); void chrome.storage.local.set({ tipsDismissed: true }); }}>Entendi</button>

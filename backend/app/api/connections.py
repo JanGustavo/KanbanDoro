@@ -1,0 +1,196 @@
+import hashlib
+import secrets
+import time
+from datetime import datetime
+from urllib.parse import quote
+
+import httpx
+from cryptography.fernet import Fernet
+from fastapi import APIRouter, Depends, Header, HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config import get_settings
+from app.core.database import get_db
+from app.models.google_connection_model import GoogleConnection
+
+router = APIRouter(prefix="/connections/google", tags=["connections"])
+SCOPES = {
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/calendar.readonly",
+    "https://www.googleapis.com/auth/tasks.readonly",
+}
+
+
+class ExchangeRequest(BaseModel):
+    code: str = Field(min_length=4, max_length=2048)
+    code_verifier: str = Field(pattern=r"^[A-Za-z0-9._~-]{43,128}$")
+    redirect_uri: str
+
+
+def config():
+    settings = get_settings()
+    if not all((settings.google_client_id, settings.google_client_secret,
+                settings.google_extension_id or settings.google_extension_ids, settings.google_token_encryption_key)):
+        raise HTTPException(503, "Google OAuth não configurado no servidor")
+    return settings
+
+
+def cipher() -> Fernet:
+    try:
+        return Fernet(config().google_token_encryption_key.encode())
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(503, "Chave de criptografia inválida") from exc
+
+
+async def connected(db: AsyncSession, authorization: str | None) -> GoogleConnection:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Conexão ausente")
+    token = authorization.removeprefix("Bearer ")
+    if len(token) != 64:
+        raise HTTPException(401, "Conexão inválida")
+    digest = hashlib.sha256(token.encode()).hexdigest()
+    record = await db.scalar(select(GoogleConnection).where(GoogleConnection.session_hash == digest))
+    if record is None:
+        raise HTTPException(401, "Conexão expirada ou desconectada")
+    return record
+
+
+async def google_access(record: GoogleConnection, db: AsyncSession) -> str:
+    if record.expires_at > time.time() + 90:
+        return cipher().decrypt(record.access_token.encode()).decode()
+    settings = config()
+    async with httpx.AsyncClient(timeout=15) as client:
+        response = await client.post("https://oauth2.googleapis.com/token", data={
+            "client_id": settings.google_client_id,
+            "client_secret": settings.google_client_secret,
+            "refresh_token": cipher().decrypt(record.encrypted_refresh_token.encode()).decode(),
+            "grant_type": "refresh_token",
+        })
+    if response.status_code != 200:
+        raise HTTPException(401, "Autorização Google expirada. Conecte novamente.")
+    data = response.json()
+    record.access_token = cipher().encrypt(data["access_token"].encode()).decode()
+    record.expires_at = int(time.time()) + int(data.get("expires_in", 3600))
+    await db.commit()
+    return record.access_token
+
+
+async def google_get(record: GoogleConnection, db: AsyncSession, url: str, params: dict | None = None) -> dict:
+    token = await google_access(record, db)
+    async with httpx.AsyncClient(timeout=15) as client:
+        response = await client.get(url, params=params, headers={"Authorization": f"Bearer {token}"})
+    if response.status_code in (401, 403):
+        raise HTTPException(401, "Google recusou o acesso. Reconecte a conta e confira as permissões.")
+    if response.status_code != 200:
+        raise HTTPException(502, f"Falha na consulta ao Google ({response.status_code})")
+    return response.json()
+
+
+@router.post("/exchange")
+async def exchange(payload: ExchangeRequest, db: AsyncSession = Depends(get_db)):
+    settings = config()
+    redirects = {f"https://{extension_id}.chromiumapp.org/" for extension_id in
+                 [settings.google_extension_id, *settings.google_extension_ids] if extension_id}
+    if payload.redirect_uri not in redirects:
+        raise HTTPException(400, "Redirect URI não autorizado")
+    async with httpx.AsyncClient(timeout=15) as client:
+        response = await client.post("https://oauth2.googleapis.com/token", data={
+            "code": payload.code,
+            "code_verifier": payload.code_verifier,
+            "client_id": settings.google_client_id,
+            "client_secret": settings.google_client_secret,
+            "redirect_uri": payload.redirect_uri,
+            "grant_type": "authorization_code",
+        })
+    if response.status_code != 200:
+        raise HTTPException(400, "O Google recusou o código de autorização")
+    data = response.json()
+    scopes = set(data.get("scope", "").split())
+    if not scopes.issuperset(SCOPES):
+        raise HTTPException(400, "Autorize Gmail, Agenda e Tarefas para prosseguir")
+    if not data.get("refresh_token"):
+        raise HTTPException(400, "Google não devolveu refresh token. Remova o acesso anterior e autorize novamente.")
+    session = secrets.token_hex(32)
+    db.add(GoogleConnection(
+        session_hash=hashlib.sha256(session.encode()).hexdigest(),
+        encrypted_refresh_token=cipher().encrypt(data["refresh_token"].encode()).decode(),
+        scopes=" ".join(sorted(scopes)),
+        access_token=cipher().encrypt(data["access_token"].encode()).decode(),
+        expires_at=int(time.time()) + int(data.get("expires_in", 3600)),
+    ))
+    await db.commit()
+    return {"session": session}
+
+
+@router.get("/status")
+async def status(authorization: str | None = Header(default=None), db: AsyncSession = Depends(get_db)):
+    record = await connected(db, authorization)
+    return {"connected": True, "scopes": record.scopes.split()}
+
+
+@router.delete("")
+async def disconnect(authorization: str | None = Header(default=None), db: AsyncSession = Depends(get_db)):
+    record = await connected(db, authorization)
+    refresh = cipher().decrypt(record.encrypted_refresh_token.encode()).decode()
+    async with httpx.AsyncClient(timeout=10) as client:
+        try:
+            await client.post("https://oauth2.googleapis.com/revoke", data={"token": refresh})
+        except httpx.HTTPError:
+            pass
+    await db.delete(record)
+    await db.commit()
+    return {"connected": False}
+
+
+@router.get("/gmail/messages")
+async def gmail_messages(q: str = "newer_than:7d", authorization: str | None = Header(default=None), db: AsyncSession = Depends(get_db)):
+    record = await connected(db, authorization)
+    base = "https://gmail.googleapis.com/gmail/v1/users/me/messages"
+    page = await google_get(record, db, base, {"q": q[:200], "maxResults": 10})
+    result = []
+    for item in page.get("messages", [])[:10]:
+        if not str(item.get("id", "")).isalnum():
+            continue
+        detail = await google_get(record, db, f"{base}/{item['id']}", {
+            "format": "metadata", "metadataHeaders": ["Subject", "From", "Date"]})
+        headers = {h["name"].lower(): h.get("value", "") for h in detail.get("payload", {}).get("headers", [])}
+        result.append({"id": item["id"], "subject": headers.get("subject", "(Sem assunto)")[:180],
+                       "from": headers.get("from", "")[:180], "date": headers.get("date", "")[:100],
+                       "snippet": detail.get("snippet", "")[:350]})
+    return {"messages": result}
+
+
+@router.get("/calendar/events")
+async def calendar_events(start: datetime, end: datetime, authorization: str | None = Header(default=None), db: AsyncSession = Depends(get_db)):
+    if not start.tzinfo or not end.tzinfo or not (start < end) or (end - start).days > 31:
+        raise HTTPException(400, "Escolha um período de até 31 dias com fuso horário")
+    record = await connected(db, authorization)
+    data = await google_get(record, db, "https://www.googleapis.com/calendar/v3/calendars/primary/events", {
+        "timeMin": start.isoformat(), "timeMax": end.isoformat(), "singleEvents": "true",
+        "orderBy": "startTime", "maxResults": 50})
+    return {"events": [{"id": e.get("id"), "title": e.get("summary", "(Sem título)")[:180],
+                         "description": e.get("description", "")[:2000],
+                         "start": e.get("start", {}).get("dateTime", e.get("start", {}).get("date", "")),
+                         "end": e.get("end", {}).get("dateTime", e.get("end", {}).get("date", ""))}
+                        for e in data.get("items", []) if e.get("id") and e.get("status") != "cancelled"]}
+
+
+@router.get("/tasks/lists")
+async def task_lists(authorization: str | None = Header(default=None), db: AsyncSession = Depends(get_db)):
+    record = await connected(db, authorization)
+    data = await google_get(record, db, "https://tasks.googleapis.com/tasks/v1/users/@me/lists", {"maxResults": 100})
+    return {"lists": [{"id": item["id"], "title": item.get("title", "")} for item in data.get("items", [])]}
+
+
+@router.get("/tasks/lists/{list_id}")
+async def tasks_in_list(list_id: str, authorization: str | None = Header(default=None), db: AsyncSession = Depends(get_db)):
+    if len(list_id) > 256 or not all(char.isascii() and (char.isalnum() or char in "_-+=:@") for char in list_id):
+        raise HTTPException(400, "Lista inválida")
+    record = await connected(db, authorization)
+    data = await google_get(record, db, f"https://tasks.googleapis.com/tasks/v1/lists/{quote(list_id, safe='')}/tasks", {
+        "maxResults": 100, "showCompleted": "false"})
+    return {"tasks": [{"id": item["id"], "title": item.get("title", "(Sem título)")[:180],
+                       "notes": item.get("notes", "")[:2000], "due": item.get("due", "")}
+                      for item in data.get("items", []) if item.get("id") and item.get("status") != "completed"]}

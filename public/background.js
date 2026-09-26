@@ -26,9 +26,9 @@ async function playAlert(variant) {
 // Content scripts display the floating timer and must not access saved API keys.
 chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (['GROQ_MODELS', 'GROQ_TASK_PROPOSAL', 'CHECK_ATTACHMENT', 'GMAIL_STATUS', 'GMAIL_CONNECT', 'GMAIL_SEARCH', 'GMAIL_DISCONNECT'].includes(message?.type)) {
+  if (['GROQ_MODELS', 'GROQ_TASK_PROPOSAL', 'CHECK_ATTACHMENT', 'GOOGLE_STATUS', 'GOOGLE_CONNECT', 'GOOGLE_DISCONNECT', 'GMAIL_STATUS', 'GMAIL_CONNECT', 'GMAIL_SEARCH', 'GMAIL_DISCONNECT', 'CALENDAR_EVENTS', 'TASKS_LISTS', 'TASKS_ITEMS'].includes(message?.type)) {
     if (_sender.url !== chrome.runtime.getURL('index.html')) return;
-    (message.type.startsWith('GMAIL_') ? handleGmail(message) : handleGroq(message))
+    (['GMAIL_', 'GOOGLE_', 'CALENDAR_', 'TASKS_'].some(prefix => message.type.startsWith(prefix)) ? handleGoogle(message) : handleGroq(message))
       .then(sendResponse).catch(error => sendResponse({ error: error.message }));
     return true;
   }
@@ -45,58 +45,83 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 const GROQ_URL = 'https://api.groq.com/openai/v1';
-const GMAIL_URL = 'https://gmail.googleapis.com/gmail/v1/users/me';
-const GMAIL_STATE = 'gmail_connected';
-
-async function gmailToken(interactive) {
-  const result = await chrome.identity.getAuthToken({ interactive });
-  if (!result?.token) throw Error('Não foi possível autorizar o Gmail. Tente conectar novamente.');
-  return result.token;
+const GOOGLE_SESSION = 'google_connection_session';
+const GOOGLE_SCOPES = [
+  'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/calendar.readonly',
+  'https://www.googleapis.com/auth/tasks.readonly'
+];
+let connectionConfig;
+async function getConnectionConfig() {
+  if (!connectionConfig) connectionConfig = fetch(chrome.runtime.getURL('connections-config.json')).then(response => response.json());
+  return connectionConfig;
 }
-
-async function gmailFetch(path, token) {
-  const response = await fetch(GMAIL_URL + path, {
-    headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000)
+function base64url(bytes) {
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+async function connectionRequest(path, session, options = {}) {
+  const { apiUrl } = await getConnectionConfig();
+  const response = await fetch(apiUrl + '/connections/google' + path, {
+    ...options, headers: { 'Content-Type': 'application/json', ...(session ? { Authorization: `Bearer ${session}` } : {}) },
+    signal: AbortSignal.timeout(25000)
   });
-  if (response.status === 401 || response.status === 403) {
-    await chrome.identity.removeCachedAuthToken({ token });
-    throw Error('A autorização do Gmail expirou ou não permite ler mensagens. Conecte novamente.');
+  if (!response.ok) {
+    if (response.status === 401) {
+      await chrome.storage.local.remove(GOOGLE_SESSION);
+      throw Error('Conexão expirada. Conecte sua conta Google novamente.');
+    }
+    const detail = await response.json().catch(() => ({}));
+    throw Error(typeof detail.detail === 'string' ? detail.detail : `Servidor indisponível (${response.status}).`);
   }
-  if (!response.ok) throw Error(`Não foi possível consultar o Gmail (${response.status}).`);
   return response.json();
 }
-
-async function handleGmail(message) {
-  const configured = Boolean(chrome.runtime.getManifest().oauth2?.client_id);
-  if (message.type === 'GMAIL_STATUS') {
-    const state = await chrome.storage.local.get(GMAIL_STATE);
-    return { configured, connected: configured && state[GMAIL_STATE] === true };
+async function connectGoogle() {
+  const { clientId } = await getConnectionConfig();
+  const redirectUri = chrome.identity.getRedirectURL();
+  const verifier = base64url(crypto.getRandomValues(new Uint8Array(32)));
+  const challenge = base64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))));
+  const state = base64url(crypto.getRandomValues(new Uint8Array(32)));
+  const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+  Object.entries({ client_id: clientId, redirect_uri: redirectUri, response_type: 'code',
+    scope: GOOGLE_SCOPES.join(' '), access_type: 'offline', prompt: 'consent',
+    code_challenge: challenge, code_challenge_method: 'S256', state }).forEach(([key, value]) => url.searchParams.set(key, value));
+  const finalUrl = await chrome.identity.launchWebAuthFlow({ url: url.href, interactive: true });
+  if (!finalUrl || !finalUrl.startsWith(redirectUri + '?')) throw Error('Redirecionamento OAuth inesperado.');
+  const params = new URL(finalUrl).searchParams;
+  if (params.get('state') !== state) throw Error('Estado OAuth inválido. Tente novamente.');
+  if (params.has('error')) throw Error('Autorização Google cancelada ou recusada.');
+  const code = params.get('code');
+  if (!code) throw Error('Google não retornou o código de autorização.');
+  const result = await connectionRequest('/exchange', null, {
+    method: 'POST', body: JSON.stringify({ code, code_verifier: verifier, redirect_uri: redirectUri })
+  });
+  await chrome.storage.local.set({ [GOOGLE_SESSION]: result.session });
+  return { configured: true, connected: true };
+}
+async function handleGoogle(message) {
+  const { clientId, apiUrl } = await getConnectionConfig();
+  const configured = Boolean(clientId && apiUrl);
+  if (message.type === 'GOOGLE_STATUS' || message.type === 'GMAIL_STATUS') {
+    const saved = await chrome.storage.local.get(GOOGLE_SESSION);
+    if (!configured || !saved[GOOGLE_SESSION]) return { configured, connected: false };
+    try { await connectionRequest('/status', saved[GOOGLE_SESSION]); return { configured, connected: true }; }
+    catch { return { configured, connected: false }; }
   }
-  if (!configured) throw Error('Configure o cliente OAuth do Google na compilação da extensão.');
-  if (message.type === 'GMAIL_CONNECT') {
-    const token = await gmailToken(true);
-    await gmailFetch('/profile', token);
-    await chrome.storage.local.set({ [GMAIL_STATE]: true });
-    return { configured: true, connected: true };
+  if (!configured) throw Error('Configure o cliente OAuth Web e a URL do backend para Connections.');
+  if (message.type === 'GOOGLE_CONNECT' || message.type === 'GMAIL_CONNECT') return connectGoogle();
+  const saved = await chrome.storage.local.get(GOOGLE_SESSION);
+  const session = saved[GOOGLE_SESSION];
+  if (message.type === 'GOOGLE_DISCONNECT' || message.type === 'GMAIL_DISCONNECT') {
+    if (session) await connectionRequest('', session, { method: 'DELETE' });
+    await chrome.storage.local.remove(GOOGLE_SESSION);
+    return { configured, connected: false };
   }
-  const state = await chrome.storage.local.get(GMAIL_STATE);
-  if (message.type === 'GMAIL_DISCONNECT') {
-    await chrome.storage.local.set({ [GMAIL_STATE]: false });
-    await chrome.identity.clearAllCachedAuthTokens();
-    return { configured: true, connected: false };
-  }
-  if (state[GMAIL_STATE] !== true) throw Error('Conecte o Gmail antes de consultar mensagens.');
-  if (message.type !== 'GMAIL_SEARCH') throw Error('Operação desconhecida.');
-  const query = String(message.query || '').trim().slice(0, 200) || 'newer_than:7d';
-  const token = await gmailToken(false);
-  const page = await gmailFetch(`/messages?maxResults=10&q=${encodeURIComponent(query)}`, token);
-  const messages = await Promise.all((page.messages || []).slice(0, 10).map(async item => {
-    const detail = await gmailFetch(`/messages/${encodeURIComponent(item.id)}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date`, token);
-    const header = key => detail.payload?.headers?.find(h => h.name?.toLowerCase() === key)?.value || '';
-    return { id: String(detail.id), subject: header('subject').slice(0, 180) || '(Sem assunto)',
-      from: header('from').slice(0, 180), date: header('date').slice(0, 100), snippet: String(detail.snippet || '').slice(0, 350) };
-  }));
-  return { messages };
+  if (!session) throw Error('Conecte sua conta Google antes de consultar os dados.');
+  if (message.type === 'GMAIL_SEARCH') return connectionRequest(`/gmail/messages?q=${encodeURIComponent(String(message.query || '').slice(0, 200))}`, session);
+  if (message.type === 'CALENDAR_EVENTS') return connectionRequest(`/calendar/events?start=${encodeURIComponent(message.start)}&end=${encodeURIComponent(message.end)}`, session);
+  if (message.type === 'TASKS_LISTS') return connectionRequest('/tasks/lists', session);
+  if (message.type === 'TASKS_ITEMS') return connectionRequest(`/tasks/lists/${encodeURIComponent(String(message.listId || ''))}`, session);
+  throw Error('Operação desconhecida.');
 }
 function safeAttachmentUrl(value) {
   try {

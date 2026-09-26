@@ -21,6 +21,9 @@ jobs:
       - name: Validar versão da tag
         run: node -e "const fs=require('fs');const v=process.env.GITHUB_REF_NAME.slice(1);for(const p of ['package.json','package-lock.json','public/manifest.json'])if(JSON.parse(fs.readFileSync(p)).version!==v)throw Error(p+' não corresponde à tag '+v)"
       - run: npm run build
+        env:
+          KANBANDORO_GOOGLE_CLIENT_ID: ${{ vars.KANBANDORO_GOOGLE_CLIENT_ID }}
+          KANBANDORO_API_URL: ${{ vars.KANBANDORO_API_URL }}
       - run: npm test
       - name: Empacotar extensão
         run: zip -qr "KanbanDoro-${GITHUB_REF_NAME}.zip" dist

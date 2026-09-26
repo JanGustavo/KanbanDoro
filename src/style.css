@@ -757,6 +757,11 @@ header p {
 .task-actions .delete-task { background: #692c37; color: #ffcbcb; }
 .task-actions .delete-task:hover { background: #8a3948; }
 .connection-dialog { max-width: 660px; max-height: min(86vh, 850px); overflow-y: auto; }
+.connection-dialog .proposal-tabs { margin: 16px 0; }
+.connection-pane > p { color: #cbb9ac; }
+.connection-dates { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; }
+.connection-dates label { display: grid; gap: 5px; flex: 1; }
+.connection-dates button { white-space: nowrap; }
 .connection-dialog > p { color: #cbb9ac; line-height: 1.5; }
 .connection-note { display: grid; gap: 9px; padding: 16px; border: 1px solid #b68451; border-radius: 12px; overflow-wrap: anywhere; }
 .connection-note code { color: #f3ca88; }
