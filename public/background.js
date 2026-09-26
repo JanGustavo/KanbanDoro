@@ -26,9 +26,10 @@ async function playAlert(variant) {
 // Content scripts display the floating timer and must not access saved API keys.
 chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (['GROQ_MODELS', 'GROQ_TASK_PROPOSAL', 'CHECK_ATTACHMENT'].includes(message?.type)) {
+  if (['GROQ_MODELS', 'GROQ_TASK_PROPOSAL', 'CHECK_ATTACHMENT', 'GMAIL_STATUS', 'GMAIL_CONNECT', 'GMAIL_SEARCH', 'GMAIL_DISCONNECT'].includes(message?.type)) {
     if (_sender.url !== chrome.runtime.getURL('index.html')) return;
-    handleGroq(message).then(sendResponse).catch(error => sendResponse({ error: error.message }));
+    (message.type.startsWith('GMAIL_') ? handleGmail(message) : handleGroq(message))
+      .then(sendResponse).catch(error => sendResponse({ error: error.message }));
     return true;
   }
   if (message?.type === 'GET_TIMER') {
@@ -44,6 +45,59 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 const GROQ_URL = 'https://api.groq.com/openai/v1';
+const GMAIL_URL = 'https://gmail.googleapis.com/gmail/v1/users/me';
+const GMAIL_STATE = 'gmail_connected';
+
+async function gmailToken(interactive) {
+  const result = await chrome.identity.getAuthToken({ interactive });
+  if (!result?.token) throw Error('Não foi possível autorizar o Gmail. Tente conectar novamente.');
+  return result.token;
+}
+
+async function gmailFetch(path, token) {
+  const response = await fetch(GMAIL_URL + path, {
+    headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000)
+  });
+  if (response.status === 401 || response.status === 403) {
+    await chrome.identity.removeCachedAuthToken({ token });
+    throw Error('A autorização do Gmail expirou ou não permite ler mensagens. Conecte novamente.');
+  }
+  if (!response.ok) throw Error(`Não foi possível consultar o Gmail (${response.status}).`);
+  return response.json();
+}
+
+async function handleGmail(message) {
+  const configured = Boolean(chrome.runtime.getManifest().oauth2?.client_id);
+  if (message.type === 'GMAIL_STATUS') {
+    const state = await chrome.storage.local.get(GMAIL_STATE);
+    return { configured, connected: configured && state[GMAIL_STATE] === true };
+  }
+  if (!configured) throw Error('Configure o cliente OAuth do Google na compilação da extensão.');
+  if (message.type === 'GMAIL_CONNECT') {
+    const token = await gmailToken(true);
+    await gmailFetch('/profile', token);
+    await chrome.storage.local.set({ [GMAIL_STATE]: true });
+    return { configured: true, connected: true };
+  }
+  const state = await chrome.storage.local.get(GMAIL_STATE);
+  if (message.type === 'GMAIL_DISCONNECT') {
+    await chrome.storage.local.set({ [GMAIL_STATE]: false });
+    await chrome.identity.clearAllCachedAuthTokens();
+    return { configured: true, connected: false };
+  }
+  if (state[GMAIL_STATE] !== true) throw Error('Conecte o Gmail antes de consultar mensagens.');
+  if (message.type !== 'GMAIL_SEARCH') throw Error('Operação desconhecida.');
+  const query = String(message.query || '').trim().slice(0, 200) || 'newer_than:7d';
+  const token = await gmailToken(false);
+  const page = await gmailFetch(`/messages?maxResults=10&q=${encodeURIComponent(query)}`, token);
+  const messages = await Promise.all((page.messages || []).slice(0, 10).map(async item => {
+    const detail = await gmailFetch(`/messages/${encodeURIComponent(item.id)}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date`, token);
+    const header = key => detail.payload?.headers?.find(h => h.name?.toLowerCase() === key)?.value || '';
+    return { id: String(detail.id), subject: header('subject').slice(0, 180) || '(Sem assunto)',
+      from: header('from').slice(0, 180), date: header('date').slice(0, 100), snippet: String(detail.snippet || '').slice(0, 350) };
+  }));
+  return { messages };
+}
 function safeAttachmentUrl(value) {
   try {
     const url = new URL(value);

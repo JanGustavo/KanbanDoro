@@ -11,11 +11,14 @@ let session = { phase: 'running', endsAt: Date.now() + 60_000 };
 let alerts = 0;
 let notifications = 0;
 let aiSettings = { provider: 'groq', apiKey: 'test-only', model: 'openai/gpt-oss-20b' };
+let gmailConnected = false;
+let tokenCalls = 0;
 const requests = [];
 const chrome = {
   action: { onClicked: { addListener(fn) { listeners.click = fn; } }, setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {} },
-  runtime: { getURL: path => path, sendMessage: async message => { if (message.type === 'PLAY_ALERT') alerts++; }, onInstalled: { addListener() {} }, onStartup: { addListener() {} }, onMessage: { addListener(fn) { listeners.message = fn; } } },
-  storage: { local: { setAccessLevel: async () => {}, get: async () => ({ session, soundEnabled, kanbandoro_ai_settings: aiSettings }) }, onChanged: { addListener() {} } },
+  runtime: { getURL: path => path, getManifest: () => ({ oauth2: { client_id: 'test.apps.googleusercontent.com' } }), sendMessage: async message => { if (message.type === 'PLAY_ALERT') alerts++; }, onInstalled: { addListener() {} }, onStartup: { addListener() {} }, onMessage: { addListener(fn) { listeners.message = fn; } } },
+  identity: { getAuthToken: async ({ interactive }) => { tokenCalls++; assert.equal(typeof interactive, 'boolean'); return { token: 'test-gmail-token' }; }, removeCachedAuthToken: async () => {}, clearAllCachedAuthTokens: async () => {} },
+  storage: { local: { setAccessLevel: async () => {}, get: async () => ({ session, soundEnabled, kanbandoro_ai_settings: aiSettings, gmail_connected: gmailConnected }), set: async item => { gmailConnected = item.gmail_connected; } }, onChanged: { addListener() {} } },
   tabs: { query: async () => [{ id: 42 }], update: async () => {}, create: async () => {}, onActivated: { addListener() {} },
     async sendMessage(id, message) {
       assert.equal(id, 42);
@@ -36,6 +39,12 @@ const chrome = {
 vm.runInNewContext(readFileSync('dist/background.js', 'utf8'), { chrome, AbortSignal, URL,
   fetch: async (url, options) => {
     requests.push({ url, options });
+    if (url.includes('gmail.googleapis.com')) {
+      assert.equal(options.headers.Authorization, 'Bearer test-gmail-token');
+      if (url.endsWith('/profile')) return { ok: true, json: async () => ({ emailAddress: 'test@example.org' }) };
+      if (url.includes('/messages?')) return { ok: true, json: async () => ({ messages: [{ id: 'msg-1' }] }) };
+      return { ok: true, json: async () => ({ id: 'msg-1', snippet: 'Resumo', payload: { headers: [{ name: 'Subject', value: 'Assunto' }, { name: 'From', value: 'Remetente' }] } }) };
+    }
     if (url.endsWith('/models')) return { ok: true, json: async () => ({ data: [
       { id: 'openai/gpt-oss-20b', name: 'GPT OSS 20B', active: true, input_modalities: ['text'], output_modalities: ['text'], supported_features: ['structured_outputs'] },
       { id: 'whisper', active: true, input_modalities: ['audio'], output_modalities: ['transcription'] },
@@ -49,6 +58,16 @@ const aiMessage = (message, senderUrl = 'index.html') => new Promise(resolve => 
   if (!accepted) resolve(null);
 });
 assert.equal(await aiMessage({ type: 'GROQ_MODELS' }, 'https://example.com'), null, 'content scripts must not call the AI API');
+assert.equal(await aiMessage({ type: 'GMAIL_CONNECT' }, 'https://example.com'), null, 'content scripts must not access Gmail');
+assert.equal(tokenCalls, 0);
+assert.equal((await aiMessage({ type: 'GMAIL_STATUS' })).connected, false);
+assert.equal((await aiMessage({ type: 'GMAIL_CONNECT' })).connected, true);
+const inbox = await aiMessage({ type: 'GMAIL_SEARCH', query: 'newer_than:7d' });
+assert.equal(inbox.messages[0].subject, 'Assunto');
+assert.equal(JSON.stringify(inbox).includes('test-gmail-token'), false, 'tokens must stay in the service worker');
+assert.equal((await aiMessage({ type: 'GMAIL_DISCONNECT' })).connected, false);
+assert.equal((await aiMessage({ type: 'GMAIL_SEARCH' })).error.includes('Conecte'), true);
+requests.length = 0;
 assert.equal(requests.length, 0);
 const catalog = await aiMessage({ type: 'GROQ_MODELS' });
 assert.equal(catalog.models.length, 1, 'only eligible text models should be offered');

@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import './style.css';
 import { getAISettings, saveAISettings, clearAISettings, AI_PROVIDERS, type AISettings, type AIProvider } from './aiSettings';
 import { dateFromDay, isVisible, localDay, materializeToday, weekEnd, type ViewMode, type WeeklyPlan } from './schedule';
+import GmailConnection, { type GmailMessage } from './GmailConnection';
 
 type Column = 'todo' | 'doing' | 'late' | 'done';
 type Slice = { id: string; name: string; done: boolean };
@@ -80,6 +81,7 @@ function App() {
   const [error, setError] = useState('');
   const [restart, setRestart] = useState<Task | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [showConnections, setShowConnections] = useState(false);
   const [settingsTab, setSettingsTab] = useState<'breaks' | 'ai'>('breaks');
   const [aiSettings, setAiSettings] = useState<AISettings>({ provider: '', apiKey: '', model: '', customEndpoint: '' });
   const [aiKeyVisible, setAiKeyVisible] = useState(false);
@@ -175,6 +177,12 @@ function App() {
     setError(''); setProposalSource('manual'); setProposalRevision(1); setProposalTab('details');
     setSchedule({ mode: recurring ? 'weekly' : 'once', startDate: localDay(new Date()), weekdays: [1, 2, 3, 4, 5] });
     setProposal({ name: title, description: '', difficulty: 1, estimate: 25, slices: [], attachments: [] });
+  }
+  function draftFromEmail(message: GmailMessage) {
+    openManualDraft(message.subject);
+    setProposal(previous => previous && ({ ...previous, description: `Mensagem de: ${message.from}\n\n${message.snippet}` }));
+    setName(message.subject);
+    setShowConnections(false);
   }
   function deleteTask(item: Task) {
     if (active?.taskId === item.id) return setError('Encerre o ciclo atual antes de apagar esta tarefa.');
@@ -320,12 +328,14 @@ function App() {
     <header><div><span className="eyebrow">TRABALHO COM RITMO</span><h1>Kanban<span>Doro</span></h1><p>Organize a tarefa. Dê tempo ao que importa.</p></div>
       <div className="header-actions">
         <button className="ghost" onClick={() => chrome.runtime.sendMessage({ type: 'SHOW_TIMER' })}>Mostrar bolha</button>
+        <button className="ghost" onClick={() => setShowConnections(true)}>Connections</button>
         <button className="ghost" onClick={() => setShowSettings(true)}>Preferências</button>
         <div className="status">{active ? '● Ciclo ativo' : '○ Pronto para começar'}</div>
       </div>
     </header>
     {error && <p className="warning" role="alert">{error} <button onClick={() => setError('')}>Fechar</button></p>}
     {toast && <div className="toast" role="status">{toast}<button aria-label="Dispensar aviso" onClick={() => setToast('')}>✕</button></div>}
+    {showConnections && <GmailConnection onClose={() => setShowConnections(false)} onDraft={draftFromEmail} />}
     {!tipsDismissed && data.tasks.length === 0 && <aside className="first-use" aria-label="Primeiros passos">
       <span className="eyebrow">PRIMEIROS PASSOS</span><p>Crie uma tarefa, ajuste o tempo e os slices nos detalhes e inicie seu primeiro ciclo de foco.</p>
       <button onClick={() => { setTipsDismissed(true); void chrome.storage.local.set({ tipsDismissed: true }); }}>Entendi</button>
@@ -492,8 +502,8 @@ function App() {
       {task.column === 'done' && <p className="summary">Concluída em {displayDate(task.completedAt)}{task.archivedAt ? ` · arquivada em ${displayDate(task.archivedAt)}` : ''}</p>}
       {!!task.attachments?.length && <><h3>Anexos</h3><div className="task-attachments">{task.attachments.map((link, index) => <a key={index} href={link.url} target="_blank" rel="noopener noreferrer">{link.title} ↗</a>)}</div></>}
       <div className="task-actions"><button className="primary" disabled={!!active || !!task.archivedAt} onClick={() => { startFocus(task); if (!active) setSelectedTask(null); }}>Iniciar ciclo de {task.estimate} min</button>
-        {task.column === 'done' && !task.archivedAt && <button onClick={() => archiveTask(task)}>Arquivar concluída</button>}
-        {task.archivedAt && <button onClick={() => { changeTask(task.id, current => ({ ...current, archivedAt: undefined })); setSelectedTask(null); setToast('Tarefa restaurada para o quadro.'); }}>Restaurar</button>}
+        {task.column === 'done' && !task.archivedAt && <button className="archive-task" onClick={() => archiveTask(task)}>Arquivar concluída</button>}
+        {task.archivedAt && <button className="archive-task" onClick={() => { changeTask(task.id, current => ({ ...current, archivedAt: undefined })); setSelectedTask(null); setToast('Tarefa restaurada para o quadro.'); }}>Restaurar</button>}
         <button className="delete-task" onClick={() => deleteTask(task)}>Apagar tarefa</button></div>
     </section></div>}
   </main>;

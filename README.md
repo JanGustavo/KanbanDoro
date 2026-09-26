@@ -39,6 +39,16 @@ A IA nunca muda a tarefa sem revisão: criação abre modal; ajuda comum respond
 
 **Teste de IA:** Groq é o provedor ativo nesta fase (diferente do Grok da xAI). Em Preferências → IA, selecione Groq, digite sua chave e clique em **Salvar chave e modelo**. Depois clique em **Atualizar modelos**: a extensão consulta `GET /openai/v1/models` e oferece apenas modelos de texto com saída estruturada. Escolha um modelo e salve novamente. Descreva uma tarefa no quadro, clique em **Propor com IA** e revise nome, descrição, tempo, dificuldade, slices e anexos. É possível editar ou pedir uma reescrita por comentário; só **Aceitar e criar tarefa** grava a proposta. Em Anexos, links HTTPS são consultados antes de abrir e só os verificados recentemente são salvos; a resposta HTTP não confirma que a vaga ou o conteúdo ainda existe. A chave fica no armazenamento local restrito da extensão, não entra no prompt nem é enviada ao backend KanbanDoro. O teste automatizado simula a API; para validar uma chamada real, use sua chave na extensão instalada.
 
+## Connections: Gmail
+
+A primeira conexão permite autorizar uma conta Google, buscar até dez mensagens por consulta e abrir uma tarefa editável a partir do assunto e trecho escolhido. Nada do Gmail vai para a Groq automaticamente: o botão **Propor com IA** continua sendo uma ação separada. As buscas são manuais; não há leitura em segundo plano, automação de e-mail ou sincronização com a VPS.
+
+1. Crie um projeto no Google Cloud, configure a tela de consentimento OAuth e habilite a **Gmail API**. Durante os testes, adicione a sua conta Google como usuário de teste.
+2. Crie um **ID do cliente OAuth** do tipo **Extensão do Chrome**, associado ao ID estável da extensão em `chrome://extensions`. O ID da extensão também é exibido na tela Connections. Preserve esse ID ao reconstruir/reinstalar a extensão; se ele mudar, configure um novo cliente OAuth para o novo ID.
+3. Compile com `KANBANDORO_GOOGLE_CLIENT_ID='seu-id.apps.googleusercontent.com' npm run build`, recarregue a pasta `dist` em `chrome://extensions` e clique em **Connections → Conectar conta Google**. Sem a variável, a extensão continua carregando, mas a interface explica por que a conexão está indisponível.
+
+O escopo solicitado é `gmail.readonly`, classificado pelo Google como restrito. Publicar a integração para outros usuários pode exigir verificação OAuth do Google. O token permanece sob responsabilidade de `chrome.identity` no navegador, sem ser entregue à página do quadro nem ao backend; **Desconectar Gmail** limpa tokens armazenados em cache pela extensão, mas não revoga o consentimento no painel da conta Google.
+
 ## Fases
 
 1. **Base:** quadro, slices, persistência local e ciclos com histórico e recuperação.
