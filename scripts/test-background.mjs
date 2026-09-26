@@ -10,10 +10,12 @@ let soundEnabled = true;
 let session = { phase: 'running', endsAt: Date.now() + 60_000 };
 let alerts = 0;
 let notifications = 0;
+let aiSettings = { provider: 'groq', apiKey: 'test-only', model: 'openai/gpt-oss-20b' };
+const requests = [];
 const chrome = {
   action: { onClicked: { addListener(fn) { listeners.click = fn; } }, setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {} },
   runtime: { getURL: path => path, sendMessage: async message => { if (message.type === 'PLAY_ALERT') alerts++; }, onInstalled: { addListener() {} }, onStartup: { addListener() {} }, onMessage: { addListener(fn) { listeners.message = fn; } } },
-  storage: { local: { setAccessLevel: async () => {}, get: async () => ({ session, soundEnabled }) }, onChanged: { addListener() {} } },
+  storage: { local: { setAccessLevel: async () => {}, get: async () => ({ session, soundEnabled, kanbandoro_ai_settings: aiSettings }) }, onChanged: { addListener() {} } },
   tabs: { query: async () => [{ id: 42 }], update: async () => {}, create: async () => {}, onActivated: { addListener() {} },
     async sendMessage(id, message) {
       assert.equal(id, 42);
@@ -31,7 +33,27 @@ const chrome = {
   notifications: { create: async options => { assert.equal(options.silent, true); notifications++; } },
   offscreen: { hasDocument: async () => false, createDocument: async () => {} },
 };
-vm.runInNewContext(readFileSync('dist/background.js', 'utf8'), { chrome });
+vm.runInNewContext(readFileSync('dist/background.js', 'utf8'), { chrome, AbortSignal,
+  fetch: async (url, options) => {
+    requests.push({ url, options });
+    if (url.endsWith('/models')) return { ok: true, json: async () => ({ data: [
+      { id: 'openai/gpt-oss-20b', name: 'GPT OSS 20B', active: true, input_modalities: ['text'], output_modalities: ['text'], supported_features: ['structured_outputs'] },
+      { id: 'whisper', active: true, input_modalities: ['audio'], output_modalities: ['transcription'] },
+    ] }) };
+    return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ name: 'Criar API', description: 'Implementar rotas', difficulty: 2, estimate: 35, slices: ['Rotas', 'Testes'] }) } }] }) };
+  } });
+const aiMessage = (message, senderUrl = 'index.html') => new Promise(resolve => {
+  const accepted = listeners.message(message, { url: senderUrl }, resolve);
+  if (!accepted) resolve(null);
+});
+assert.equal(await aiMessage({ type: 'GROQ_MODELS' }, 'https://example.com'), null, 'content scripts must not call the AI API');
+assert.equal(requests.length, 0);
+const catalog = await aiMessage({ type: 'GROQ_MODELS' });
+assert.equal(catalog.models.length, 1, 'only eligible text models should be offered');
+const draft = await aiMessage({ type: 'GROQ_TASK_PROPOSAL', input: 'Criar API' });
+assert.equal(draft.proposal.estimate, 35);
+assert.equal(requests[1].options.headers.Authorization, 'Bearer test-only');
+assert.equal(requests[1].options.body.includes('test-only'), false, 'keys must not enter the prompt');
 listeners.message({ type: 'SHOW_TIMER' }, {}, () => {});
 await new Promise(resolve => setTimeout(resolve, 0));
 assert.equal(injections, 1);

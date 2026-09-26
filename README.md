@@ -14,7 +14,7 @@ Extensão Manifest V3 que reúne Kanban, ciclos de foco vinculados a tarefas e a
 
 Ao atualizar a extensão, recarregue também as abas que já estavam abertas. O botão **Mostrar bolha** tenta instalar o script na aba ativa, inclusive quando ela foi aberta antes da extensão. O navegador bloqueia scripts em páginas internas ou restritas. A instalação solicita acesso aos sites para exibir a bolha sobre eles.
 
-**Implementado neste marco:** quadro local editável, slices, registro de foco, uma sessão por vez, dois pedidos de extensão com teto combinado de 50%, tentativa falha, interrupção e pausa com confirmação. O badge indica foco ativo (vinho), pausa ativa (amarelo queimado) e foco/pausa vencidos (vermelho). Preferências de pausa são editáveis no cabeçalho. Bolha flutuante nos sites permitidos — com recolher/ocultar/expandir funcionando de fato e injeção em abas já abertas — e aviso sonoro real (Web Audio via página offscreen) somado à notificação do sistema ao fim do timer, sem depender só da configuração de som do SO. **Ainda pendente:** ligação do quadro à API, IA, fala, sincronização, alerta automático de prazo e relatórios. O quadro ainda não envia dados para a API.
+**Implementado neste marco:** quadro local editável, slices, registro de foco, uma sessão por vez, dois pedidos de extensão com teto combinado de 50%, tentativa falha, interrupção e pausa com confirmação. O badge indica foco ativo (vinho), pausa ativa (amarelo queimado) e foco/pausa vencidos (vermelho). Preferências de pausa são editáveis no cabeçalho. Bolha flutuante nos sites permitidos — com recolher/ocultar/expandir funcionando de fato e injeção em abas já abertas — e aviso sonoro real (Web Audio via página offscreen) somado à notificação do sistema ao fim do timer. A criação assistida de tarefas com Groq consulta modelos reais e abre um modal revisável. **Ainda pendente:** ligação do quadro à API, ajuda contextual da IA, fala, sincronização, alerta automático de prazo e relatórios. O quadro ainda não envia dados para a API.
 
 ## Produto
 
@@ -35,13 +35,13 @@ Extensão em TypeScript/React, com quadro em página própria, badge no ícone e
 
 A IA nunca muda a tarefa sem revisão: criação abre modal; ajuda comum responde e aponta riscos; resposta do tipo proposta entra na caixa de propostas, com aplicação após aceite. Durante foco ou descanso, propostas aguardam. Perguntas sobre uma tarefa recebem o JSON da tarefa; decisões podem receber histórico e estatísticas relevantes. O provedor padrão é configurável e a disponibilidade ou gratuidade de APIs externas não é presumida.
 
-**Teste de IA:** a tela de preferências apenas guarda provedor, modelo e chave no navegador. Ainda não há chamada ao Grok, criação automática de tarefas ou proposta por IA. Selecionar `xAI (Grok)` e salvar a chave não inicia o assistente; a configuração ganhará efeito quando o adaptador e a revisão de propostas forem implementados.
+**Teste de IA:** Groq é o provedor ativo nesta fase (diferente do Grok da xAI). Em Preferências → IA, selecione Groq, digite sua chave e clique em **Salvar chave e modelo**. Depois clique em **Atualizar modelos**: a extensão consulta `GET /openai/v1/models` e oferece apenas modelos de texto com saída estruturada. Escolha um modelo e salve novamente. Descreva uma tarefa no quadro, clique em **Propor com IA** e revise nome, descrição, tempo, dificuldade e slices. É possível editar ou pedir uma reescrita por comentário; só **Aceitar e criar tarefa** grava a proposta. A chave fica no armazenamento local restrito da extensão, não entra no prompt nem é enviada ao backend KanbanDoro. O teste automatizado simula a API; para validar uma chamada real, use sua chave na extensão instalada.
 
 ## Fases
 
 1. **Base:** quadro, slices, persistência local e ciclos com histórico e recuperação.
 2. **Extensão completa:** bolha opcional nos sites permitidos, badge, alertas e preferências de pausa.
-3. **Integração:** migração local → servidor, revisão de tarefas antes de salvar, contratos de IA estruturados e propostas com aprovação. O cadastro da API não recebe chaves de IA; a configuração de provedor na extensão é apenas uma preparação, sem chamadas externas.
+3. **Integração:** migração local → servidor, ajuda contextual, contratos de IA para decisões e propostas com aprovação. O cadastro da API não recebe chaves de IA; a criação assistida usa somente a Groq configurada na extensão.
 4. **Após histórico real:** score transparente de eficiência e WIP, voz local em tempo real, relatórios, exportação e modos da comunidade.
 
 Veja [docs/REQUISITOS.md](docs/REQUISITOS.md) para regras e decisões em aberto. Ideias novas dentro deste conceito podem substituir o desenho atual; registre a motivação e atualize requisitos antes da implementação.

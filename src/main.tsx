@@ -32,6 +32,8 @@ type Session = {
   excludedSeconds: number;
 };
 type HistoryEntry = { id: string; taskId: string; kind: string; seconds: number; at: number; sliceIds: string[] };
+type Proposal = { name: string; description: string; difficulty: 1 | 2 | 3; estimate: number; slices: string[] };
+type GroqModel = { id: string; name: string };
 type Data = { tasks: Task[]; session: Session | null; history: HistoryEntry[]; breakPreferences: string[] };
 const columns: { id: Column; label: string }[] = [
   { id: 'todo', label: 'A fazer' }, { id: 'doing', label: 'Em andamento' },
@@ -66,6 +68,10 @@ function App() {
   const [aiSettings, setAiSettings] = useState<AISettings>({ provider: '', apiKey: '', model: '', customEndpoint: '' });
   const [aiKeyVisible, setAiKeyVisible] = useState(false);
   const [aiNotice, setAiNotice] = useState('');
+  const [models, setModels] = useState<GroqModel[]>([]);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [proposal, setProposal] = useState<Proposal | null>(null);
+  const [feedback, setFeedback] = useState('');
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [tipsDismissed, setTipsDismissed] = useState(true);
   const [tipIndex, setTipIndex] = useState(0);
@@ -125,6 +131,35 @@ function App() {
     setName('');
     setSelectedTask(item.id);
     setToast('Tarefa criada. Abra os detalhes para definir tempo e slices.');
+  }
+  async function loadModels() {
+    setAiBusy(true); setAiNotice('');
+    try {
+      const response = await chrome.runtime.sendMessage({ type: 'GROQ_MODELS' }) as { models?: GroqModel[]; error?: string };
+      if (response.error) throw Error(response.error);
+      setModels(response.models ?? []);
+      if (!response.models?.length) setAiNotice('Nenhum modelo compatível com propostas estruturadas foi encontrado.');
+    } catch (reason) { setAiNotice(reason instanceof Error ? reason.message : 'Não foi possível consultar os modelos.'); }
+    finally { setAiBusy(false); }
+  }
+  async function requestProposal(comment = '') {
+    if (!name.trim()) return setError('Descreva a tarefa antes de pedir uma proposta.');
+    setAiBusy(true); setError('');
+    try {
+      const response = await chrome.runtime.sendMessage({ type: 'GROQ_TASK_PROPOSAL', input: name, previous: proposal, feedback: comment }) as { proposal?: Proposal; error?: string };
+      if (response.error || !response.proposal) throw Error(response.error || 'A IA não retornou uma proposta.');
+      setProposal(response.proposal); setFeedback('');
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'A Groq não respondeu.'); }
+    finally { setAiBusy(false); }
+  }
+  function acceptProposal() {
+    if (!proposal?.name.trim() || !Number.isFinite(proposal.estimate) || proposal.estimate < 1 || proposal.estimate > 480) return setError('Revise o nome e o tempo estimado (1 a 480 minutos).');
+    const item: Task = { id: id(), name: proposal.name.trim(), description: proposal.description, difficulty: proposal.difficulty,
+      estimate: proposal.estimate, deadline: '', column: 'todo', failures: 0, focusSeconds: 0,
+      slices: proposal.slices.filter(s => s.trim()).map(s => ({ id: id(), name: s.trim(), done: false })) };
+    update(old => ({ ...old, tasks: [...old.tasks, item] }));
+    setProposal(null); setName(''); setSelectedTask(item.id);
+    setToast('Proposta aceita. Revise os detalhes antes de começar o foco.');
   }
   function startFocus(item: Task) {
     if (active) return setError('Encerre o ciclo ou descanso atual antes de iniciar outro.');
@@ -216,7 +251,19 @@ function App() {
         {phase === 'break-done' && <><span role="status">Pausa encerrada. Confirme antes de voltar ao foco.</span><button onClick={() => update(old => ({ ...old, session: null }))}>Entendi</button></>}
       </div>
     </section>}
-    <form className="create" onSubmit={addTask}><input aria-label="Nome da tarefa" placeholder="Qual é a próxima tarefa?" value={name} onChange={e => setName(e.target.value)} /><button type="submit">+ Criar tarefa</button></form>
+    <form className="create" onSubmit={addTask}><input aria-label="Nome da tarefa" placeholder="Qual é a próxima tarefa?" value={name} onChange={e => setName(e.target.value)} /><button type="submit">+ Criar tarefa</button><button type="button" disabled={aiBusy || !name.trim()} onClick={() => void requestProposal()}>{aiBusy ? 'Consultando…' : 'Propor com IA'}</button></form>
+    {proposal && <div className="backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setProposal(null); }}><section className="dialog" role="dialog" aria-modal="true" aria-label="Revisar proposta da IA">
+      <button className="close" onClick={() => setProposal(null)} aria-label="Fechar proposta">✕</button><span className="eyebrow">PROPOSTA DA IA · REVISE ANTES DE SALVAR</span>
+      {error && <p className="warning" role="alert">{error}</p>}
+      <label>Nome <input className="task-name" value={proposal.name} onChange={e => setProposal({ ...proposal, name: e.target.value })} /></label>
+      <label>Descrição <textarea value={proposal.description} onChange={e => setProposal({ ...proposal, description: e.target.value })} /></label>
+      <div className="fields"><label className="highlight-time">Tempo sugerido (min) <input type="number" min="1" max="480" value={proposal.estimate} onChange={e => setProposal({ ...proposal, estimate: +e.target.value })} /></label>
+      <label>Dificuldade <select value={proposal.difficulty} onChange={e => setProposal({ ...proposal, difficulty: +e.target.value as 1 | 2 | 3 })}><option value="1">1 · leve</option><option value="2">2 · média</option><option value="3">3 · alta</option></select></label></div>
+      <h3>Slices sugeridos</h3>{proposal.slices.map((slice, index) => <div className="proposal-slice" key={index}><input aria-label={`Slice ${index + 1}`} value={slice} onChange={e => setProposal({ ...proposal, slices: proposal.slices.map((s, i) => i === index ? e.target.value : s) })} /><button onClick={() => setProposal({ ...proposal, slices: proposal.slices.filter((_, i) => i !== index) })} aria-label={`Remover slice ${index + 1}`}>✕</button></div>)}
+      <button onClick={() => setProposal({ ...proposal, slices: [...proposal.slices, ''] })}>+ Slice</button>
+      <label className="revision-label">Quer mudar algo? <textarea placeholder="Ex.: reduza o tempo e separe o backend em duas etapas" value={feedback} onChange={e => setFeedback(e.target.value)} /></label>
+      <div className="proposal-actions"><button disabled={aiBusy || !feedback.trim()} onClick={() => void requestProposal(feedback)}>Reescrever com IA</button><button className="primary" onClick={acceptProposal}>Aceitar e criar tarefa</button></div>
+    </section></div>}
     {showSettings && <div className="backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setShowSettings(false); }}><section className="dialog" role="dialog" aria-modal="true" aria-label="Preferências">
       <button className="close" onClick={() => setShowSettings(false)}>✕</button><span className="eyebrow">PREFERÊNCIAS</span>
       <div className="settings-tabs" role="tablist">
@@ -238,23 +285,21 @@ function App() {
       )}
       {settingsTab === 'ai' && (
         <>
-          <h3>Configuração futura de IA</h3>
-          <p className="settings-hint">A assistência ainda não está conectada. A configuração fica no armazenamento local da extensão e só será usada após implementarmos o fluxo de IA.</p>
+          <h3>Assistência de IA</h3>
+          <p className="settings-hint">A proposta de tarefas está disponível com Groq. Salve sua chave para consultar os modelos da sua conta. Outros provedores ainda estão em preparação.</p>
           <div className="ai-settings-form">
             <label>
               Provedor
               <select value={aiSettings.provider} onChange={e => setAiSettings((s: AISettings) => ({ ...s, provider: e.target.value as AIProvider, model: '', customEndpoint: '' }))}>
                 <option value="">Selecionar provedor</option>
-                {Object.entries(AI_PROVIDERS).map(([key, provider]) => (
-                  <option key={key} value={key}>{provider}</option>
-                ))}
+                {Object.entries(AI_PROVIDERS).map(([key, provider]) => <option key={key} value={key} disabled={key !== 'groq'}>{provider}{key !== 'groq' ? ' · em breve' : ''}</option>)}
               </select>
             </label>
-            {aiSettings.provider && (
+                {aiSettings.provider && (
               <>
                 <label>
                   Modelo
-                  <input value={aiSettings.model} placeholder="ID do modelo no seu provedor" onChange={e => setAiSettings(s => ({ ...s, model: e.target.value }))} />
+                  {aiSettings.provider === 'groq' ? <><select value={aiSettings.model} onChange={e => setAiSettings(s => ({ ...s, model: e.target.value }))}><option value="">{models.length ? 'Selecione um modelo' : 'Consulte os modelos da sua conta'}</option>{models.map(model => <option key={model.id} value={model.id}>{model.name} ({model.id})</option>)}</select><button type="button" disabled={aiBusy} onClick={() => void loadModels()}>Atualizar modelos</button></> : <input value={aiSettings.model} onChange={e => setAiSettings(s => ({ ...s, model: e.target.value }))} />}
                 </label>
                 {aiSettings.provider === 'custom' && (
                   <label>
@@ -278,8 +323,8 @@ function App() {
                   </div>
                 </label>
                 <div className="ai-actions">
-                  <button className="primary" onClick={async () => { await saveAISettings(aiSettings); setAiNotice('Configuração salva neste navegador.'); }} disabled={!aiSettings.provider || !aiSettings.apiKey || !aiSettings.model || (aiSettings.provider === 'custom' && !aiSettings.customEndpoint)}>
-                    Salvar configuração
+                  <button className="primary" onClick={async () => { await saveAISettings(aiSettings); setAiNotice(aiSettings.model ? 'Modelo salvo. Já pode propor uma tarefa.' : 'Chave salva. Agora consulte os modelos e escolha um.'); }} disabled={aiSettings.provider !== 'groq' || !aiSettings.apiKey}>
+                    Salvar chave e modelo
                   </button>
                   {aiSettings.apiKey && (
                     <button className="danger" onClick={async () => { await clearAISettings(); setAiSettings({ provider: '', apiKey: '', model: '', customEndpoint: '' }); setAiNotice('Chave removida deste navegador.'); }}>

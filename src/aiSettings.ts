@@ -22,11 +22,11 @@ export async function clearAISettings(): Promise<void> {
   await chrome.storage.local.remove(STORAGE_KEY);
 }
 
-// Provider IDs are stable; model names are entered by the user because catalogues change.
+// Provider IDs are stable; Groq's model catalogue is loaded from its API.
 export const AI_PROVIDERS: Record<Exclude<AIProvider, ''>, string> = {
   xai: 'xAI (Grok)',
   gemini: 'Google Gemini',
-  groq: 'Groq (outro serviço)',
+  groq: 'Groq',
   openai: 'OpenAI',
   custom: 'Outro provedor',
 };
