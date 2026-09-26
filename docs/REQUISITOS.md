@@ -10,7 +10,7 @@ Este documento é vivo. Uma solução melhor pode substituir a regra anterior de
 - Uma tarefa em atraso volta a Em andamento ao iniciar novo ciclo. O número de tentativas falhas não zera.
 - Ao ultrapassar cinco tarefas em andamento, avisar sobre WIP e permitir continuar; sugestão da IA é opcional, sempre justificável.
 - O quadro oferece Hoje, Esta semana, Todas e Arquivo. Registrar data de conclusão e permitir arquivar/restaurar sem perder tempo e histórico. Apagar requer confirmação e exclui também eventos de foco daquela tarefa; não pode apagar a sessão em uso.
-- Rotinas semanais têm nome, duração e dias selecionados. Ao abrir o quadro em um dia agendado, gerar uma ocorrência independente no máximo uma vez naquele dia; excluir uma ocorrência não a recria. Dias com a extensão fechada não são preenchidos retroativamente. Excluir a rotina preserva ocorrências passadas.
+- O modal manual e o de proposta permitem tarefa única, dias selecionados somente na semana da data inicial ou recorrência nos mesmos dias de todas as semanas. Ao abrir o quadro em um dia agendado, gerar uma ocorrência independente no máximo uma vez naquele dia; excluir uma ocorrência não a recria. Dias com a extensão fechada não são preenchidos retroativamente. Excluir a programação preserva ocorrências passadas.
 
 ## Sessões
 

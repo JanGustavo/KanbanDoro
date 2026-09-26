@@ -5,6 +5,11 @@ export type WeeklyPlan = {
   weekdays: number[];
   startsOn: string;
   generatedDates: string[];
+  endsOn?: string;
+  description?: string;
+  difficulty?: 1 | 2 | 3;
+  sliceNames?: string[];
+  attachments?: Array<{ title: string; url: string; verifiedAt: number | null; reason: string }>;
 };
 
 export type ViewMode = 'today' | 'week' | 'all' | 'archive';
@@ -21,13 +26,23 @@ export function weekStart(date: Date): string {
   return localDay(monday);
 }
 
+export function weekEnd(date: Date): string {
+  const sunday = new Date(date.getFullYear(), date.getMonth(), date.getDate() + (7 - date.getDay()) % 7);
+  return localDay(sunday);
+}
+
+export function dateFromDay(day: string): Date {
+  const [year, month, date] = day.split('-').map(Number);
+  return new Date(year, month - 1, date, 12);
+}
+
 export function materializeToday<T extends { planId?: string; occurrenceDate?: string }>(
   tasks: T[], plans: WeeklyPlan[], date: Date, create: (plan: WeeklyPlan, day: string) => T
 ): { tasks: T[]; plans: WeeklyPlan[] } {
   const day = localDay(date);
   let nextTasks = tasks;
   const nextPlans = plans.map(plan => {
-    if (day < plan.startsOn || !plan.weekdays.includes(date.getDay()) || plan.generatedDates?.includes(day)) return plan;
+    if (day < plan.startsOn || (plan.endsOn && day > plan.endsOn) || !plan.weekdays.includes(date.getDay()) || plan.generatedDates?.includes(day)) return plan;
     if (!nextTasks.some(task => task.planId === plan.id && task.occurrenceDate === day)) {
       nextTasks = [...nextTasks, create(plan, day)];
     }

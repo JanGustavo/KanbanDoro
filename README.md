@@ -24,7 +24,7 @@ Ao atualizar a extensão, recarregue também as abas que já estavam abertas. O 
 - Interrupção: evento separado da tentativa falha. O tempo já trabalhado permanece registrado; o usuário escolhe recomeçar ou adiar.
 - Descanso: categoria livre ou sugestões de água, comida, detox e descanso; cronômetro e som ao finalizar; foco seguinte depende de confirmação.
 - WIP: cinco tarefas em andamento geram aviso orientativo, nunca bloqueio.
-- Rotinas: selecione dias da semana; ao abrir o quadro em um dia escolhido, nasce uma tarefa independente. Reabrir o quadro ou apagar a tarefa daquele dia não cria outra ocorrência no mesmo dia. Não há geração retroativa para dias em que a extensão ficou fechada.
+- Criação: o botão manual e a proposta da IA abrem um modal com nome, descrição, tempo e opção **Uma vez**, **Só na semana escolhida** ou **Toda semana**. Para as duas últimas, defina data inicial e dias; a primeira termina no domingo da semana escolhida. Ao abrir o quadro em um dia programado, nasce uma tarefa independente. Reabrir o quadro ou apagar a tarefa daquele dia não cria outra ocorrência no mesmo dia. Não há geração retroativa para dias em que a extensão ficou fechada. O menu de programação mostra o calendário e oferece o mesmo modal de criação.
 - Conclusão e arquivo: "Hoje" e "Esta semana" mostram as concluídas no período e todas as pendentes; "Arquivo" filtra por data de conclusão. Arquivar preserva histórico; apagar remove também os registros de foco daquela tarefa, após confirmação. Apagar uma ocorrência não apaga sua rotina.
 
 ## Proposta visual
