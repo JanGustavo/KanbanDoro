@@ -1,15 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
-import { getAISettings, saveAISettings, clearAISettings, AI_PROVIDERS, type AISettings, type AIProvider } from './aiSettings';
+import { getAISettings, saveAISettings, AI_PROVIDERS, type AISettings, type AIProvider } from './aiSettings';
 import { dateFromDay, isVisible, localDay, materializeToday, weekEnd, type ViewMode, type WeeklyPlan } from './schedule';
 import Connections from './Connections';
 import Statistics from './Statistics';
 import { focusBlockingDefault, type FocusBlocking } from './focusBlocking';
 import FocusBlockingSettings from './FocusBlockingSettings';
+import { completedCycleCount, elapsedCredit, suggestedBreakMinutes } from './cycleRules';
 
 type Column = 'todo' | 'doing' | 'late' | 'done';
-type Slice = { id: string; name: string; done: boolean };
+type Slice = { id: string; name: string; done: boolean; estimateMinutes?: number };
 type Attachment = { title: string; url: string; verifiedAt: number | null; reason: string };
 type Task = {
   id: string;
@@ -43,17 +44,22 @@ type Session = {
   breakType: string;
   creditedSeconds: number;
   excludedSeconds: number;
+  steps?: Array<{ taskId: string; minutes: number; finished: boolean }>;
+  stepIndex?: number;
+  stepStartedAt?: number;
+  postFocusCompleted?: boolean;
 };
-type HistoryEntry = { id: string; taskId: string; kind: string; seconds: number; at: number; sliceIds: string[] };
+type HistoryEntry = { id: string; taskId: string; kind: string; seconds: number; at: number; sliceIds: string[]; cycleId?: string };
 type Proposal = { name: string; description: string; difficulty: 1 | 2 | 3; skill?: string; estimate: number; slices: string[]; attachments: Attachment[]; deadline?: string };
 type ScheduleChoice = { mode: 'once' | 'selected-days' | 'weekly'; startDate: string; weekdays: number[] };
-type GroqModel = { id: string; name: string };
-type Data = { tasks: Task[]; session: Session | null; history: HistoryEntry[]; breakPreferences: string[]; weeklyPlans: WeeklyPlan[] };
+type AIModel = { id: string; name: string };
+type Data = { tasks: Task[]; session: Session | null; history: HistoryEntry[]; breakPreferences: string[]; weeklyPlans: WeeklyPlan[];
+  wipLimits: { doing: number; late: number | null }; breakDurations: { short: number; long: number } };
 const columns: { id: Column; label: string }[] = [
   { id: 'todo', label: 'A fazer' }, { id: 'doing', label: 'Em andamento' },
   { id: 'late', label: 'Em atraso' }, { id: 'done', label: 'Concluído' },
 ];
-const initial: Data = { tasks: [], session: null, history: [], breakPreferences: ['Descanso', 'Água', 'Comida', 'Detox'], weeklyPlans: [] };
+const initial: Data = { tasks: [], session: null, history: [], breakPreferences: ['Descanso', 'Água', 'Comida', 'Detox'], weeklyPlans: [], wipLimits: { doing: 5, late: null }, breakDurations: { short: 5, long: 15 } };
 const id = () => (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).substring(2) + Date.now().toString(36);
 const minutes = (seconds: number) => `${Math.floor(Math.max(0, seconds) / 60).toString().padStart(2, '0')}:${Math.floor(Math.max(0, seconds) % 60).toString().padStart(2, '0')}`;
 const loadingTips = [
@@ -66,7 +72,7 @@ const weekdays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const displayDate = (time?: number) => time ? new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(time) : 'Data anterior ao registro';
 function newOccurrence(plan: WeeklyPlan, day: string): Task {
   return { id: id(), name: plan.name, description: plan.description ?? '', difficulty: plan.difficulty ?? 1, skill: plan.skill, estimate: plan.estimate, deadline: '', column: 'todo',
-    failures: 0, focusSeconds: 0, slices: (plan.sliceNames ?? []).map(name => ({ id: id(), name, done: false })),
+    failures: 0, focusSeconds: 0, slices: (plan.sliceNames ?? []).map(name => ({ id: id(), name, done: false, estimateMinutes: Math.max(1, Math.round(plan.estimate / Math.max(1, plan.sliceNames?.length ?? 1))) })),
     attachments: plan.attachments ?? [], planId: plan.id, occurrenceDate: day, createdAt: Date.now() };
 }
 
@@ -86,12 +92,12 @@ function App() {
   const [restart, setRestart] = useState<Task | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showConnections, setShowConnections] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<'breaks' | 'ai' | 'blocking'>('breaks');
+  const [settingsTab, setSettingsTab] = useState<'breaks' | 'board' | 'ai' | 'blocking'>('breaks');
   const [focusBlocking, setFocusBlocking] = useState<FocusBlocking | null>(null);
-  const [aiSettings, setAiSettings] = useState<AISettings>({ provider: '', apiKey: '', model: '', customEndpoint: '' });
+  const [aiSettings, setAiSettings] = useState<AISettings>({ provider: '', apiKey: '', geminiApiKey: '', model: '', customEndpoint: '' });
   const [aiKeyVisible, setAiKeyVisible] = useState(false);
   const [aiNotice, setAiNotice] = useState('');
-  const [models, setModels] = useState<GroqModel[]>([]);
+  const [models, setModels] = useState<AIModel[]>([]);
   const [aiBusy, setAiBusy] = useState(false);
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const [proposalSource, setProposalSource] = useState<'manual' | 'ai'>('manual');
@@ -106,15 +112,20 @@ function App() {
   const [toast, setToast] = useState('');
   const [view, setView] = useState<ViewMode>('today');
   const [archiveDay, setArchiveDay] = useState('');
+  const [cycleSelection, setCycleSelection] = useState<string[]>([]);
+  const [cycleMinutes, setCycleMinutes] = useState<Record<string, number>>({});
+  const [sliceInsight, setSliceInsight] = useState('');
+  const [insightBusy, setInsightBusy] = useState(false);
   const [weeklyOpen, setWeeklyOpen] = useState(false);
   const [showStatistics, setShowStatistics] = useState(false);
 
   useEffect(() => {
-    chrome.storage.local.get(['tasks', 'session', 'history', 'breakPreferences', 'weeklyPlans']).then((stored) => {
+    chrome.storage.local.get(['tasks', 'session', 'history', 'breakPreferences', 'weeklyPlans', 'wipLimits', 'breakDurations']).then((stored) => {
       const tasks = (stored.tasks as Task[] | undefined) ?? [];
       const weeklyPlans = (stored.weeklyPlans as WeeklyPlan[] | undefined) ?? [];
       const generated = materializeToday(tasks, weeklyPlans, new Date(), newOccurrence);
-      setData({ tasks: generated.tasks, weeklyPlans: generated.plans, session: (stored.session as Session | undefined) ?? null, history: (stored.history as HistoryEntry[] | undefined) ?? [], breakPreferences: (stored.breakPreferences as string[] | undefined) ?? ['Descanso', 'Água', 'Comida', 'Detox'] });
+      setData({ tasks: generated.tasks, weeklyPlans: generated.plans, session: (stored.session as Session | undefined) ?? null, history: (stored.history as HistoryEntry[] | undefined) ?? [], breakPreferences: (stored.breakPreferences as string[] | undefined) ?? initial.breakPreferences,
+        wipLimits: (stored.wipLimits as Data['wipLimits'] | undefined) ?? initial.wipLimits, breakDurations: (stored.breakDurations as Data['breakDurations'] | undefined) ?? initial.breakDurations });
       setReady(true);
     });
     getAISettings().then(setAiSettings);
@@ -161,10 +172,16 @@ function App() {
   const update = (fn: (old: Data) => Data) => setData(old => fn(old));
   const task = data.tasks.find(t => t.id === selectedTask);
   const active = data.session;
-  const activeTask = data.tasks.find(t => t.id === active?.taskId);
+  const activeTask = data.tasks.find(t => t.id === (active?.steps?.[active.stepIndex ?? 0]?.taskId ?? active?.taskId));
   const due = active && (active.phase === 'running' || active.phase === 'break') && now >= active.endsAt;
   const phase = due ? (active?.phase === 'running' ? 'decision' : 'break-done') : active?.phase;
   const doingCount = data.tasks.filter(t => t.column === 'doing' && !t.archivedAt).length;
+  const lateCount = data.tasks.filter(t => t.column === 'late' && !t.archivedAt).length;
+  const finishedCycles = completedCycleCount(data.history);
+  const todayCycles = data.history.filter(entry => (entry.kind === 'cycle-completed' || (entry.kind === 'completed' && !entry.cycleId)) && localDay(new Date(entry.at)) === today).length;
+  useEffect(() => {
+    if (data.session?.phase === 'post-focus') setBreakMinutes(suggestedBreakMinutes(finishedCycles, !!data.session.postFocusCompleted, data.breakDurations));
+  }, [data.session?.phase, finishedCycles, data.breakDurations.short, data.breakDurations.long]);
   const shownTasks = data.tasks.filter(t => isVisible(t, view, new Date(now), archiveDay));
   const calendarDays = Array.from({ length: 7 }, (_, offset) => {
     const day = new Date(now);
@@ -196,7 +213,7 @@ function App() {
     setShowConnections(false);
   }
   function deleteTask(item: Task) {
-    if (active?.taskId === item.id) return setError('Encerre o ciclo atual antes de apagar esta tarefa.');
+    if (active?.taskId === item.id || active?.steps?.some(step => step.taskId === item.id)) return setError('Encerre o ciclo atual antes de apagar esta tarefa.');
     if (!window.confirm(`Apagar “${item.name}” e seu histórico de foco? Esta ação não pode ser desfeita.`)) return;
     update(old => ({ ...old, tasks: old.tasks.filter(task => task.id !== item.id), history: old.history.filter(entry => entry.taskId !== item.id) }));
     setSelectedTask(null); setToast('Tarefa e histórico removidos. A rotina semanal, se houver, continua ativa.');
@@ -209,7 +226,7 @@ function App() {
   async function loadModels() {
     setAiBusy(true); setAiNotice('');
     try {
-      const response = await chrome.runtime.sendMessage({ type: 'GROQ_MODELS' }) as { models?: GroqModel[]; error?: string };
+      const response = await chrome.runtime.sendMessage({ type: 'GROQ_MODELS' }) as { models?: AIModel[]; error?: string };
       if (response.error) throw Error(response.error);
       setModels(response.models ?? []);
       if (!response.models?.length) setAiNotice('Nenhum modelo compatível com propostas estruturadas foi encontrado.');
@@ -225,8 +242,19 @@ function App() {
       setProposal({ ...response.proposal, skill: response.proposal.skill ?? proposal?.skill ?? '' }); setProposalSource('ai'); setFeedback(''); setProposalRevision(value => comment ? value + 1 : 1);
       if (!comment) setSchedule({ mode: 'once', startDate: localDay(new Date()), weekdays: [1, 2, 3, 4, 5] });
       if (!comment) setProposalTab('details');
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'A Groq não respondeu.'); }
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'A IA não respondeu.'); }
     finally { setAiBusy(false); }
+  }
+  async function requestSliceInsight(item: Task) {
+    if (!item.slices.length) return setSliceInsight('Adicione pelo menos um slice para receber uma análise.');
+    setInsightBusy(true); setSliceInsight('');
+    try {
+      const response = await chrome.runtime.sendMessage({ type: 'AI_SLICE_INSIGHT', task: { name: item.name, estimate: item.estimate,
+        slices: item.slices.map(slice => ({ name: slice.name, estimateMinutes: slice.estimateMinutes ?? null })) } }) as { insight?: string; error?: string };
+      if (response.error || !response.insight) throw Error(response.error || 'A IA não retornou uma sugestão.');
+      setSliceInsight(response.insight);
+    } catch (reason) { setSliceInsight(reason instanceof Error ? reason.message : 'Não foi possível analisar os slices.'); }
+    finally { setInsightBusy(false); }
   }
   function changeAttachment(index: number, patch: Partial<Attachment>) {
     setProposal(old => old && ({ ...old, attachments: old.attachments.map((item, i) => i === index ? { ...item, ...patch } : item) }));
@@ -270,33 +298,53 @@ function App() {
     }
     const item: Task = { id: id(), name: proposal.name.trim(), description: proposal.description, difficulty: proposal.difficulty, skill: proposal.skill?.trim().slice(0, 50), createdAt: Date.now(),
       estimate: proposal.estimate, deadline: proposal.deadline ?? '', column: 'todo', failures: 0, focusSeconds: 0,
-      slices: proposal.slices.filter(s => s.trim()).map(s => ({ id: id(), name: s.trim(), done: false })),
+      slices: proposal.slices.filter(s => s.trim()).map(s => ({ id: id(), name: s.trim(), done: false, estimateMinutes: Math.max(1, Math.round(proposal.estimate / Math.max(1, proposal.slices.filter(v => v.trim()).length))) })),
       attachments };
     update(old => ({ ...old, tasks: [...old.tasks, item] }));
     setProposal(null); setName(''); setSelectedTask(item.id);
     setToast('Proposta aceita. Só os anexos verificados foram salvos.');
   }
   function startFocus(item: Task) {
+    return startFocusTasks([{ taskId: item.id, minutes: item.estimate }], item);
+  }
+  function startFocusTasks(steps: Array<{ taskId: string; minutes: number }>, item?: Task) {
     if (active) return setError('Encerre o ciclo ou descanso atual antes de iniciar outro.');
-    if (scope === 'slices' && selectedSlices.length === 0) return setError('Escolha ao menos um slice.');
+    if (item && scope === 'slices' && selectedSlices.length === 0) return setError('Escolha ao menos um slice.');
+    if (!steps.length || steps.some(step => !Number.isInteger(step.minutes) || step.minutes < 1 || step.minutes > 480) || steps.reduce((sum, step) => sum + step.minutes, 0) > 480) return setError('O ciclo precisa de tarefas com duração total de até 480 min.');
+    if (new Set(steps.map(step => step.taskId)).size !== steps.length || steps.some(step => !data.tasks.some(task => task.id === step.taskId && !task.archivedAt && (item ? task.column !== 'done' : task.column === 'doing')))) return setError('Revise as tarefas selecionadas para o ciclo.');
     const t = Date.now();
     update(old => ({ ...old,
-      tasks: old.tasks.map(x => x.id === item.id ? { ...x, column: 'doing' } : x),
-      session: { taskId: item.id, phase: 'running', startedAt: t, endsAt: t + item.estimate * 60000,
-        originalMinutes: item.estimate, extensionMinutes: 0, extensions: 0,
-        scope, selectedSliceIds: scope === 'whole' ? [] : selectedSlices, breakType: '', creditedSeconds: 0, excludedSeconds: 0 },
+      tasks: old.tasks.map(x => steps.some(step => step.taskId === x.id) ? { ...x, column: 'doing' } : x),
+      session: { taskId: steps[0].taskId, phase: 'running', startedAt: t, endsAt: t + steps.reduce((sum, step) => sum + step.minutes, 0) * 60000,
+        originalMinutes: steps.reduce((sum, step) => sum + step.minutes, 0), extensionMinutes: 0, extensions: 0,
+        steps: steps.map(step => ({ ...step, finished: false })), stepIndex: 0, stepStartedAt: t,
+        scope: item ? scope : 'whole', selectedSliceIds: item && scope === 'slices' ? selectedSlices : [], breakType: '', creditedSeconds: 0, excludedSeconds: 0 },
     }));
+    setCycleSelection([]);
     setError('');
     setToast('Ciclo iniciado. O cronômetro segue mesmo se você fechar o quadro.');
   }
   function credit(old: Data, kind: string): Data {
     const s = old.session;
     if (!s) return old;
-    const elapsed = Math.max(0, Math.floor((Math.min(Date.now(), s.endsAt) - s.startedAt) / 1000));
-    const total = Math.max(0, elapsed - s.creditedSeconds - (s.excludedSeconds ?? 0));
-    const entry: HistoryEntry = { id: id(), taskId: s.taskId, kind, seconds: total, at: Date.now(), sliceIds: s.selectedSliceIds };
+    const total = elapsedCredit(s, Date.now());
+    if (!total) return old;
+    const entry: HistoryEntry = { id: id(), taskId: s.taskId, kind, seconds: total, at: Date.now(), sliceIds: s.selectedSliceIds, cycleId: s.steps ? String(s.startedAt) : undefined };
     return { ...old, tasks: old.tasks.map(t => t.id === s.taskId ? { ...t, focusSeconds: t.focusSeconds + total } : t),
       history: [...old.history, entry] };
+  }
+  function nextCycleTask() {
+    if (!active?.steps || active.phase !== 'running' || now >= active.endsAt || (active.stepIndex ?? 0) >= active.steps.length - 1) return;
+    update(old => {
+      const current = old.session;
+      if (!current?.steps) return old;
+      const credited = credit(old, 'switched');
+      const index = current.stepIndex ?? 0;
+      const completed = credited.tasks.map(task => task.id !== current.taskId ? task : { ...task, column: 'done' as Column, completedAt: Date.now() });
+      const next = current.steps[index + 1];
+      return { ...credited, tasks: completed, session: { ...current, steps: current.steps.map((step, i) => i === index ? { ...step, finished: true } : step), stepIndex: index + 1, taskId: next.taskId, scope: 'whole', selectedSliceIds: [],
+        stepStartedAt: Date.now(), creditedSeconds: Math.max(0, Math.floor((Math.min(Date.now(), current.endsAt) - current.startedAt) / 1000)) - (current.excludedSeconds ?? 0) } };
+    });
   }
   function extend(amount: number) {
     if (!active || phase !== 'decision') return;
@@ -321,8 +369,9 @@ function App() {
           column: kind === 'failed' ? 'late' as Column : done ? 'done' as Column : t.column,
           failures: t.failures + (kind === 'failed' ? 1 : 0) };
       });
-      return { ...credited, tasks, session: kind === 'completed' || kind === 'failed'
-        ? { ...active, phase: 'post-focus', creditedSeconds: Math.floor((Date.now() - active.startedAt) / 1000) }
+      const completion = kind === 'completed' ? { ...credited, history: [...credited.history, { id: id(), taskId: active.taskId, kind: 'cycle-completed', seconds: 0, at: Date.now(), sliceIds: [], cycleId: String(active.startedAt) }] } : credited;
+      return { ...completion, tasks, session: kind === 'completed' || kind === 'failed'
+        ? { ...active, phase: 'post-focus', postFocusCompleted: kind === 'completed', creditedSeconds: Math.floor((Date.now() - active.startedAt) / 1000) }
         : null };
     });
   }
@@ -341,6 +390,7 @@ function App() {
         <button className="ghost" onClick={() => chrome.runtime.sendMessage({ type: 'SHOW_TIMER' })}>Mostrar bolha</button>
         <button className="ghost" onClick={() => setShowConnections(true)}>Connections</button>
         <button className="ghost" onClick={() => setShowSettings(true)}>Preferências</button>
+        <span className="pomodoro-count" title="Ciclos de foco concluídos hoje">◷ {todayCycles} hoje</span>
         <div className="status">{active ? '● Ciclo ativo' : '○ Pronto para começar'}</div>
       </div>
     </header>
@@ -355,15 +405,18 @@ function App() {
       <div className="focus-top"><span className="focus-lights" aria-hidden="true"><i /><i /><i /></span><span>KANBANDORO / CICLO ATUAL</span><span className="focus-state">● {phase === 'break' || phase === 'break-done' ? 'EM PAUSA' : phase === 'running' ? 'EM FOCO' : 'AGUARDANDO VOCÊ'}</span></div>
       <div className="focus-content"><div className="focus-task"><div className="focus-task-heading"><span>{phase === 'break' || phase === 'break-done' ? active.breakType : 'SEU PRÓXIMO PASSO'}</span><span>{active.originalMinutes + active.extensionMinutes} MIN</span></div>
         <h2>{activeTask?.name ?? 'Tarefa removida'}</h2><p>{activeTask?.description || (active.scope === 'whole' ? 'Tarefa inteira' : `${active.selectedSliceIds.length} slices · tempo compartilhado`)}</p>
+        {!!active.steps && active.steps.length > 1 && <p className="cycle-step-summary">Tarefa {(active.stepIndex ?? 0) + 1} de {active.steps.length} · {active.steps[active.stepIndex ?? 0].minutes} min planejados nesta etapa</p>}
+        {!!active.steps && phase === 'running' && (now - (active.stepStartedAt ?? active.startedAt)) >= active.steps[active.stepIndex ?? 0].minutes * 60000 && <p className="cycle-step-summary" role="status">O tempo planejado para esta tarefa acabou. Revise o progresso antes de avançar.</p>}
         {!!activeTask?.slices.length && <div className="focus-slices" aria-label="Etapas da tarefa">{activeTask.slices.map(slice => <span className={slice.done ? 'finished' : ''} key={slice.id}>{slice.name}{slice.done ? ' ✓' : ''}</span>)}</div>}</div>
       <div className="focus-progress"><div className="focus-ring" style={{ '--ring-progress': `${Math.min(100, Math.max(0, ((now - active.startedAt) / Math.max(1, active.endsAt - active.startedAt)) * 100))}%` } as React.CSSProperties}><div><small>{phase === 'break' || phase === 'break-done' ? 'PAUSA' : 'FOCO'}</small><strong className="clock">{phase === 'decision' || phase === 'break-done' ? '00:00' : minutes(Math.ceil((active.endsAt - now) / 1000))}</strong><span>do ciclo atual</span></div></div>
         <div className="focus-next"><span className="eyebrow">EM SEGUIDA</span><strong>{phase === 'running' ? 'Continue do ponto em que parou.' : phase === 'break' ? 'Aproveite sua pausa.' : 'Escolha o próximo passo.'}</strong><p>{active.scope === 'whole' ? 'Tempo associado à tarefa inteira.' : `Tempo compartilhado entre ${active.selectedSliceIds.length} slices.`}</p><div className="focus-progress-line"><span style={{ width: `${activeTask?.slices.length ? (activeTask.slices.filter(slice => slice.done).length / activeTask.slices.length) * 100 : 0}%` }} /></div><small>{activeTask?.slices.filter(slice => slice.done).length ?? 0} DE {activeTask?.slices.length ?? 0} ETAPAS CONCLUÍDAS</small></div></div></div>
       <div className="focus-actions">
-        {phase === 'running' && <><button onClick={() => stopFocus('completed')}>Concluí o escopo</button><button onClick={() => stopFocus('interrupted')}>Interromper e deixar para depois</button><button onClick={() => { stopFocus('interrupted'); if (activeTask) setRestart(activeTask); }}>Interromper e recomeçar</button></>}
+        {phase === 'running' && <>{!!active.steps && (active.stepIndex ?? 0) < active.steps.length - 1 && <button onClick={nextCycleTask}>Concluir tarefa e avançar ↗</button>}<button onClick={() => stopFocus('completed')}>Concluir ciclo</button><button onClick={() => stopFocus('interrupted')}>Interromper e deixar para depois</button><button onClick={() => { stopFocus('interrupted'); if (activeTask) setRestart(activeTask); }}>Interromper e recomeçar</button></>}
         {phase === 'decision' && <><button onClick={() => stopFocus('completed')}>Concluí o escopo</button>
           {active.extensions < 2 && active.extensionMinutes < Math.floor(active.originalMinutes * .5) && <><label>Extensão (min) <input type="number" min="1" max={Math.floor(active.originalMinutes * .5) - active.extensionMinutes} value={requestedExtension} onChange={e => setRequestedExtension(+e.target.value)} /></label><button onClick={() => extend(requestedExtension)}>Estender ({active.extensions}/2)</button></>}
           <button onClick={() => stopFocus('failed')}>Não consegui terminar</button></>}
         {phase === 'post-focus' && <>
+          <span className="break-recommendation">{active.postFocusCompleted && finishedCycles > 0 && finishedCycles % 4 === 0 ? 'Quarto ciclo concluído: pausa longa sugerida.' : 'Pausa curta sugerida.'}</span>
           <label>Pausa <select value={breakType} onChange={e => setBreakType(e.target.value)}>{[...data.breakPreferences, 'Outra'].map(x => <option key={x} value={x}>{x}</option>)}</select></label>
           <label>min <input type="number" min="1" max="120" value={breakMinutes} onChange={e => setBreakMinutes(+e.target.value)} /></label>
           <button onClick={startBreak}>Iniciar pausa</button><button onClick={() => update(old => ({ ...old, session: null }))}>Finalizar ciclo</button></>}
@@ -407,14 +460,17 @@ function App() {
     </section></div>}
     {showSettings && <div className="backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setShowSettings(false); }}><section className="dialog" role="dialog" aria-modal="true" aria-label="Preferências">
       <button className="close" onClick={() => setShowSettings(false)}>✕</button><span className="eyebrow">PREFERÊNCIAS</span>
-      <div className="settings-tabs slide-tabs" role="tablist" style={{ '--tab-count': 3, '--active-index': settingsTab === 'breaks' ? 0 : settingsTab === 'ai' ? 1 : 2 } as React.CSSProperties}>
+      <div className="settings-tabs slide-tabs" role="tablist" style={{ '--tab-count': 4, '--active-index': settingsTab === 'breaks' ? 0 : settingsTab === 'board' ? 1 : settingsTab === 'ai' ? 2 : 3 } as React.CSSProperties}>
         <button role="tab" aria-selected={settingsTab === 'breaks'} onClick={() => setSettingsTab('breaks')}>Pausas</button>
+        <button role="tab" aria-selected={settingsTab === 'board'} onClick={() => setSettingsTab('board')}>Quadro</button>
         <button role="tab" aria-selected={settingsTab === 'ai'} onClick={() => setSettingsTab('ai')}>IA</button>
         <button role="tab" aria-selected={settingsTab === 'blocking'} onClick={() => setSettingsTab('blocking')}>Bloqueio</button>
       </div>
       {settingsTab === 'breaks' && (
         <>
           <label className="sound-option"><input type="checkbox" checked={soundEnabled} onChange={e => { setSoundEnabled(e.target.checked); void chrome.storage.local.set({ soundEnabled: e.target.checked }); }} /> Tocar aviso ao terminar foco ou pausa</label>
+          <div className="fields"><label>Pausa curta (min) <input type="number" min="1" max="120" value={data.breakDurations.short} onChange={e => update(old => ({ ...old, breakDurations: { ...old.breakDurations, short: Math.max(1, Math.min(120, Number(e.target.value) || 1)) } }))} /></label>
+          <label>Pausa longa após 4 ciclos (min) <input type="number" min="1" max="120" value={data.breakDurations.long} onChange={e => update(old => ({ ...old, breakDurations: { ...old.breakDurations, long: Math.max(1, Math.min(120, Number(e.target.value) || 1)) } }))} /></label></div>
           <h3>Categorias de pausa</h3>
           <ul className="break-prefs-list">
             {data.breakPreferences.map(pref => <li key={pref}><span>{pref}</span> <button onClick={() => update(old => ({ ...old, breakPreferences: old.breakPreferences.filter(p => p !== pref) }))}>Remover</button></li>)}
@@ -425,23 +481,25 @@ function App() {
           </form>
         </>
       )}
+      {settingsTab === 'board' && <><h3>Limite orientativo de tarefas</h3><p className="settings-hint">Arraste tarefas entre colunas. Ultrapassar o limite destaca a coluna, mas não impede seu trabalho.</p><div className="fields"><label>Em andamento <input type="number" min="1" max="50" value={data.wipLimits.doing} onChange={e => update(old => ({ ...old, wipLimits: { ...old.wipLimits, doing: Math.max(1, Math.min(50, Number(e.target.value) || 1)) } }))} /></label>
+        <label>Em atraso (0 desliga o aviso) <input type="number" min="0" max="50" value={data.wipLimits.late ?? 0} onChange={e => update(old => ({ ...old, wipLimits: { ...old.wipLimits, late: Math.max(0, Math.min(50, Number(e.target.value) || 0)) || null } }))} /></label></div></>}
       {settingsTab === 'ai' && (
         <>
           <h3>Assistência de IA</h3>
-          <p className="settings-hint">A proposta de tarefas está disponível com Groq. Salve sua chave para consultar os modelos da sua conta. Outros provedores ainda estão em preparação.</p>
+          <p className="settings-hint">Escolha Groq ou Gemini, salve a chave específica do provedor e consulte os modelos disponíveis na sua conta. As chaves ficam separadas neste navegador.</p>
           <div className="ai-settings-form">
             <label>
               Provedor
-              <select value={aiSettings.provider} onChange={e => setAiSettings((s: AISettings) => ({ ...s, provider: e.target.value as AIProvider, model: '', customEndpoint: '' }))}>
+              <select value={aiSettings.provider} onChange={e => { setModels([]); setAiSettings((s: AISettings) => ({ ...s, provider: e.target.value as AIProvider, model: '', customEndpoint: '' })); }}>
                 <option value="">Selecionar provedor</option>
-                {Object.entries(AI_PROVIDERS).map(([key, provider]) => <option key={key} value={key} disabled={key !== 'groq'}>{provider}{key !== 'groq' ? ' · em breve' : ''}</option>)}
+                {Object.entries(AI_PROVIDERS).map(([key, provider]) => <option key={key} value={key} disabled={!['groq', 'gemini'].includes(key)}>{provider}{!['groq', 'gemini'].includes(key) ? ' · em breve' : ''}</option>)}
               </select>
             </label>
                 {aiSettings.provider && (
               <>
                 <label>
                   Modelo
-                  {aiSettings.provider === 'groq' ? <><select value={aiSettings.model} onChange={e => setAiSettings(s => ({ ...s, model: e.target.value }))}><option value="">{models.length ? 'Selecione um modelo' : 'Consulte os modelos da sua conta'}</option>{models.map(model => <option key={model.id} value={model.id}>{model.name} ({model.id})</option>)}</select><button type="button" disabled={aiBusy} onClick={() => void loadModels()}>Atualizar modelos</button></> : <input value={aiSettings.model} onChange={e => setAiSettings(s => ({ ...s, model: e.target.value }))} />}
+                  {['groq', 'gemini'].includes(aiSettings.provider) ? <><select value={aiSettings.model} onChange={e => setAiSettings(s => ({ ...s, model: e.target.value }))}><option value="">{models.length ? 'Selecione um modelo' : 'Consulte os modelos da sua conta'}</option>{models.map(model => <option key={model.id} value={model.id}>{model.name} ({model.id})</option>)}</select><button type="button" disabled={aiBusy} onClick={() => void loadModels()}>Atualizar modelos</button></> : <input value={aiSettings.model} onChange={e => setAiSettings(s => ({ ...s, model: e.target.value }))} />}
                 </label>
                 {aiSettings.provider === 'custom' && (
                   <label>
@@ -454,9 +512,9 @@ function App() {
                   <div className="api-key-input">
                     <input
                       type={aiKeyVisible ? 'text' : 'password'}
-                      placeholder="sk-... ou sua chave"
-                      value={aiSettings.apiKey}
-                      onChange={e => setAiSettings((s: AISettings) => ({ ...s, apiKey: e.target.value }))}
+                      placeholder={aiSettings.provider === 'gemini' ? 'Chave do Google AI Studio' : 'Chave da Groq'}
+                      value={aiSettings.provider === 'gemini' ? aiSettings.geminiApiKey : aiSettings.apiKey}
+                      onChange={e => setAiSettings((s: AISettings) => ({ ...s, [s.provider === 'gemini' ? 'geminiApiKey' : 'apiKey']: e.target.value }))}
                       autoComplete="off"
                     />
                     <button type="button" onClick={() => setAiKeyVisible(v => !v)} aria-label={aiKeyVisible ? 'Ocultar chave' : 'Mostrar chave'}>
@@ -465,11 +523,11 @@ function App() {
                   </div>
                 </label>
                 <div className="ai-actions">
-                  <button className="primary" onClick={async () => { await saveAISettings(aiSettings); setAiNotice(aiSettings.model ? 'Modelo salvo. Já pode propor uma tarefa.' : 'Chave salva. Agora consulte os modelos e escolha um.'); }} disabled={aiSettings.provider !== 'groq' || !aiSettings.apiKey}>
+                  <button className="primary" onClick={async () => { await saveAISettings(aiSettings); setAiNotice(aiSettings.model ? 'Modelo salvo. Já pode propor uma tarefa.' : 'Chave salva. Agora consulte os modelos e escolha um.'); }} disabled={!['groq', 'gemini'].includes(aiSettings.provider) || !(aiSettings.provider === 'gemini' ? aiSettings.geminiApiKey : aiSettings.apiKey)}>
                     Salvar chave e modelo
                   </button>
-                  {aiSettings.apiKey && (
-                    <button className="danger" onClick={async () => { await clearAISettings(); setAiSettings({ provider: '', apiKey: '', model: '', customEndpoint: '' }); setAiNotice('Chave removida deste navegador.'); }}>
+                  {(aiSettings.provider === 'gemini' ? aiSettings.geminiApiKey : aiSettings.apiKey) && (
+                    <button className="danger" onClick={async () => { const next = { ...aiSettings, [aiSettings.provider === 'gemini' ? 'geminiApiKey' : 'apiKey']: '', model: '' }; await saveAISettings(next); setAiSettings(next); setAiNotice('Chave removida deste navegador.'); }}>
                       Remover chave
                     </button>
                   )}
@@ -490,20 +548,25 @@ function App() {
       </div></div>
       <button className="weekly-toggle" aria-expanded={weeklyOpen} onClick={() => setWeeklyOpen(open => !open)}>↻ Rotinas semanais</button>
     </nav>
+    {!!cycleSelection.length && !showStatistics && view !== 'archive' && <section className="cycle-builder" aria-label="Montar ciclo com várias tarefas"><div><span className="eyebrow">CICLO DE FOCO</span><h2>Seu ciclo, suas tarefas</h2><p>{cycleSelection.length} {cycleSelection.length === 1 ? 'tarefa' : 'tarefas'} · {cycleSelection.reduce((sum, key) => sum + (cycleMinutes[key] ?? data.tasks.find(item => item.id === key)?.estimate ?? 0), 0)} min no total. A ordem abaixo define a sequência; avance manualmente quando mudar de tarefa.</p></div>
+      <div className="cycle-builder-steps">{cycleSelection.map((key, index) => { const item = data.tasks.find(t => t.id === key); return item && <label key={key}><span>{index + 1}. {item.name}</span><input aria-label={`Minutos para ${item.name}`} type="number" min="1" max="480" value={cycleMinutes[key] ?? item.estimate} onChange={e => setCycleMinutes(old => ({ ...old, [key]: Number(e.target.value) }))} /><small>min</small><button aria-label={`Mover ${item.name} para cima`} disabled={index === 0} onClick={() => setCycleSelection(old => { const next = [...old]; [next[index - 1], next[index]] = [next[index], next[index - 1]]; return next; })}>↑</button><button aria-label={`Mover ${item.name} para baixo`} disabled={index === cycleSelection.length - 1} onClick={() => setCycleSelection(old => { const next = [...old]; [next[index + 1], next[index]] = [next[index], next[index + 1]]; return next; })}>↓</button></label>; })}</div>
+      <button className="primary" disabled={!!active} onClick={() => startFocusTasks(cycleSelection.map(key => ({ taskId: key, minutes: cycleMinutes[key] ?? data.tasks.find(item => item.id === key)?.estimate ?? 0 })))}>Iniciar ciclo com {cycleSelection.length} tarefas</button></section>}
     {weeklyOpen && <section className="weekly-panel" aria-label="Rotinas semanais"><div><span className="eyebrow">PLANEJAMENTO</span><h2>Programação da semana</h2><p>Escolha os dias na criação da tarefa. Cada ocorrência mantém seu próprio histórico.</p><button onClick={() => openManualDraft('', true)}>+ Nova tarefa programada</button></div>
       <div className="week-calendar">{calendarDays.map(day => <div className={localDay(day) === today ? 'calendar-day current' : 'calendar-day'} key={localDay(day)}><strong>{weekdays[day.getDay()]} <small>{day.getDate()}/{day.getMonth() + 1}</small></strong>
         {data.weeklyPlans.filter(plan => plan.weekdays.includes(day.getDay()) && localDay(day) >= plan.startsOn && (!plan.endsOn || localDay(day) <= plan.endsOn)).map(plan => <span key={plan.id}>{plan.name}</span>)}
       </div>)}</div>
       <div className="weekly-list">{data.weeklyPlans.map(plan => <article key={plan.id}><strong>{plan.name}</strong><span>{plan.weekdays.map(day => weekdays[day]).join(', ')} · {plan.estimate} min · {plan.endsOn ? `até ${plan.endsOn.split('-').reverse().join('/')}` : 'toda semana'}</span><button onClick={() => { if (window.confirm(`Excluir a programação “${plan.name}”? As tarefas já criadas permanecerão no histórico.`)) update(old => ({ ...old, weeklyPlans: old.weeklyPlans.filter(p => p.id !== plan.id) })); }}>Excluir programação</button></article>)}</div>
     </section>}
-    {showStatistics ? <Statistics tasks={data.tasks} history={data.history} now={now} onClose={() => setShowStatistics(false)} /> : view === 'archive' ? <section className="archive-panel"><div className="archive-heading"><div><span className="eyebrow">HISTÓRICO</span><h2>Tarefas arquivadas</h2></div><label>Dia da conclusão <input type="date" value={archiveDay} onChange={e => setArchiveDay(e.target.value)} /></label></div>
+    {showStatistics ? <Statistics tasks={data.tasks} history={data.history} now={now} wipLimit={data.wipLimits.doing} onClose={() => setShowStatistics(false)} /> : view === 'archive' ? <section className="archive-panel"><div className="archive-heading"><div><span className="eyebrow">HISTÓRICO</span><h2>Tarefas arquivadas</h2></div><label>Dia da conclusão <input type="date" value={archiveDay} onChange={e => setArchiveDay(e.target.value)} /></label></div>
       {shownTasks.length === 0 ? <p>Nenhuma tarefa arquivada para este dia.</p> : shownTasks.slice().sort((a, b) => (b.completedAt ?? b.archivedAt ?? 0) - (a.completedAt ?? a.archivedAt ?? 0)).map(item => <article className="archive-entry" key={item.id}><div><strong>{item.name}</strong><span>{item.completedAt ? `Concluída em ${displayDate(item.completedAt)}` : `Conclusão sem data · arquivada em ${displayDate(item.archivedAt)}`} · {minutes(item.focusSeconds)} de foco</span></div><button onClick={() => setSelectedTask(item.id)}>Detalhes</button></article>)}
-    </section> : <div className="board">{columns.map(column => <section className="lane" key={column.id}>
-      <h2>{column.label} <span>{shownTasks.filter(t => t.column === column.id).length}</span></h2>
-      {column.id === 'doing' && doingCount > 5 && <p className="warning">WIP acima de 5. Vale revisar a capacidade antes de assumir outra tarefa.</p>}
-      {shownTasks.filter(t => t.column === column.id).map((item, index) => <article className="card" key={item.id}>
+    </section> : <div className="board">{columns.map(column => <section className={`lane ${column.id === 'doing' && doingCount > data.wipLimits.doing || column.id === 'late' && data.wipLimits.late && lateCount > data.wipLimits.late ? 'lane-over-wip' : ''}`} key={column.id} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); const key = event.dataTransfer.getData('text/plain'); if (key && !active?.steps?.some(step => step.taskId === key) && key !== active?.taskId) changeTask(key, item => ({ ...item, column: column.id, completedAt: column.id === 'done' ? Date.now() : undefined })); }}>
+      <h2>{column.label} <span>{shownTasks.filter(t => t.column === column.id).length}{(column.id === 'doing' && doingCount > data.wipLimits.doing || column.id === 'late' && data.wipLimits.late && lateCount > data.wipLimits.late) ? ' ⚠' : ''}</span></h2>
+      {column.id === 'doing' && doingCount > data.wipLimits.doing && <p className="warning">⚠ {doingCount}/{data.wipLimits.doing} em andamento. Considere concluir antes de assumir mais.</p>}
+      {column.id === 'late' && data.wipLimits.late && lateCount > data.wipLimits.late && <p className="warning">⚠ {lateCount}/{data.wipLimits.late} em atraso. Vale revisar sua capacidade.</p>}
+      {shownTasks.filter(t => t.column === column.id).map((item, index) => <article className="card" key={item.id} draggable onDragStart={event => event.dataTransfer.setData('text/plain', item.id)}>
         <div className="card-heading"><span>{String(index + 1).padStart(2, '0')} / {column.label.toUpperCase()}</span><span className="card-time">{item.estimate} MIN</span></div>
-        <button className="card-title" onClick={() => { setSelectedTask(item.id); setScope('whole'); setSelectedSlices([]); }}>{item.name}</button>
+        {column.id === 'doing' && !active && <label className="cycle-select"><input type="checkbox" checked={cycleSelection.includes(item.id)} onChange={event => setCycleSelection(old => event.target.checked ? [...old, item.id] : old.filter(key => key !== item.id))} /> Incluir no próximo ciclo</label>}
+        <button className="card-title" onClick={() => { setSelectedTask(item.id); setScope('whole'); setSelectedSlices([]); setSliceInsight(''); }}>{item.name}</button>
         <div className="meta"><span>Dificuldade {item.difficulty}</span><span>{item.estimate} min</span>{item.deadline && <span>{item.deadline}</span>}{item.planId && <span>↻ {item.occurrenceDate}</span>}{item.column === 'done' && <span>Feita em {displayDate(item.completedAt)}</span>}</div>
         {!!item.slices.length && <div className="slice-strip" aria-label={`${item.slices.filter(slice => slice.done).length} de ${item.slices.length} etapas concluídas`}>{item.slices.map(slice => <span className={slice.done ? 'slice done' : 'slice'} title={slice.name} key={slice.id}>{slice.name}{slice.done ? ' ✓' : ''}</span>)}</div>}
       </article>)}{!shownTasks.some(t => t.column === column.id) && <p className="empty-lane">Nenhuma tarefa nesta coluna.</p>}</section>)}</div>}
@@ -516,8 +579,10 @@ function App() {
       <label>Habilidade ou área <input maxLength={50} list="skill-suggestions" placeholder="Ex.: Programação" value={task.skill ?? ''} onChange={e => changeTask(task.id, x => ({ ...x, skill: e.target.value }))} /></label>
       <label>Prazo opcional <input type="date" value={task.deadline} onChange={e => changeTask(task.id, x => ({ ...x, deadline: e.target.value }))} /></label>
       <label>Coluna <select value={task.column} onChange={e => changeTask(task.id, x => ({ ...x, column: e.target.value as Column }))}>{columns.map(c => <option value={c.id} key={c.id}>{c.label}</option>)}</select></label></div>
-      <h3>Slices</h3><div className="slices">{task.slices.map(slice => <label key={slice.id}><input type="checkbox" checked={slice.done} onChange={() => changeTask(task.id, x => ({ ...x, slices: x.slices.map(s => s.id === slice.id ? { ...s, done: !s.done } : s) }))} /><span className={slice.done ? 'done' : ''}>{slice.name}</span></label>)}</div>
-      <form onSubmit={e => { e.preventDefault(); if (sliceDraft.trim()) { changeTask(task.id, x => ({ ...x, slices: [...x.slices, { id: id(), name: sliceDraft.trim(), done: false }] })); setSliceDraft(''); } }} className="add-slice"><input placeholder="Nome do slice" value={sliceDraft} onChange={e => setSliceDraft(e.target.value)} /><button>Adicionar</button></form>
+      <h3>Slices</h3><div className="slices">{task.slices.map(slice => <div className="slice-editor" key={slice.id}><label><input type="checkbox" checked={slice.done} onChange={() => changeTask(task.id, x => ({ ...x, slices: x.slices.map(s => s.id === slice.id ? { ...s, done: !s.done } : s) }))} /><input aria-label={`Nome do slice ${slice.name}`} value={slice.name} maxLength={140} onChange={e => { setSliceInsight(''); changeTask(task.id, x => ({ ...x, slices: x.slices.map(s => s.id === slice.id ? { ...s, name: e.target.value } : s) })); }} /></label><label>min estimados <input aria-label={`Minutos estimados para ${slice.name}`} type="number" min="1" max="480" value={slice.estimateMinutes ?? ''} placeholder="—" onChange={e => { setSliceInsight(''); changeTask(task.id, x => ({ ...x, slices: x.slices.map(s => s.id === slice.id ? { ...s, estimateMinutes: e.target.value ? Math.max(1, Math.min(480, Number(e.target.value))) : undefined } : s) })); }} /></label><button type="button" aria-label={`Remover slice ${slice.name}`} onClick={() => { setSliceInsight(''); changeTask(task.id, x => ({ ...x, slices: x.slices.filter(s => s.id !== slice.id) })); }}>✕</button></div>)}</div>
+      <form onSubmit={e => { e.preventDefault(); if (sliceDraft.trim()) { changeTask(task.id, x => ({ ...x, slices: [...x.slices, { id: id(), name: sliceDraft.trim(), done: false }] })); setSliceDraft(''); setSliceInsight(''); } }} className="add-slice"><input placeholder="Nome do slice" value={sliceDraft} onChange={e => setSliceDraft(e.target.value)} /><button>Adicionar</button></form>
+      <button disabled={insightBusy} onClick={() => void requestSliceInsight(task)}>{insightBusy ? 'Analisando…' : '✦ Analisar distribuição dos slices'}</button>
+      {sliceInsight && <p className="slice-insight" role="status">{sliceInsight}</p>}
       <h3>Iniciar foco</h3><div className="scope"><label><input type="radio" checked={scope === 'whole'} onChange={() => setScope('whole')} /> Tarefa inteira</label><label><input type="radio" checked={scope === 'slices'} onChange={() => setScope('slices')} /> Selecionar slices</label></div>
       {scope === 'slices' && <div className="slices">{task.slices.filter(s => !s.done).map(s => <label key={s.id}><input type="checkbox" checked={selectedSlices.includes(s.id)} onChange={() => setSelectedSlices(old => old.includes(s.id) ? old.filter(v => v !== s.id) : [...old, s.id])} />{s.name}</label>)}</div>}
       <p className="summary">{minutes(task.focusSeconds)} de foco registrado · {task.failures} tentativas falhas</p>

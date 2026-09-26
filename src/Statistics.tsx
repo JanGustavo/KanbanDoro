@@ -4,20 +4,21 @@ type Props = {
   tasks: Array<{ id: string; skill?: string; estimate: number; focusSeconds: number; failures: number; column: string; completedAt?: number; archivedAt?: number }>;
   history: Array<{ taskId: string; seconds: number; at: number; kind: string }>;
   now: number;
+  wipLimit: number;
   onClose: () => void;
 };
 
 const duration = (seconds: number) => `${Math.round(seconds / 60)} min`;
 
-export default function Statistics({ tasks, history, now, onClose }: Props) {
+export default function Statistics({ tasks, history, now, wipLimit, onClose }: Props) {
   const stats = calculateStats(tasks, history, now);
   const max = Math.max(1, ...stats.daily.map(day => day.seconds));
   return <section className="stats-panel" aria-label="Estatísticas de trabalho">
     <header className="stats-heading"><div><span className="eyebrow">SEU RITMO</span><h2>Habilidades e tempo</h2><p>Dados das tarefas e ciclos registrados neste navegador.</p></div><button onClick={onClose}>Voltar ao quadro</button></header>
     <div className="stats-overview"><div className="stats-overview-focus"><span className="eyebrow">VISÃO DA SEMANA</span><strong>{duration(stats.weeklyFocusSeconds)}</strong><p>Foco registrado em {stats.activeDays} {stats.activeDays === 1 ? 'dia' : 'dias'} desta semana.</p></div>
-      <div className="stats-overview-work"><span className="eyebrow">CAPACIDADE DO QUADRO</span><strong>{stats.doingCount}<small> / 5 sugeridas em andamento</small></strong>
-        <div className="stats-capacity" aria-label={`${stats.doingCount} tarefas em andamento, limite orientativo de cinco`}>{Array.from({ length: 5 }, (_, index) => <span className={index < stats.doingCount ? 'filled' : ''} key={index} />)}</div>
-        <p>{stats.doingCount > 5 ? 'WIP acima do limite sugerido. Vale revisar o que já começou.' : `${stats.lateCount} ${stats.lateCount === 1 ? 'tarefa em atraso' : 'tarefas em atraso'} · limite apenas orientativo`}</p></div></div>
+      <div className="stats-overview-work"><span className="eyebrow">CAPACIDADE DO QUADRO</span><strong>{stats.doingCount}<small> / {wipLimit} sugeridas em andamento</small></strong>
+        <div className="stats-capacity" style={{ gridTemplateColumns: `repeat(${Math.min(50, wipLimit)}, 1fr)` }} aria-label={`${stats.doingCount} tarefas em andamento, limite orientativo de ${wipLimit}`}>{Array.from({ length: Math.min(50, wipLimit) }, (_, index) => <span className={index < stats.doingCount ? 'filled' : ''} key={index} />)}</div>
+        <p>{stats.doingCount > wipLimit ? 'WIP acima do limite sugerido. Vale revisar o que já começou.' : `${stats.lateCount} ${stats.lateCount === 1 ? 'tarefa em atraso' : 'tarefas em atraso'} · limite apenas orientativo`}</p></div></div>
     <div className="stats-summary">
       <article><span>Foco registrado</span><strong>{duration(stats.totalFocusSeconds)}</strong><small>Inclui tarefas arquivadas</small></article>
       <article><span>Concluídas</span><strong>{stats.totalCompleted}</strong><small>Em todas as áreas</small></article>

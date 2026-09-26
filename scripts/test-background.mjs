@@ -46,6 +46,17 @@ vm.runInNewContext(readFileSync('dist/background.js', 'utf8'), { chrome, AbortSi
   fetch: async (url, options) => {
     requests.push({ url, options });
     if (url === 'connections-config.json') return { json: async () => ({ clientId: 'test.apps.googleusercontent.com', apiUrl: 'http://localhost:8000' }) };
+    if (url.startsWith('https://generativelanguage.googleapis.com/')) {
+      assert.equal(options.headers['x-goog-api-key'], 'gemini-test-key');
+      if (url.includes('/models?pageSize=')) return { ok: true, json: async () => ({ models: [{ name: 'models/gemini-2.5-flash-lite', displayName: 'Flash Lite', supportedGenerationMethods: ['generateContent'] }] }) };
+      const body = JSON.parse(options.body);
+      assert.equal(body.generationConfig.responseMimeType, 'application/json');
+      assert(!JSON.stringify(body).includes('gemini-test-key'));
+      const response = body.generationConfig.responseSchema.properties.insight ? { insight: 'Divida o slice mais longo em dois.' }
+        : body.generationConfig.responseSchema.properties.title ? { title: 'Reunião', description: 'Planejar', start: '', end: '', to: '', subject: '', body: '' }
+          : { name: 'Estudar', description: 'Revisar', difficulty: 1, estimate: 25, slices: ['Ler'], attachments: [] };
+      return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: JSON.stringify(response) }] } }] }) };
+    }
     if (url.startsWith('http://localhost:8000/connections/google')) {
       if (url.endsWith('/exchange')) { const body = JSON.parse(options.body); assert.equal(body.code, 'code-test'); assert.equal(body.redirect_uri, 'https://extension.chromiumapp.org/'); assert.equal(body.code_verifier.length, 43); return { ok: true, json: async () => ({ session: 'private-server-session' }) }; }
       if (url.endsWith('/status')) return { ok: true, json: async () => ({ connected: true, scopes: authorizedScopes }) };
@@ -68,7 +79,8 @@ vm.runInNewContext(readFileSync('dist/background.js', 'utf8'), { chrome, AbortSi
     if (url === 'https://example.org/info') return { ok: true, status: 200, url, headers: { get: () => null } };
     if (url === 'https://example.org/redirect') return { ok: false, status: 302, url, headers: { get: () => 'https://127.0.0.1/private' } };
     const connectionDraft = options?.body?.includes('connection_draft');
-    return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(connectionDraft ?
+    const sliceInsight = options?.body?.includes('slice_insight');
+    return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(sliceInsight ? { insight: 'Separe o slice maior em etapas curtas.' } : connectionDraft ?
       { title: 'Estudar', description: 'Linux', start: '', end: '', to: '', subject: '', body: '' } :
       { name: 'Criar API', description: 'Implementar rotas', difficulty: 2, estimate: 35, slices: ['Rotas', 'Testes'], attachments: [{ title: 'Documentação', url: 'https://example.org/info' }, { title: 'Interno', url: 'http://localhost/private' }] }) } }] }) };
   } });
@@ -139,6 +151,13 @@ assert(!requests.some(req => req.url.includes('127.0.0.1/private')));
 assert.equal(requests[1].options.headers.Authorization, 'Bearer test-only');
 assert.equal(requests[1].options.body.includes('test-only'), false, 'keys must not enter the prompt');
 assert.equal((await aiMessage({ type: 'GROQ_CONNECTION_PROPOSAL', kind: 'tasks', prompt: 'Estudar Linux', now: '2026-09-26T12:00:00Z', timeZone: 'America/Sao_Paulo' })).draft.title, 'Estudar');
+assert.equal((await aiMessage({ type: 'AI_SLICE_INSIGHT', task: { name: 'Estudar', estimate: 100, slices: [{ name: 'Módulo', estimateMinutes: 90 }] } })).insight, 'Separe o slice maior em etapas curtas.');
+assert(!requests.at(-1).options.body.includes('private-server-session'));
+aiSettings = { provider: 'gemini', apiKey: 'test-only', geminiApiKey: 'gemini-test-key', model: 'gemini-2.5-flash-lite' };
+assert.equal((await aiMessage({ type: 'GROQ_MODELS' })).models[0].id, 'gemini-2.5-flash-lite');
+assert.equal((await aiMessage({ type: 'AI_SLICE_INSIGHT', task: { name: 'Estudar', estimate: 100, slices: [{ name: 'Módulo', estimateMinutes: 90 }] } })).insight, 'Divida o slice mais longo em dois.');
+assert.equal((await aiMessage({ type: 'GROQ_TASK_PROPOSAL', input: 'Estudar' })).proposal.name, 'Estudar');
+assert.equal((await aiMessage({ type: 'GROQ_CONNECTION_PROPOSAL', kind: 'calendar', prompt: 'Planejar reunião', now: '2026-09-26T12:00:00Z', timeZone: 'America/Sao_Paulo' })).draft.title, 'Reunião');
 assert(!requests.some(request => request.options?.method === 'POST' && request.url.includes('localhost:8000')), 'an AI draft must not write to Google');
 listeners.message({ type: 'SHOW_TIMER' }, {}, () => {});
 await new Promise(resolve => setTimeout(resolve, 0));

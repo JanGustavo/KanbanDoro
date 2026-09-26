@@ -26,7 +26,7 @@ async function playAlert(variant) {
 // Content scripts display the floating timer and must not access saved API keys.
 chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (['GROQ_MODELS', 'GROQ_TASK_PROPOSAL', 'GROQ_CONNECTION_PROPOSAL', 'CHECK_ATTACHMENT', 'GOOGLE_STATUS', 'GOOGLE_CONNECT', 'GOOGLE_DISCONNECT', 'GMAIL_STATUS', 'GMAIL_CONNECT', 'GMAIL_SEARCH', 'GMAIL_DISCONNECT', 'CALENDAR_EVENTS', 'CALENDAR_CREATE', 'CALENDAR_UPDATE', 'CALENDAR_DELETE', 'TASKS_LISTS', 'TASKS_ITEMS', 'TASKS_CREATE', 'TASKS_UPDATE', 'TASKS_DELETE', 'GMAIL_SEND'].includes(message?.type)) {
+  if (['GROQ_MODELS', 'GROQ_TASK_PROPOSAL', 'GROQ_CONNECTION_PROPOSAL', 'AI_SLICE_INSIGHT', 'CHECK_ATTACHMENT', 'GOOGLE_STATUS', 'GOOGLE_CONNECT', 'GOOGLE_DISCONNECT', 'GMAIL_STATUS', 'GMAIL_CONNECT', 'GMAIL_SEARCH', 'GMAIL_DISCONNECT', 'CALENDAR_EVENTS', 'CALENDAR_CREATE', 'CALENDAR_UPDATE', 'CALENDAR_DELETE', 'TASKS_LISTS', 'TASKS_ITEMS', 'TASKS_CREATE', 'TASKS_UPDATE', 'TASKS_DELETE', 'GMAIL_SEND'].includes(message?.type)) {
     if (_sender.url !== chrome.runtime.getURL('index.html')) return;
     (['GMAIL_', 'GOOGLE_', 'CALENDAR_', 'TASKS_'].some(prefix => message.type.startsWith(prefix)) ? handleGoogle(message) : handleGroq(message))
       .then(sendResponse).catch(error => sendResponse({ error: error.message }));
@@ -224,23 +224,73 @@ async function groqRequest(path, apiKey, body) {
   }
   return response.json();
 }
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta';
+async function geminiRequest(path, apiKey, body) {
+  const response = await fetch(GEMINI_URL + path, {
+    method: body ? 'POST' : 'GET',
+    headers: { 'x-goog-api-key': apiKey, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(25000)
+  });
+  if (!response.ok) {
+    if ([401, 403].includes(response.status)) throw Error('Chave do Gemini inválida ou sem acesso a este modelo.');
+    if (response.status === 429) throw Error('Cota do Gemini atingida. Tente novamente mais tarde.');
+    throw Error(`Gemini não respondeu à solicitação (${response.status}).`);
+  }
+  return response.json();
+}
+function geminiSchema(value) {
+  if (Array.isArray(value)) return value.map(geminiSchema);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'additionalProperties').map(([key, item]) => [key, geminiSchema(item)]));
+  return value;
+}
+async function aiChat(settings, payload) {
+  if (settings.provider === 'groq') return groqRequest('/chat/completions', settings.apiKey, payload);
+  // Gemini shares the same schema and validation below; only the transport differs.
+  if (!/^gemini-[a-z0-9.-]+$/.test(settings.model)) throw Error('Selecione um modelo Gemini válido.');
+  const result = await geminiRequest(`/models/${settings.model}:generateContent`, settings.geminiApiKey, {
+    systemInstruction: { parts: [{ text: payload.messages.find(message => message.role === 'system')?.content ?? '' }] },
+    contents: [{ role: 'user', parts: [{ text: payload.messages.find(message => message.role === 'user')?.content ?? '' }] }],
+    generationConfig: { responseMimeType: 'application/json', responseSchema: geminiSchema(payload.response_format.json_schema.schema), maxOutputTokens: payload.max_completion_tokens }
+  });
+  return { choices: [{ message: { content: result.candidates?.[0]?.content?.parts?.map(part => part.text ?? '').join('') ?? '' } }] };
+}
 async function handleGroq(message) {
   if (message.type === 'CHECK_ATTACHMENT') return { check: await checkAttachment(message.url) };
   const stored = await chrome.storage.local.get('kanbandoro_ai_settings');
   const settings = stored.kanbandoro_ai_settings;
-  if (settings?.provider !== 'groq' || !settings.apiKey) throw Error('Salve sua chave da Groq em Preferências → IA.');
+  if (!['groq', 'gemini'].includes(settings?.provider) || !(settings.provider === 'gemini' ? settings.geminiApiKey : settings.apiKey)) throw Error('Salve a chave do provedor escolhido em Preferências → IA.');
   if (message.type === 'GROQ_MODELS') {
+    if (settings.provider === 'gemini') {
+      const result = await geminiRequest('/models?pageSize=1000', settings.geminiApiKey);
+      return { models: (result.models || []).filter(model => model.name?.startsWith('models/gemini-') && model.name.includes('flash') && !model.name.includes('preview') && model.supportedGenerationMethods?.includes('generateContent'))
+        .map(model => ({ id: model.name.replace('models/', ''), name: model.displayName || model.name })) };
+    }
     const result = await groqRequest('/models', settings.apiKey);
     const models = (result.data || []).filter(model => model.active && model.input_modalities?.includes('text') && model.output_modalities?.includes('text')
       && model.supported_features?.includes('structured_outputs') && !model.id.includes('safeguard'));
     return { models: models.map(model => ({ id: model.id, name: model.name || model.id })) };
+  }
+  if (message.type === 'AI_SLICE_INSIGHT') {
+    const item = message.task;
+    if (!settings.model || !item || typeof item.name !== 'string' || !Number.isFinite(item.estimate) || !Array.isArray(item.slices) || item.slices.length > 50 ||
+      item.slices.some(slice => typeof slice.name !== 'string' || slice.estimateMinutes !== null && slice.estimateMinutes !== undefined && (!Number.isInteger(slice.estimateMinutes) || slice.estimateMinutes < 1 || slice.estimateMinutes > 480))) throw Error('Revise a tarefa antes da análise.');
+    const clean = { name: item.name.slice(0, 140), estimate: Math.max(1, Math.min(480, Math.round(item.estimate))), slices: item.slices.map(slice => ({ name: slice.name.slice(0, 100), estimateMinutes: slice.estimateMinutes ?? null })) };
+    const result = await aiChat(settings, { model: settings.model,
+      messages: [{ role: 'system', content: 'Você analisa a distribuição dos slices de uma única tarefa. Responda em português brasileiro em até duas frases objetivas. Aponte desproporções, estimativas ausentes e muitos slices (8 ou mais) quando relevante; sugira dividir ou agrupar sem editar nada. Não invente tempos. Retorne JSON com um único campo insight (string).' },
+        { role: 'user', content: JSON.stringify(clean) }],
+      response_format: { type: 'json_schema', json_schema: { name: 'slice_insight', strict: settings.provider === 'groq' && ['openai/gpt-oss-20b', 'openai/gpt-oss-120b'].includes(settings.model), schema: { type: 'object', additionalProperties: false, required: ['insight'], properties: { insight: { type: 'string' } } } } },
+      max_completion_tokens: 190 });
+    let answer;
+    try { answer = JSON.parse(result.choices?.[0]?.message?.content); } catch { throw Error('A IA não retornou uma análise válida.'); }
+    if (typeof answer?.insight !== 'string' || !answer.insight.trim()) throw Error('A IA não retornou uma análise válida.');
+    return { insight: answer.insight.trim().slice(0, 500) };
   }
   if (message.type === 'GROQ_CONNECTION_PROPOSAL') {
     const kind = message.kind;
     if (!['calendar', 'tasks', 'email'].includes(kind)) throw Error('Destino desconhecido.');
     const prompt = String(message.prompt || '').trim().slice(0, 2000);
     if (!prompt || !settings.model) throw Error('Descreva a proposta e escolha um modelo em Preferências → IA.');
-    const response = await groqRequest('/chat/completions', settings.apiKey, {
+    const response = await aiChat(settings, {
       model: settings.model,
       messages: [
         { role: 'system', content: 'Você prepara somente propostas editáveis para Google Calendar, Google Tasks ou envio de e-mail. Nunca executa ações. Responda em português brasileiro. Retorne TODOS os campos de texto title, description, start, end, to, subject, body; use string vazia para os irrelevantes. Para Calendar, datas no formato YYYY-MM-DDTHH:mm (hora local informada), duração positiva, não invente data se o pedido estiver ambíguo: escolha próximo dia útil e destaque na descrição. Para e-mail, não invente destinatário: deixe to vazio se não foi informado. Evite acrescentar dados pessoais não fornecidos.' },
@@ -260,7 +310,7 @@ async function handleGroq(message) {
   if (!input || !settings.model) throw Error('Informe a tarefa e escolha um modelo da Groq.');
   const previous = message.previous && typeof message.previous === 'object' ? JSON.stringify(message.previous).slice(0, 3000) : '';
   const feedback = String(message.feedback || '').trim().slice(0, 1000);
-  const result = await groqRequest('/chat/completions', settings.apiKey, {
+  const result = await aiChat(settings, {
     model: settings.model,
     messages: [
       { role: 'system', content: 'Você organiza tarefas para um Kanban Pomodoro. Responda em português brasileiro. Sugira tempo total em minutos e dificuldade 1 leve, 2 média, 3 alta. Slices são etapas curtas e concretas. Sugira até 3 links HTTPS específicos e relevantes como anexos apenas se conhecer os endereços reais; nunca invente URLs, paths de busca ou vagas. Se não tiver certeza, devolva anexos vazios. Nunca execute ações nem considere que a proposta foi aceita.' },
