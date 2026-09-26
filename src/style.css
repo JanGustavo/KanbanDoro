@@ -756,7 +756,7 @@ header p {
 .task-actions .archive-task:hover { background: #6b4a39; }
 .task-actions .delete-task { background: #692c37; color: #ffcbcb; }
 .task-actions .delete-task:hover { background: #8a3948; }
-.connection-dialog { max-width: 660px; max-height: min(86vh, 850px); overflow-y: auto; }
+.connection-dialog { max-width: 760px; max-height: min(90vh, 900px); overflow-y: auto; }
 .connection-dialog .proposal-tabs { margin: 16px 0; }
 .connection-pane > p { color: #cbb9ac; }
 .connection-dates { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; }
@@ -765,9 +765,28 @@ header p {
 .connection-dialog > p { color: #cbb9ac; line-height: 1.5; }
 .connection-note { display: grid; gap: 9px; padding: 16px; border: 1px solid #b68451; border-radius: 12px; overflow-wrap: anywhere; }
 .connection-note code { color: #f3ca88; }
-.connection-search { display: grid; gap: 8px; margin: 20px 0; }
-.connection-search > div { display: flex; gap: 8px; }
-.connection-search input { flex: 1; }
+.connection-search { display: grid; gap: 8px; margin: 20px 0; width: 100%; min-width: 0; }
+.connection-search > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; width: 100%; min-width: 0; }
+.connection-search input, .connection-search select { display: block; width: 100%; min-width: 0; }
+.connection-search label { display: block; color: #efc78c; font-weight: 700; }
+.connection-search > .connection-dates { display: flex; flex-wrap: wrap; }
+.connection-account { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.connection-account span { width: 100%; color: #f1bb85; }
+.connection-account .connection-disconnect { margin: 0; }
+.connection-assistant,.connection-review { display: grid; gap: 10px; padding: 18px; margin: 18px 0; border: 1px solid #8e634f; border-radius: 14px; background: #31282c; }
+.connection-assistant h3,.connection-review h3 { margin: 0; color: #f6d39e; }
+.connection-assistant label,.connection-review-form label { display: grid; gap: 6px; font-weight: 650; }
+.connection-assistant textarea { min-height: 100px; width: 100%; }
+.connection-assistant small,.connection-review small { color: #cebbb1; }
+.connection-assistant-actions,.connection-review-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.connection-assistant-actions button:first-child { background: #823b55; border: 1px solid #cb8958; }
+.connection-review { border-color: #d6a457; box-shadow: 0 0 18px #ba754b38; animation: proposal-appear .3s ease-out; }
+.connection-review p { margin: 0; }
+.connection-review-form { display: grid; gap: 13px; }
+.connection-review-form textarea { min-height: 120px; }
+.connection-review-form input,.connection-review-form textarea { width: 100%; }
+.connection-review-actions .primary { background: #357750; }
+.connection-review-actions .primary:hover { background: #418f60; }
 .connection-messages { display: grid; gap: 10px; }
 .connection-messages article { padding: 14px; border: 1px solid #59434b; border-radius: 12px; background: #29272a; display: grid; gap: 5px; }
 .connection-messages small { color: #d2ac82; overflow-wrap: anywhere; }
@@ -776,7 +795,7 @@ header p {
 .connection-connect { margin: 10px 0; }
 .connection-disconnect { margin-top: 18px; background: #652d3d; }
 .connection-notice { padding: 12px; background: #42313a; border-radius: 8px; }
-@media (max-width: 600px) { .connection-search > div { flex-direction: column; } }
+@media (max-width: 600px) { .connection-search > div { grid-template-columns: 1fr; } .connection-dates { flex-direction: column; align-items: stretch; } }
 
 .schedule-choice {
   border: 1px solid #644853;

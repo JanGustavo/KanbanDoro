@@ -26,7 +26,7 @@ async function playAlert(variant) {
 // Content scripts display the floating timer and must not access saved API keys.
 chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (['GROQ_MODELS', 'GROQ_TASK_PROPOSAL', 'CHECK_ATTACHMENT', 'GOOGLE_STATUS', 'GOOGLE_CONNECT', 'GOOGLE_DISCONNECT', 'GMAIL_STATUS', 'GMAIL_CONNECT', 'GMAIL_SEARCH', 'GMAIL_DISCONNECT', 'CALENDAR_EVENTS', 'TASKS_LISTS', 'TASKS_ITEMS'].includes(message?.type)) {
+  if (['GROQ_MODELS', 'GROQ_TASK_PROPOSAL', 'GROQ_CONNECTION_PROPOSAL', 'CHECK_ATTACHMENT', 'GOOGLE_STATUS', 'GOOGLE_CONNECT', 'GOOGLE_DISCONNECT', 'GMAIL_STATUS', 'GMAIL_CONNECT', 'GMAIL_SEARCH', 'GMAIL_DISCONNECT', 'CALENDAR_EVENTS', 'CALENDAR_CREATE', 'TASKS_LISTS', 'TASKS_ITEMS', 'TASKS_CREATE', 'GMAIL_SEND'].includes(message?.type)) {
     if (_sender.url !== chrome.runtime.getURL('index.html')) return;
     (['GMAIL_', 'GOOGLE_', 'CALENDAR_', 'TASKS_'].some(prefix => message.type.startsWith(prefix)) ? handleGoogle(message) : handleGroq(message))
       .then(sendResponse).catch(error => sendResponse({ error: error.message }));
@@ -48,8 +48,10 @@ const GROQ_URL = 'https://api.groq.com/openai/v1';
 const GOOGLE_SESSION = 'google_connection_session';
 const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/gmail.send',
   'https://www.googleapis.com/auth/calendar.readonly',
-  'https://www.googleapis.com/auth/tasks.readonly'
+  'https://www.googleapis.com/auth/calendar.events',
+  'https://www.googleapis.com/auth/tasks'
 ];
 let connectionConfig;
 async function getConnectionConfig() {
@@ -61,10 +63,17 @@ function base64url(bytes) {
 }
 async function connectionRequest(path, session, options = {}) {
   const { apiUrl } = await getConnectionConfig();
-  const response = await fetch(apiUrl + '/connections/google' + path, {
-    ...options, headers: { 'Content-Type': 'application/json', ...(session ? { Authorization: `Bearer ${session}` } : {}) },
-    signal: AbortSignal.timeout(25000)
-  });
+  let response;
+  try {
+    response = await fetch(apiUrl + '/connections/google' + path, {
+      ...options, headers: { 'Content-Type': 'application/json', ...(session ? { Authorization: `Bearer ${session}` } : {}) },
+      signal: AbortSignal.timeout(25000)
+    });
+  } catch {
+    throw Error(options.method === 'POST' && path !== '/exchange'
+      ? 'Não houve confirmação da gravação. Confira no Google antes de tentar de novo para evitar duplicatas.'
+      : `Não foi possível acessar a API em ${apiUrl}. Confira se o backend está ativo e se a URL do build está correta.`);
+  }
   if (!response.ok) {
     if (response.status === 401) {
       await chrome.storage.local.remove(GOOGLE_SESSION);
@@ -104,8 +113,13 @@ async function handleGoogle(message) {
   if (message.type === 'GOOGLE_STATUS' || message.type === 'GMAIL_STATUS') {
     const saved = await chrome.storage.local.get(GOOGLE_SESSION);
     if (!configured || !saved[GOOGLE_SESSION]) return { configured, connected: false };
-    try { await connectionRequest('/status', saved[GOOGLE_SESSION]); return { configured, connected: true }; }
-    catch { return { configured, connected: false }; }
+    try {
+      const current = await connectionRequest('/status', saved[GOOGLE_SESSION]);
+      return { configured, connected: true, needsReconnect: GOOGLE_SCOPES.some(scope => !current.scopes?.includes(scope)) };
+    } catch (error) {
+      if (error.message.startsWith('Conexão expirada.')) return { configured, connected: false };
+      return { configured, connected: true, error: error.message };
+    }
   }
   if (!configured) throw Error('Configure o cliente OAuth Web e a URL do backend para Connections.');
   if (message.type === 'GOOGLE_CONNECT' || message.type === 'GMAIL_CONNECT') return connectGoogle();
@@ -121,6 +135,9 @@ async function handleGoogle(message) {
   if (message.type === 'CALENDAR_EVENTS') return connectionRequest(`/calendar/events?start=${encodeURIComponent(message.start)}&end=${encodeURIComponent(message.end)}`, session);
   if (message.type === 'TASKS_LISTS') return connectionRequest('/tasks/lists', session);
   if (message.type === 'TASKS_ITEMS') return connectionRequest(`/tasks/lists/${encodeURIComponent(String(message.listId || ''))}`, session);
+  if (message.type === 'CALENDAR_CREATE') return connectionRequest('/calendar/events', session, { method: 'POST', body: JSON.stringify(message.draft) });
+  if (message.type === 'TASKS_CREATE') return connectionRequest(`/tasks/lists/${encodeURIComponent(String(message.listId || ''))}`, session, { method: 'POST', body: JSON.stringify(message.draft) });
+  if (message.type === 'GMAIL_SEND') return connectionRequest('/gmail/send', session, { method: 'POST', body: JSON.stringify(message.draft) });
   throw Error('Operação desconhecida.');
 }
 function safeAttachmentUrl(value) {
@@ -184,6 +201,27 @@ async function handleGroq(message) {
     const models = (result.data || []).filter(model => model.active && model.input_modalities?.includes('text') && model.output_modalities?.includes('text')
       && model.supported_features?.includes('structured_outputs') && !model.id.includes('safeguard'));
     return { models: models.map(model => ({ id: model.id, name: model.name || model.id })) };
+  }
+  if (message.type === 'GROQ_CONNECTION_PROPOSAL') {
+    const kind = message.kind;
+    if (!['calendar', 'tasks', 'email'].includes(kind)) throw Error('Destino desconhecido.');
+    const prompt = String(message.prompt || '').trim().slice(0, 2000);
+    if (!prompt || !settings.model) throw Error('Descreva a proposta e escolha um modelo em Preferências → IA.');
+    const response = await groqRequest('/chat/completions', settings.apiKey, {
+      model: settings.model,
+      messages: [
+        { role: 'system', content: 'Você prepara somente propostas editáveis para Google Calendar, Google Tasks ou envio de e-mail. Nunca executa ações. Responda em português brasileiro. Retorne TODOS os campos de texto title, description, start, end, to, subject, body; use string vazia para os irrelevantes. Para Calendar, datas no formato YYYY-MM-DDTHH:mm (hora local informada), duração positiva, não invente data se o pedido estiver ambíguo: escolha próximo dia útil e destaque na descrição. Para e-mail, não invente destinatário: deixe to vazio se não foi informado. Evite acrescentar dados pessoais não fornecidos.' },
+        { role: 'user', content: JSON.stringify({ destino: kind, pedido: prompt, agora: String(message.now || '').slice(0, 35), fuso: String(message.timeZone || '').slice(0, 80) }) }
+      ],
+      response_format: { type: 'json_schema', json_schema: { name: 'connection_draft', strict: ['openai/gpt-oss-20b', 'openai/gpt-oss-120b'].includes(settings.model), schema: {
+        type: 'object', additionalProperties: false, required: ['title', 'description', 'start', 'end', 'to', 'subject', 'body'],
+        properties: Object.fromEntries(['title', 'description', 'start', 'end', 'to', 'subject', 'body'].map(key => [key, { type: 'string' }]))
+      } } }, max_completion_tokens: 750
+    });
+    let draft;
+    try { draft = JSON.parse(response.choices?.[0]?.message?.content); } catch { throw Error('A IA não retornou uma proposta válida.'); }
+    if (!draft || ['title', 'description', 'start', 'end', 'to', 'subject', 'body'].some(key => typeof draft[key] !== 'string')) throw Error('Proposta incompleta. Tente novamente.');
+    return { draft: Object.fromEntries(Object.entries(draft).map(([key, value]) => [key, value.slice(0, key === 'description' || key === 'body' ? 4000 : 250)])) };
   }
   const input = String(message.input || '').trim().slice(0, 2500);
   if (!input || !settings.model) throw Error('Informe a tarefa e escolha um modelo da Groq.');

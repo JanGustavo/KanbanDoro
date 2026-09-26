@@ -41,7 +41,7 @@ A IA nunca muda a tarefa sem revisão: criação abre modal; ajuda comum respond
 
 ## Connections: Gmail, Calendar e Tasks
 
-A extensão consulta mensagens do Gmail (até 10), eventos do Google Calendar (até 50, intervalo de até 31 dias) e listas/tarefas pendentes do Google Tasks (até 100 por página consultada). Cada item escolhido abre **uma proposta editável** no KanbanDoro. Não existe sincronização nos dois sentidos nem execução em segundo plano; nada dessas conexões vai para a Groq sem uma ação explícita do usuário.
+A extensão consulta mensagens do Gmail (até 10), eventos do Google Calendar (até 50, intervalo de até 31 dias) e listas/tarefas pendentes do Google Tasks (até 100 por página consultada). Cada item escolhido abre **uma proposta editável** no KanbanDoro. O painel Connections também recebe um pedido escrito, pede à Groq uma proposta de evento, tarefa do Google Tasks ou e-mail, e abre campos editáveis para revisão antes de gravar. E-mails exigem uma confirmação adicional antes do envio. É possível preencher tudo manualmente. Não existe sincronização nos dois sentidos nem execução em segundo plano; nenhuma mensagem consultada é enviada à Groq automaticamente.
 
 ### Configuração local
 
@@ -54,7 +54,7 @@ Para incluir Connections no ZIP da GitHub Release, cadastre `KANBANDORO_GOOGLE_C
 
 O build grava apenas o ID público OAuth e a URL da API em `dist/connections-config.json`. O `manifest.json` mantém `identity` e adiciona somente a origem do backend em `host_permissions`; **não** define `oauth2` porque `launchWebAuthFlow` usa o cliente Web e constrói a URL OAuth explicitamente. O `client_secret` fica exclusivamente no backend. A extensão gera `state` e PKCE, recebe o código por `chromiumapp.org` e o entrega ao backend para a troca. O backend guarda o refresh token criptografado no SQLite e devolve uma sessão opaca; a extensão só solicita os dados resumidos para a interface. Ao desconectar, o servidor tenta revogar o consentimento e apaga a sessão e os tokens locais. Para proteção efetiva do SQLite, mantenha a chave Fernet separada dos backups do banco e faça backup dessa chave para preservar conexões.
 
-Os escopos solicitados juntos são `gmail.readonly`, `calendar.readonly` e `tasks.readonly`. O Google classifica `gmail.readonly` como restrito; para disponibilização pública, poderá exigir verificação OAuth. No modo de teste do Google, o refresh token pode expirar e exigir nova conexão. Defina uma conta de testes antes de testar com dados reais.
+Os escopos solicitados juntos são `gmail.readonly`, `gmail.send`, `calendar.readonly`, `calendar.events` e `tasks`. A escrita requer nova autorização das conexões feitas antes dessa atualização: use **Atualizar permissões** no painel. Configure esses escopos na tela de consentimento do Google Cloud. O Google classifica `gmail.readonly` como restrito; para disponibilização pública, poderá exigir verificação OAuth. No modo de teste do Google, o refresh token pode expirar e exigir nova conexão. Defina uma conta de testes antes de testar com dados reais. Nenhum consentimento autoriza de antemão escopos futuros ainda não solicitados.
 
 ## Fases
 

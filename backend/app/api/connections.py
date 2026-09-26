@@ -1,13 +1,15 @@
+import base64
 import hashlib
 import secrets
 import time
 from datetime import datetime
+from email.message import EmailMessage
 from urllib.parse import quote
 
 import httpx
 from cryptography.fernet import Fernet
 from fastapi import APIRouter, Depends, Header, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,8 +20,10 @@ from app.models.google_connection_model import GoogleConnection
 router = APIRouter(prefix="/connections/google", tags=["connections"])
 SCOPES = {
     "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/calendar.readonly",
-    "https://www.googleapis.com/auth/tasks.readonly",
+    "https://www.googleapis.com/auth/calendar.events",
+    "https://www.googleapis.com/auth/tasks",
 }
 
 
@@ -27,6 +31,24 @@ class ExchangeRequest(BaseModel):
     code: str = Field(min_length=4, max_length=2048)
     code_verifier: str = Field(pattern=r"^[A-Za-z0-9._~-]{43,128}$")
     redirect_uri: str
+
+
+class CalendarDraft(BaseModel):
+    title: str = Field(min_length=1, max_length=180)
+    description: str = Field(default="", max_length=4000)
+    start: datetime
+    end: datetime
+
+
+class TaskDraft(BaseModel):
+    title: str = Field(min_length=1, max_length=180)
+    notes: str = Field(default="", max_length=4000)
+
+
+class EmailDraft(BaseModel):
+    to: EmailStr
+    subject: str = Field(min_length=1, max_length=250)
+    body: str = Field(min_length=1, max_length=10000)
 
 
 def config():
@@ -74,7 +96,7 @@ async def google_access(record: GoogleConnection, db: AsyncSession) -> str:
     record.access_token = cipher().encrypt(data["access_token"].encode()).decode()
     record.expires_at = int(time.time()) + int(data.get("expires_in", 3600))
     await db.commit()
-    return record.access_token
+    return data["access_token"]
 
 
 async def google_get(record: GoogleConnection, db: AsyncSession, url: str, params: dict | None = None) -> dict:
@@ -85,6 +107,19 @@ async def google_get(record: GoogleConnection, db: AsyncSession, url: str, param
         raise HTTPException(401, "Google recusou o acesso. Reconecte a conta e confira as permissões.")
     if response.status_code != 200:
         raise HTTPException(502, f"Falha na consulta ao Google ({response.status_code})")
+    return response.json()
+
+
+async def google_post(record: GoogleConnection, db: AsyncSession, url: str, body: dict, scope: str) -> dict:
+    if scope not in record.scopes.split():
+        raise HTTPException(403, "Permissão de escrita ausente. Atualize a conexão Google.")
+    token = await google_access(record, db)
+    async with httpx.AsyncClient(timeout=20) as client:
+        response = await client.post(url, json=body, headers={"Authorization": f"Bearer {token}"})
+    if response.status_code in (401, 403):
+        raise HTTPException(403, "Google recusou a gravação. Confira as permissões e conecte novamente.")
+    if response.status_code not in (200, 201):
+        raise HTTPException(502, f"Google não confirmou a gravação ({response.status_code}).")
     return response.json()
 
 
@@ -186,11 +221,51 @@ async def task_lists(authorization: str | None = Header(default=None), db: Async
 
 @router.get("/tasks/lists/{list_id}")
 async def tasks_in_list(list_id: str, authorization: str | None = Header(default=None), db: AsyncSession = Depends(get_db)):
-    if len(list_id) > 256 or not all(char.isascii() and (char.isalnum() or char in "_-+=:@") for char in list_id):
-        raise HTTPException(400, "Lista inválida")
+    validate_list_id(list_id)
     record = await connected(db, authorization)
     data = await google_get(record, db, f"https://tasks.googleapis.com/tasks/v1/lists/{quote(list_id, safe='')}/tasks", {
         "maxResults": 100, "showCompleted": "false"})
     return {"tasks": [{"id": item["id"], "title": item.get("title", "(Sem título)")[:180],
                        "notes": item.get("notes", "")[:2000], "due": item.get("due", "")}
                       for item in data.get("items", []) if item.get("id") and item.get("status") != "completed"]}
+
+
+def validate_list_id(list_id: str) -> None:
+    if not list_id or len(list_id) > 256 or not all(char.isascii() and (char.isalnum() or char in "_-+=:@") for char in list_id):
+        raise HTTPException(400, "Lista inválida")
+
+
+@router.post("/calendar/events")
+async def create_event(draft: CalendarDraft, authorization: str | None = Header(default=None), db: AsyncSession = Depends(get_db)):
+    if not draft.start.tzinfo or not draft.end.tzinfo or draft.end <= draft.start or (draft.end - draft.start).days > 7:
+        raise HTTPException(400, "Informe começo e fim válidos, com fuso horário e até 7 dias de duração")
+    record = await connected(db, authorization)
+    result = await google_post(record, db, "https://www.googleapis.com/calendar/v3/calendars/primary/events", {
+        "summary": draft.title.strip(), "description": draft.description,
+        "start": {"dateTime": draft.start.isoformat()}, "end": {"dateTime": draft.end.isoformat()},
+    }, "https://www.googleapis.com/auth/calendar.events")
+    return {"id": result.get("id"), "link": result.get("htmlLink", "")}
+
+
+@router.post("/tasks/lists/{list_id}")
+async def create_task(list_id: str, draft: TaskDraft, authorization: str | None = Header(default=None), db: AsyncSession = Depends(get_db)):
+    validate_list_id(list_id)
+    record = await connected(db, authorization)
+    result = await google_post(record, db, f"https://tasks.googleapis.com/tasks/v1/lists/{quote(list_id, safe='')}/tasks", {
+        "title": draft.title.strip(), "notes": draft.notes,
+    }, "https://www.googleapis.com/auth/tasks")
+    return {"id": result.get("id")}
+
+
+@router.post("/gmail/send")
+async def send_email(draft: EmailDraft, authorization: str | None = Header(default=None), db: AsyncSession = Depends(get_db)):
+    record = await connected(db, authorization)
+    email = EmailMessage()
+    email["To"] = str(draft.to)
+    email["Subject"] = draft.subject.replace("\r", " ").replace("\n", " ")
+    email.set_content(draft.body)
+    raw = base64.urlsafe_b64encode(email.as_bytes()).decode().rstrip("=")
+    result = await google_post(record, db, "https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+        "raw": raw,
+    }, "https://www.googleapis.com/auth/gmail.send")
+    return {"id": result.get("id")}

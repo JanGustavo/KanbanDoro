@@ -36,10 +36,18 @@ async def test_google_exchange_and_read_only_connections(tmp_path, monkeypatch):
         if url.endswith('/token'):
             return Response(200, json={"access_token": "google-secret-access", "refresh_token": "google-secret-refresh",
                 "expires_in": 3600, "scope": " ".join(sorted(connections.SCOPES))})
-        return Response(200, json={})
+        if url.endswith('/messages/send'):
+            import base64
+
+            raw = kwargs['json']['raw']
+            decoded = base64.urlsafe_b64decode(raw + '=' * (-len(raw) % 4)).decode()
+            assert 'Subject: Teste' in decoded and 'To: destino@example.com' in decoded
+            return Response(200, json={'id': 'sent-mail'})
+        return Response(200, json={'id': 'created-item', 'htmlLink': 'https://calendar.google.com/'})
 
     async def fake_get(url, params=None, **kwargs):
         calls.append((url, params))
+        assert kwargs['headers']['Authorization'] == 'Bearer google-secret-access'
         if url.endswith('/messages'):
             return Response(200, json={"messages": [{"id": "123abc"}]})
         if '/messages/' in url:
@@ -90,6 +98,11 @@ async def test_google_exchange_and_read_only_connections(tmp_path, monkeypatch):
             assert (await client.get("/connections/google/calendar/events", params={"start": "2026-09-26T00:00:00Z", "end": "2026-09-27T00:00:00Z"})).json()["events"][0]["title"] == "Reunião"
             assert (await client.get("/connections/google/tasks/lists")).json()["lists"][0]["title"] == "Pessoal"
             assert (await client.get("/connections/google/tasks/lists/list1")).json()["tasks"][0]["title"] == "Estudar"
+            assert (await client.post("/connections/google/calendar/events", json={"title": "Reunião", "description": "Discussão", "start": "2026-09-26T14:00:00-03:00", "end": "2026-09-26T15:00:00-03:00"})).json()["id"] == "created-item"
+            assert (await client.post("/connections/google/tasks/lists/list1", json={"title": "Estudar", "notes": "Linux"})).json()["id"] == "created-item"
+            assert (await client.post("/connections/google/gmail/send", json={"to": "destino@example.com", "subject": "Teste", "body": "Olá"})).json()["id"] == "sent-mail"
+            assert (await client.post("/connections/google/gmail/send", json={"to": "destino@example.com", "subject": "Teste", "body": ""})).status_code == 422
+            assert (await client.post("/connections/google/calendar/events", json={"title": "Inválido", "start": "2026-09-26T15:00:00Z", "end": "2026-09-26T14:00:00Z"})).status_code == 400
             assert (await client.get("/connections/google/tasks/lists/bad%21list")).status_code == 400
             assert (await client.delete("/connections/google")).status_code == 200
             assert (await client.get("/connections/google/status")).status_code == 401

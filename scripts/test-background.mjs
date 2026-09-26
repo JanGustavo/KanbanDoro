@@ -14,6 +14,7 @@ let notifications = 0;
 let aiSettings = { provider: 'groq', apiKey: 'test-only', model: 'openai/gpt-oss-20b' };
 let googleSession = '';
 let launched = 0;
+let authorizedScopes = ['https://www.googleapis.com/auth/gmail.readonly'];
 const requests = [];
 const chrome = {
   action: { onClicked: { addListener(fn) { listeners.click = fn; } }, setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {} },
@@ -43,13 +44,17 @@ vm.runInNewContext(readFileSync('dist/background.js', 'utf8'), { chrome, AbortSi
     if (url === 'connections-config.json') return { json: async () => ({ clientId: 'test.apps.googleusercontent.com', apiUrl: 'http://localhost:8000' }) };
     if (url.startsWith('http://localhost:8000/connections/google')) {
       if (url.endsWith('/exchange')) { const body = JSON.parse(options.body); assert.equal(body.code, 'code-test'); assert.equal(body.redirect_uri, 'https://extension.chromiumapp.org/'); assert.equal(body.code_verifier.length, 43); return { ok: true, json: async () => ({ session: 'private-server-session' }) }; }
-      if (url.endsWith('/status')) return { ok: true, json: async () => ({ connected: true }) };
+      if (url.endsWith('/status')) return { ok: true, json: async () => ({ connected: true, scopes: authorizedScopes }) };
       if (options.method === 'DELETE') return { ok: true, json: async () => ({ connected: false }) };
       assert.equal(options.headers.Authorization, 'Bearer private-server-session');
       if (url.includes('/gmail/messages')) return { ok: true, json: async () => ({ messages: [{ id: 'msg-1', subject: 'Assunto' }] }) };
       if (url.includes('/calendar/events')) return { ok: true, json: async () => ({ events: [{ id: 'event-1', title: 'Evento' }] }) };
       if (url.includes('/tasks/lists/')) return { ok: true, json: async () => ({ tasks: [{ id: 'task-1', title: 'Tarefa' }] }) };
       if (url.endsWith('/tasks/lists')) return { ok: true, json: async () => ({ lists: [{ id: 'list-1', title: 'Lista' }] }) };
+      if (options.method === 'POST') {
+        assert.equal(options.headers.Authorization, 'Bearer private-server-session');
+        return { ok: true, json: async () => ({ id: 'created-item' }) };
+      }
     }
     if (url.endsWith('/models')) return { ok: true, json: async () => ({ data: [
       { id: 'openai/gpt-oss-20b', name: 'GPT OSS 20B', active: true, input_modalities: ['text'], output_modalities: ['text'], supported_features: ['structured_outputs'] },
@@ -57,7 +62,10 @@ vm.runInNewContext(readFileSync('dist/background.js', 'utf8'), { chrome, AbortSi
     ] }) };
     if (url === 'https://example.org/info') return { ok: true, status: 200, url, headers: { get: () => null } };
     if (url === 'https://example.org/redirect') return { ok: false, status: 302, url, headers: { get: () => 'https://127.0.0.1/private' } };
-    return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ name: 'Criar API', description: 'Implementar rotas', difficulty: 2, estimate: 35, slices: ['Rotas', 'Testes'], attachments: [{ title: 'Documentação', url: 'https://example.org/info' }, { title: 'Interno', url: 'http://localhost/private' }] }) } }] }) };
+    const connectionDraft = options?.body?.includes('connection_draft');
+    return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(connectionDraft ?
+      { title: 'Estudar', description: 'Linux', start: '', end: '', to: '', subject: '', body: '' } :
+      { name: 'Criar API', description: 'Implementar rotas', difficulty: 2, estimate: 35, slices: ['Rotas', 'Testes'], attachments: [{ title: 'Documentação', url: 'https://example.org/info' }, { title: 'Interno', url: 'http://localhost/private' }] }) } }] }) };
   } });
 const aiMessage = (message, senderUrl = 'index.html') => new Promise(resolve => {
   const accepted = listeners.message(message, { url: senderUrl }, resolve);
@@ -69,6 +77,9 @@ assert.equal(launched, 0);
 assert.equal((await aiMessage({ type: 'GMAIL_STATUS' })).connected, false);
 assert.equal((await aiMessage({ type: 'GMAIL_CONNECT' })).connected, true);
 assert.equal(launched, 1);
+assert.equal((await aiMessage({ type: 'GOOGLE_STATUS' })).needsReconnect, true, 'old sessions require new scopes');
+authorizedScopes = ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.send', 'https://www.googleapis.com/auth/calendar.readonly', 'https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/tasks'];
+assert.equal((await aiMessage({ type: 'GOOGLE_STATUS' })).needsReconnect, false);
 const inbox = await aiMessage({ type: 'GMAIL_SEARCH', query: 'newer_than:7d' });
 assert.equal(inbox.messages[0].subject, 'Assunto');
 assert.equal((await aiMessage({ type: 'CALENDAR_EVENTS', start: '2026-09-26T00:00:00Z', end: '2026-09-27T00:00:00Z' })).events[0].title, 'Evento');
@@ -90,6 +101,8 @@ assert.equal(redirect.check.verifiedAt, null, 'redirects into local addresses mu
 assert(!requests.some(req => req.url.includes('127.0.0.1/private')));
 assert.equal(requests[1].options.headers.Authorization, 'Bearer test-only');
 assert.equal(requests[1].options.body.includes('test-only'), false, 'keys must not enter the prompt');
+assert.equal((await aiMessage({ type: 'GROQ_CONNECTION_PROPOSAL', kind: 'tasks', prompt: 'Estudar Linux', now: '2026-09-26T12:00:00Z', timeZone: 'America/Sao_Paulo' })).draft.title, 'Estudar');
+assert(!requests.some(request => request.options?.method === 'POST' && request.url.includes('localhost:8000')), 'an AI draft must not write to Google');
 listeners.message({ type: 'SHOW_TIMER' }, {}, () => {});
 await new Promise(resolve => setTimeout(resolve, 0));
 assert.equal(injections, 1);
