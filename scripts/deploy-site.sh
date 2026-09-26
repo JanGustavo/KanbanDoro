@@ -2,14 +2,14 @@
 # Publica o site estático e expõe somente Connections da API sob HTTPS.
 set -euo pipefail
 if [[ $# -ne 4 ]]; then
-  echo 'Uso: bash scripts/deploy-site.sh dominio.tech azureuser@IP /caminho/chave.pem email-certbot' >&2
+  echo 'Uso: bash scripts/deploy-site.sh kanbandoro.jangustavo.me azureuser@IP /caminho/chave.pem email-certbot' >&2
   exit 2
 fi
 domain=$1
 remote=$2
 key=$3
 email=$4
-[[ $domain =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*\.tech$ && $domain != *..* ]] || { echo 'Informe o domínio .tech completo, sem protocolo.' >&2; exit 2; }
+[[ $domain =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*\.(me|tech)$ && $domain != *..* ]] || { echo 'Informe o nome completo do site (.me ou .tech), sem protocolo.' >&2; exit 2; }
 [[ $remote =~ ^[a-zA-Z_][a-zA-Z0-9_.-]*@[0-9.]+$ ]] || { echo 'Informe usuario@IPv4.' >&2; exit 2; }
 [[ -f $key ]] || { echo "Chave não encontrada: $key" >&2; exit 2; }
 [[ $email == *@*.* ]] || { echo 'Informe um e-mail para o certificado HTTPS.' >&2; exit 2; }

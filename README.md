@@ -85,4 +85,4 @@ O backend agora tem `compose.yaml` e `backend/Dockerfile` com SQLite em volume p
 
 ### Página de apresentação
 
-A landing page estática mora em [`site/`](site/), com layout adaptável e a identidade vinho/amarelo da extensão. Há um modelo de Nginx que serve a página na raiz do domínio `.tech` e expõe somente as rotas Google no subdomínio `api.`. Para os registros DNS e a publicação HTTPS, siga [`site/README.md`](site/README.md).
+A landing page estática mora em [`site/`](site/), com layout adaptável e a identidade vinho/amarelo da extensão. O endereço previsto é `kanbandoro.jangustavo.me`; um modelo de Nginx serve a página nesse subdomínio e expõe apenas as rotas Google em `api.kanbandoro.jangustavo.me`. Para os registros DNS e a publicação HTTPS, siga [`site/README.md`](site/README.md).
