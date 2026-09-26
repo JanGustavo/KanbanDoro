@@ -42,7 +42,36 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === 'SHOW_TIMER') {
     showTimerInActiveTab();
   }
+  if (message?.type === 'FOCUS_NEW_TAB' && _sender.url === chrome.runtime.getURL('focus-blocked.html') && _sender.tab?.id) {
+    chrome.tabs.update(_sender.tab.id, { url: 'chrome://newtab/' }).catch(() => chrome.tabs.update(_sender.tab.id, { url: 'about:blank' }));
+  }
 });
+
+const FOCUS_RULE_ID = 900001;
+const FOCUS_GENTLE = ['instagram.com', 'facebook.com', 'tiktok.com', 'x.com', 'twitter.com', 'chess.com', 'lichess.org', 'twitch.tv', 'stake.com', 'bet365.com'];
+const FOCUS_STRICT = [...FOCUS_GENTLE, 'youtube.com', 'youtu.be', 'reddit.com', 'pinterest.com', 'snapchat.com', 'discord.com', 'web.whatsapp.com', 'telegram.org', 'netflix.com', 'primevideo.com', 'crunchyroll.com', 'roblox.com', 'poki.com', 'crazygames.com', 'miniclip.com', 'epicgames.com', 'steampowered.com'];
+let rulesPending = Promise.resolve();
+function validFocusDomain(value) {
+  return typeof value === 'string' && value.length <= 253 && value.includes('.') && value.split('.').every(part => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(part));
+}
+async function syncFocusRules() {
+  const { session, focusBlocking } = await chrome.storage.local.get(['session', 'focusBlocking']);
+  const mode = focusBlocking?.mode;
+  const domains = mode === 'gentle' ? FOCUS_GENTLE : mode === 'strict' ? FOCUS_STRICT : mode === 'custom' ? focusBlocking.customDomains : [];
+  const blocked = Array.isArray(domains) ? [...new Set(domains.filter(validFocusDomain))].slice(0, 250) : [];
+  const exceptions = Array.isArray(focusBlocking?.exceptions) ? [...new Set(focusBlocking.exceptions.filter(validFocusDomain))].slice(0, 250) : [];
+  const addRules = session?.phase === 'running' && session.endsAt > Date.now() && blocked.length ? [{
+    id: FOCUS_RULE_ID, priority: 1,
+    action: { type: 'redirect', redirect: { extensionPath: '/focus-blocked.html' } },
+    condition: { requestDomains: blocked, excludedRequestDomains: exceptions, resourceTypes: ['main_frame'] }
+  }] : [];
+  await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: [FOCUS_RULE_ID], addRules });
+}
+function queueFocusRules() {
+  rulesPending = rulesPending.catch(() => {}).then(syncFocusRules);
+  rulesPending.catch(error => console.warn('Não foi possível atualizar o bloqueio de foco:', error));
+}
+queueFocusRules();
 
 const GROQ_URL = 'https://api.groq.com/openai/v1';
 const GOOGLE_SESSION = 'google_connection_session';
@@ -319,12 +348,13 @@ async function reconcile() {
   }
 }
 
-chrome.runtime.onInstalled.addListener(reconcile);
-chrome.runtime.onStartup.addListener(reconcile);
+chrome.runtime.onInstalled.addListener(() => { reconcile(); queueFocusRules(); });
+chrome.runtime.onStartup.addListener(() => { reconcile(); queueFocusRules(); });
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name !== 'timer-end') return;
   const { session, soundEnabled } = await chrome.storage.local.get(['session', 'soundEnabled']);
   if (!session || !['running', 'break'].includes(session.phase) || session.endsAt > Date.now()) return;
+  queueFocusRules();
   const isBreak = session?.phase === 'break';
   reconcile();
   chrome.notifications.create({
@@ -341,4 +371,5 @@ chrome.storage.onChanged.addListener((changes, area) => {
     reconcile();
     broadcastTimer(changes.session.newValue || null);
   }
+  if (area === 'local' && (changes.session || changes.focusBlocking)) queueFocusRules();
 });

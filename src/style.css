@@ -1060,7 +1060,20 @@ header p {
 .card .meta span { background: #d4a35620; color: #efc99e; }
 .card .slice-strip { margin-top: 18px; }
 .card:hover { border-color: #ba7782; }
+.blocking-settings h3 { margin: 8px 0; }
+.blocking-settings .settings-hint { color: #cbbcb4; }
+.blocking-profiles { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin: 16px 0; }
+.blocking-profiles button { display: grid; gap: 5px; text-align: left; border: 1px solid #70555e; border-radius: 10px; background: #2b252a; }
+.blocking-profiles button.selected { border-color: #d5a343; background: #4b3038; box-shadow: inset 0 0 0 1px #d5a34377; }
+.blocking-profiles button small { font-size: .75rem; line-height: 1.4; color: #cbb7ae; }
+.blocking-import,.blocking-add { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin: 14px 0; }
+.blocking-add input { flex: 1 1 220px; }
+.blocking-list { display: flex; flex-wrap: wrap; gap: 8px; max-height: 168px; overflow-y: auto; margin: 12px 0 18px; }
+.blocking-list > div { display: flex; align-items: center; gap: 5px; max-width: 100%; border: 1px solid #74545e; border-radius: 7px; padding: 5px 7px; background: #32292d; font-size: .78rem; overflow-wrap: anywhere; }
+.blocking-list button { padding: 3px 5px; font-size: .7rem; color: #f1c180; }
+.blocking-settings h4 { margin-bottom: 6px; }
 @media (max-width: 600px) {
+  .blocking-profiles { grid-template-columns: 1fr; }
   .focus-top { padding: 13px 15px; }
   .focus-top > span:nth-child(2) { display: none; }
   .focus-content { padding: 15px; }

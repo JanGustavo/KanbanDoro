@@ -15,13 +15,17 @@ let aiSettings = { provider: 'groq', apiKey: 'test-only', model: 'openai/gpt-oss
 let googleSession = '';
 let launched = 0;
 let authorizedScopes = ['https://www.googleapis.com/auth/gmail.readonly'];
+let focusBlocking = { mode: 'off', exceptions: [], customDomains: [] };
+let focusRules = [];
+let newTabNavigations = 0;
 const requests = [];
 const chrome = {
   action: { onClicked: { addListener(fn) { listeners.click = fn; } }, setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {} },
   runtime: { getURL: path => path, sendMessage: async message => { if (message.type === 'PLAY_ALERT') alerts++; }, onInstalled: { addListener() {} }, onStartup: { addListener() {} }, onMessage: { addListener(fn) { listeners.message = fn; } } },
   identity: { getRedirectURL: () => 'https://extension.chromiumapp.org/', launchWebAuthFlow: async ({ url, interactive }) => { launched++; assert(interactive); const query = new URL(url).searchParams; assert.equal(query.get('code_challenge_method'), 'S256'); return `https://extension.chromiumapp.org/?code=code-test&state=${query.get('state')}`; } },
-  storage: { local: { setAccessLevel: async () => {}, get: async () => ({ session, soundEnabled, kanbandoro_ai_settings: aiSettings, google_connection_session: googleSession }), set: async item => { googleSession = item.google_connection_session; }, remove: async () => { googleSession = ''; } }, onChanged: { addListener() {} } },
-  tabs: { query: async () => [{ id: 42 }], update: async () => {}, create: async () => {}, onActivated: { addListener() {} },
+  storage: { local: { setAccessLevel: async () => {}, get: async () => ({ session, focusBlocking, soundEnabled, kanbandoro_ai_settings: aiSettings, google_connection_session: googleSession }), set: async item => { googleSession = item.google_connection_session; }, remove: async () => { googleSession = ''; } }, onChanged: { addListener(fn) { listeners.storage = fn; } } },
+  declarativeNetRequest: { updateSessionRules: async ({ removeRuleIds, addRules }) => { assert.deepEqual(Array.from(removeRuleIds), [900001]); focusRules = addRules; } },
+  tabs: { query: async () => [{ id: 42 }], update: async (id, props) => { if (props.url === 'chrome://newtab/' && id === 42) newTabNavigations++; }, create: async () => {}, onActivated: { addListener() {} },
     async sendMessage(id, message) {
       assert.equal(id, 42);
       if (!injected) throw new Error('No receiving end');
@@ -95,6 +99,32 @@ assert(requests.some(({ url, options }) => url.endsWith('/tasks/lists/list-1/tas
 assert.equal(JSON.stringify(inbox).includes('private-server-session'), false, 'session must stay in the service worker');
 assert.equal((await aiMessage({ type: 'GMAIL_DISCONNECT' })).connected, false);
 assert.equal((await aiMessage({ type: 'GMAIL_SEARCH' })).error.includes('Conecte'), true);
+focusBlocking = { mode: 'strict', exceptions: ['web.whatsapp.com'], customDomains: [] };
+listeners.storage({ focusBlocking: { newValue: focusBlocking } }, 'local');
+await new Promise(resolve => setTimeout(resolve, 0));
+assert(focusRules[0].condition.requestDomains.includes('chess.com'));
+assert(focusRules[0].condition.excludedRequestDomains.includes('web.whatsapp.com'));
+assert.deepEqual(Array.from(focusRules[0].condition.resourceTypes), ['main_frame']);
+listeners.message({ type: 'FOCUS_NEW_TAB' }, { url: 'https://other.site/', tab: { id: 42 } }, () => {});
+assert.equal(newTabNavigations, 0);
+listeners.message({ type: 'FOCUS_NEW_TAB' }, { url: 'focus-blocked.html', tab: { id: 42 } }, () => {});
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(newTabNavigations, 1);
+session = { phase: 'break', endsAt: Date.now() + 60_000 };
+listeners.storage({ session: { newValue: session } }, 'local');
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(focusRules.length, 0, 'breaks must not block sites');
+session = { phase: 'running', endsAt: Date.now() + 60_000 };
+focusBlocking = { mode: 'custom', exceptions: [], customDomains: ['example.org'] };
+listeners.storage({ focusBlocking: { newValue: focusBlocking }, session: { newValue: session } }, 'local');
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.deepEqual(Array.from(focusRules[0].condition.requestDomains), ['example.org']);
+session = { phase: 'running', endsAt: Date.now() - 1000 };
+listeners.storage({ session: { newValue: session } }, 'local');
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(focusRules.length, 0, 'expired focus must not block sites');
+session = { phase: 'running', endsAt: Date.now() + 60_000 };
+focusBlocking = { mode: 'off', exceptions: [], customDomains: [] };
 requests.length = 0;
 assert.equal(requests.length, 0);
 const catalog = await aiMessage({ type: 'GROQ_MODELS' });

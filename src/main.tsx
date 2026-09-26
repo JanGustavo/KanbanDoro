@@ -5,6 +5,8 @@ import { getAISettings, saveAISettings, clearAISettings, AI_PROVIDERS, type AISe
 import { dateFromDay, isVisible, localDay, materializeToday, weekEnd, type ViewMode, type WeeklyPlan } from './schedule';
 import Connections from './Connections';
 import Statistics from './Statistics';
+import { focusBlockingDefault, type FocusBlocking } from './focusBlocking';
+import FocusBlockingSettings from './FocusBlockingSettings';
 
 type Column = 'todo' | 'doing' | 'late' | 'done';
 type Slice = { id: string; name: string; done: boolean };
@@ -84,7 +86,8 @@ function App() {
   const [restart, setRestart] = useState<Task | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showConnections, setShowConnections] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<'breaks' | 'ai'>('breaks');
+  const [settingsTab, setSettingsTab] = useState<'breaks' | 'ai' | 'blocking'>('breaks');
+  const [focusBlocking, setFocusBlocking] = useState<FocusBlocking | null>(null);
   const [aiSettings, setAiSettings] = useState<AISettings>({ provider: '', apiKey: '', model: '', customEndpoint: '' });
   const [aiKeyVisible, setAiKeyVisible] = useState(false);
   const [aiNotice, setAiNotice] = useState('');
@@ -119,6 +122,7 @@ function App() {
       setSoundEnabled(stored.soundEnabled !== false);
       setTipsDismissed(stored.tipsDismissed === true);
     });
+    chrome.storage.local.get('focusBlocking').then(stored => setFocusBlocking((stored.focusBlocking as FocusBlocking | undefined) ?? focusBlockingDefault));
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     const tips = window.setInterval(() => setTipIndex(i => (i + 1) % loadingTips.length), 6000);
     return () => { window.clearInterval(timer); window.clearInterval(tips); };
@@ -131,6 +135,10 @@ function App() {
   useEffect(() => {
     if (ready) void chrome.storage.local.set(data);
   }, [data, ready]);
+  function changeFocusBlocking(next: FocusBlocking) {
+    setFocusBlocking(next);
+    void chrome.storage.local.set({ focusBlocking: next });
+  }
   const today = localDay(new Date(now));
   useEffect(() => {
     if (ready) update(old => {
@@ -399,9 +407,10 @@ function App() {
     </section></div>}
     {showSettings && <div className="backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setShowSettings(false); }}><section className="dialog" role="dialog" aria-modal="true" aria-label="Preferências">
       <button className="close" onClick={() => setShowSettings(false)}>✕</button><span className="eyebrow">PREFERÊNCIAS</span>
-      <div className="settings-tabs slide-tabs" role="tablist" style={{ '--tab-count': 2, '--active-index': settingsTab === 'breaks' ? 0 : 1 } as React.CSSProperties}>
+      <div className="settings-tabs slide-tabs" role="tablist" style={{ '--tab-count': 3, '--active-index': settingsTab === 'breaks' ? 0 : settingsTab === 'ai' ? 1 : 2 } as React.CSSProperties}>
         <button role="tab" aria-selected={settingsTab === 'breaks'} onClick={() => setSettingsTab('breaks')}>Pausas</button>
         <button role="tab" aria-selected={settingsTab === 'ai'} onClick={() => setSettingsTab('ai')}>IA</button>
+        <button role="tab" aria-selected={settingsTab === 'blocking'} onClick={() => setSettingsTab('blocking')}>Bloqueio</button>
       </div>
       {settingsTab === 'breaks' && (
         <>
@@ -471,6 +480,7 @@ function App() {
           </div>
         </>
       )}
+      {settingsTab === 'blocking' && <FocusBlockingSettings settings={focusBlocking} onChange={changeFocusBlocking} />}
     </section></div>}
     <nav className="board-controls" aria-label="Filtrar tarefas">
       <div className="board-view-scroll"><div className="board-view-slider slide-tabs" style={{ '--tab-count': 5, '--active-index': showStatistics ? 0 : ['today', 'week', 'all', 'archive'].indexOf(view) + 1 } as React.CSSProperties}>
