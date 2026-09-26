@@ -16,4 +16,4 @@ if (clientId) {
 }
 writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 writeFileSync('dist/connections-config.json', `${JSON.stringify({ clientId, apiUrl })}\n`);
-console.log(clientId ? 'Connections configuradas (cliente OAuth Web + API).' : 'Connections desabilitadas até configurar cliente OAuth Web e API.');
+console.log(clientId ? `Connections configuradas para ${apiUrl} (cliente OAuth Web + API).` : 'Connections desabilitadas até configurar cliente OAuth Web e API.');

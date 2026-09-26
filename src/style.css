@@ -100,10 +100,10 @@ h1 {
 }
 
 h1 .brand-doro {
-  color: #d6a457;
+  color: #d46a81;
 }
 
-h1 .brand-kanban { color: #d46a81; }
+h1 .brand-kanban { color: #d6a457; }
 
 header p {
   margin: 0;
