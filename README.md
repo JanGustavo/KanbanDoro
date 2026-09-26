@@ -82,3 +82,7 @@ Atualize `package.json`, `package-lock.json` e `public/manifest.json` para a mes
 ### VPS e estatísticas
 
 O backend agora tem `compose.yaml` e `backend/Dockerfile` com SQLite em volume persistente, migração Alembic e porta ligada a `127.0.0.1:18080`. Consulte [backend/README.md](backend/README.md) antes de configurar a VPS. O painel **Estatísticas** calcula foco semanal, estimativas e resultados a partir das tarefas locais: você pode atribuir uma habilidade ou área na criação ou nos detalhes; tarefas antigas aparecem em “Sem categoria”. Ainda não existe sincronização de tarefas com o backend.
+
+### Página de apresentação
+
+A landing page estática mora em [`site/`](site/), com layout adaptável e a identidade vinho/amarelo da extensão. Há um modelo de Nginx que serve a página na raiz do domínio `.tech` e expõe somente as rotas Google no subdomínio `api.`. Para os registros DNS e a publicação HTTPS, siga [`site/README.md`](site/README.md).

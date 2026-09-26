@@ -1,0 +1,28 @@
+# Substitua __DOMAIN__ pelo domínio exato antes de ativar. Certbot adiciona HTTPS.
+server {
+    listen 80;
+    server_name __DOMAIN__;
+    root /var/www/kanbandoro;
+    index index.html;
+    location / { try_files $uri $uri/ =404; }
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+}
+
+server {
+    listen 80;
+    server_name api.__DOMAIN__;
+    client_max_body_size 1m;
+    location = /health {
+        proxy_pass http://127.0.0.1:18080/health;
+        proxy_set_header Host $host;
+    }
+    location ^~ /connections/google/ {
+        proxy_pass http://127.0.0.1:18080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 30s;
+    }
+    location / { return 404; }
+    add_header X-Content-Type-Options nosniff always;
+}
