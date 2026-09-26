@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
 import { getAISettings, saveAISettings, clearAISettings, AI_PROVIDERS, type AISettings, type AIProvider } from './aiSettings';
+import { isVisible, localDay, materializeToday, type ViewMode, type WeeklyPlan } from './schedule';
 
 type Column = 'todo' | 'doing' | 'late' | 'done';
 type Slice = { id: string; name: string; done: boolean };
@@ -18,6 +19,11 @@ type Task = {
   focusSeconds: number;
   slices: Slice[];
   attachments?: Attachment[];
+  createdAt?: number;
+  completedAt?: number;
+  archivedAt?: number;
+  planId?: string;
+  occurrenceDate?: string;
 };
 type Session = {
   taskId: string;
@@ -36,12 +42,12 @@ type Session = {
 type HistoryEntry = { id: string; taskId: string; kind: string; seconds: number; at: number; sliceIds: string[] };
 type Proposal = { name: string; description: string; difficulty: 1 | 2 | 3; estimate: number; slices: string[]; attachments: Attachment[] };
 type GroqModel = { id: string; name: string };
-type Data = { tasks: Task[]; session: Session | null; history: HistoryEntry[]; breakPreferences: string[] };
+type Data = { tasks: Task[]; session: Session | null; history: HistoryEntry[]; breakPreferences: string[]; weeklyPlans: WeeklyPlan[] };
 const columns: { id: Column; label: string }[] = [
   { id: 'todo', label: 'A fazer' }, { id: 'doing', label: 'Em andamento' },
   { id: 'late', label: 'Em atraso' }, { id: 'done', label: 'Concluído' },
 ];
-const initial: Data = { tasks: [], session: null, history: [], breakPreferences: ['Descanso', 'Água', 'Comida', 'Detox'] };
+const initial: Data = { tasks: [], session: null, history: [], breakPreferences: ['Descanso', 'Água', 'Comida', 'Detox'], weeklyPlans: [] };
 const id = () => (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).substring(2) + Date.now().toString(36);
 const minutes = (seconds: number) => `${Math.floor(Math.max(0, seconds) / 60).toString().padStart(2, '0')}:${Math.floor(Math.max(0, seconds) % 60).toString().padStart(2, '0')}`;
 const loadingTips = [
@@ -50,6 +56,12 @@ const loadingTips = [
   'Cinco tarefas em andamento são o limite sugerido para manter o foco.',
   'O tempo registrado continua disponível quando você reabre o navegador.',
 ];
+const weekdays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+const displayDate = (time?: number) => time ? new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(time) : 'Data anterior ao registro';
+function newOccurrence(plan: WeeklyPlan, day: string): Task {
+  return { id: id(), name: plan.name, description: '', difficulty: 1, estimate: plan.estimate, deadline: '', column: 'todo',
+    failures: 0, focusSeconds: 0, slices: [], planId: plan.id, occurrenceDate: day, createdAt: Date.now() };
+}
 
 function App() {
   const [data, setData] = useState<Data>(initial);
@@ -75,15 +87,25 @@ function App() {
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const [feedback, setFeedback] = useState('');
   const [proposalTab, setProposalTab] = useState<'details' | 'attachments'>('details');
+  const [proposalRevision, setProposalRevision] = useState(0);
   const [checkingLink, setCheckingLink] = useState<number | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [tipsDismissed, setTipsDismissed] = useState(true);
   const [tipIndex, setTipIndex] = useState(0);
   const [toast, setToast] = useState('');
+  const [view, setView] = useState<ViewMode>('today');
+  const [archiveDay, setArchiveDay] = useState('');
+  const [weeklyOpen, setWeeklyOpen] = useState(false);
+  const [weeklyName, setWeeklyName] = useState('');
+  const [weeklyEstimate, setWeeklyEstimate] = useState(25);
+  const [weeklyDays, setWeeklyDays] = useState<number[]>([1, 2, 3, 4, 5]);
 
   useEffect(() => {
-    chrome.storage.local.get(['tasks', 'session', 'history', 'breakPreferences']).then((stored) => {
-      setData({ tasks: (stored.tasks as Task[] | undefined) ?? [], session: (stored.session as Session | undefined) ?? null, history: (stored.history as HistoryEntry[] | undefined) ?? [], breakPreferences: (stored.breakPreferences as string[] | undefined) ?? ['Descanso', 'Água', 'Comida', 'Detox'] });
+    chrome.storage.local.get(['tasks', 'session', 'history', 'breakPreferences', 'weeklyPlans']).then((stored) => {
+      const tasks = (stored.tasks as Task[] | undefined) ?? [];
+      const weeklyPlans = (stored.weeklyPlans as WeeklyPlan[] | undefined) ?? [];
+      const generated = materializeToday(tasks, weeklyPlans, new Date(), newOccurrence);
+      setData({ tasks: generated.tasks, weeklyPlans: generated.plans, session: (stored.session as Session | undefined) ?? null, history: (stored.history as HistoryEntry[] | undefined) ?? [], breakPreferences: (stored.breakPreferences as string[] | undefined) ?? ['Descanso', 'Água', 'Comida', 'Detox'] });
       setReady(true);
     });
     getAISettings().then(setAiSettings);
@@ -103,6 +125,13 @@ function App() {
   useEffect(() => {
     if (ready) void chrome.storage.local.set(data);
   }, [data, ready]);
+  const today = localDay(new Date(now));
+  useEffect(() => {
+    if (ready) update(old => {
+      const generated = materializeToday(old.tasks, old.weeklyPlans, new Date(), newOccurrence);
+      return generated.tasks === old.tasks && generated.plans.every((plan, i) => plan === old.weeklyPlans[i]) ? old : { ...old, tasks: generated.tasks, weeklyPlans: generated.plans };
+    });
+  }, [today, ready]);
   useEffect(() => {
     if (ready && !data.breakPreferences.includes(breakType)) {
       setBreakType(data.breakPreferences[0] ?? 'Outra');
@@ -121,20 +150,55 @@ function App() {
   const activeTask = data.tasks.find(t => t.id === active?.taskId);
   const due = active && (active.phase === 'running' || active.phase === 'break') && now >= active.endsAt;
   const phase = due ? (active?.phase === 'running' ? 'decision' : 'break-done') : active?.phase;
-  const doingCount = data.tasks.filter(t => t.column === 'doing').length;
+  const doingCount = data.tasks.filter(t => t.column === 'doing' && !t.archivedAt).length;
+  const shownTasks = data.tasks.filter(t => isVisible(t, view, new Date(now), archiveDay));
+  const calendarDays = Array.from({ length: 7 }, (_, offset) => {
+    const day = new Date(now);
+    day.setHours(12, 0, 0, 0);
+    day.setDate(day.getDate() - (day.getDay() + 6) % 7 + offset);
+    return day;
+  });
 
   function changeTask(taskId: string, fn: (item: Task) => Task) {
-    update(old => ({ ...old, tasks: old.tasks.map(item => item.id === taskId ? fn(item) : item) }));
+    update(old => ({ ...old, tasks: old.tasks.map(item => {
+      if (item.id !== taskId) return item;
+      const next = fn(item);
+      return next.column === item.column ? next : { ...next, completedAt: next.column === 'done' ? Date.now() : undefined, archivedAt: undefined };
+    }) }));
   }
   function addTask(event: React.FormEvent) {
     event.preventDefault();
     if (!name.trim()) return;
-    const item: Task = { id: id(), name: name.trim(), description: '', difficulty: 1, estimate: 25,
+    const item: Task = { id: id(), name: name.trim(), description: '', difficulty: 1, estimate: 25, createdAt: Date.now(),
       deadline: '', column: 'todo', failures: 0, focusSeconds: 0, slices: [] };
     update(old => ({ ...old, tasks: [...old.tasks, item] }));
     setName('');
     setSelectedTask(item.id);
     setToast('Tarefa criada. Abra os detalhes para definir tempo e slices.');
+  }
+  function addWeeklyPlan(event: React.FormEvent) {
+    event.preventDefault();
+    if (!weeklyName.trim() || !weeklyDays.length || !Number.isInteger(weeklyEstimate) || weeklyEstimate < 1 || weeklyEstimate > 480) {
+      setError('Informe um nome, duração entre 1 e 480 minutos e ao menos um dia da semana.');
+      return;
+    }
+    const plan: WeeklyPlan = { id: id(), name: weeklyName.trim(), estimate: weeklyEstimate, weekdays: [...weeklyDays].sort(), startsOn: localDay(new Date()), generatedDates: [] };
+    update(old => {
+      const generated = materializeToday(old.tasks, [...old.weeklyPlans, plan], new Date(), newOccurrence);
+      return { ...old, tasks: generated.tasks, weeklyPlans: generated.plans };
+    });
+    setWeeklyName(''); setError(''); setToast('Rotina salva. Uma tarefa será criada em cada dia escolhido quando o quadro for aberto.');
+  }
+  function deleteTask(item: Task) {
+    if (active?.taskId === item.id) return setError('Encerre o ciclo atual antes de apagar esta tarefa.');
+    if (!window.confirm(`Apagar “${item.name}” e seu histórico de foco? Esta ação não pode ser desfeita.`)) return;
+    update(old => ({ ...old, tasks: old.tasks.filter(task => task.id !== item.id), history: old.history.filter(entry => entry.taskId !== item.id) }));
+    setSelectedTask(null); setToast('Tarefa e histórico removidos. A rotina semanal, se houver, continua ativa.');
+  }
+  function archiveTask(item: Task) {
+    if (item.column !== 'done') return setError('Conclua a tarefa antes de arquivar.');
+    changeTask(item.id, task => ({ ...task, archivedAt: Date.now() }));
+    setSelectedTask(null); setToast('Tarefa arquivada. Você pode consultá-la pelo dia da conclusão.');
   }
   async function loadModels() {
     setAiBusy(true); setAiNotice('');
@@ -152,7 +216,7 @@ function App() {
     try {
       const response = await chrome.runtime.sendMessage({ type: 'GROQ_TASK_PROPOSAL', input: name, previous: proposal, feedback: comment }) as { proposal?: Proposal; error?: string };
       if (response.error || !response.proposal) throw Error(response.error || 'A IA não retornou uma proposta.');
-      setProposal(response.proposal); setFeedback('');
+      setProposal(response.proposal); setFeedback(''); setProposalRevision(value => comment ? value + 1 : 1);
       if (!comment) setProposalTab('details');
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'A Groq não respondeu.'); }
     finally { setAiBusy(false); }
@@ -173,7 +237,7 @@ function App() {
   }
   function acceptProposal() {
     if (!proposal?.name.trim() || !Number.isFinite(proposal.estimate) || proposal.estimate < 1 || proposal.estimate > 480) return setError('Revise o nome e o tempo estimado (1 a 480 minutos).');
-    const item: Task = { id: id(), name: proposal.name.trim(), description: proposal.description, difficulty: proposal.difficulty,
+    const item: Task = { id: id(), name: proposal.name.trim(), description: proposal.description, difficulty: proposal.difficulty, createdAt: Date.now(),
       estimate: proposal.estimate, deadline: '', column: 'todo', failures: 0, focusSeconds: 0,
       slices: proposal.slices.filter(s => s.trim()).map(s => ({ id: id(), name: s.trim(), done: false })),
       attachments: proposal.attachments.filter(link => link.title.trim() && link.verifiedAt && Date.now() - link.verifiedAt < 10 * 60_000) };
@@ -222,7 +286,7 @@ function App() {
           ? t.slices.map(s => active.selectedSliceIds.includes(s.id) ? { ...s, done: true } : s)
           : t.slices;
         const done = kind === 'completed' && (active.scope === 'whole' || (slices.length > 0 && slices.every(s => s.done)));
-        return { ...t, slices,
+        return { ...t, slices, completedAt: done ? Date.now() : t.completedAt,
           column: kind === 'failed' ? 'late' as Column : done ? 'done' as Column : t.column,
           failures: t.failures + (kind === 'failed' ? 1 : 0) };
       });
@@ -272,8 +336,8 @@ function App() {
       </div>
     </section>}
     <form className="create" onSubmit={addTask}><input aria-label="Nome da tarefa" placeholder="Qual é a próxima tarefa?" value={name} onChange={e => setName(e.target.value)} /><button type="submit">+ Criar tarefa</button><button type="button" disabled={aiBusy || !name.trim()} onClick={() => void requestProposal()}>{aiBusy ? 'Consultando…' : 'Propor com IA'}</button></form>
-    {proposal && <div className="backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setProposal(null); }}><section className="dialog proposal-dialog" role="dialog" aria-modal="true" aria-label="Revisar proposta da IA">
-      <header className="proposal-header"><span className="proposal-spark" aria-hidden="true">ϟ</span><div><span className="eyebrow">NOVA PROPOSTA</span><h2>Uma ideia para começar</h2><p>Revise os detalhes antes de adicionar ao quadro.</p></div><button className="close" onClick={() => setProposal(null)} aria-label="Fechar proposta">✕</button></header>
+    {proposal && <div className="backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setProposal(null); }}><section key={proposalRevision} className="dialog proposal-dialog" role="dialog" aria-modal="true" aria-label="Revisar proposta da IA">
+      <header className="proposal-header"><span className="proposal-spark" aria-hidden="true">ϟ</span><div><span className="eyebrow">{proposalRevision > 1 ? 'PROPOSTA ATUALIZADA' : 'NOVA PROPOSTA'}</span><h2>{proposalRevision > 1 ? 'Uma nova versão para você' : 'Uma ideia para começar'}</h2><p>Revise os detalhes antes de adicionar ao quadro.</p></div><button className="close" onClick={() => setProposal(null)} aria-label="Fechar proposta">✕</button></header>
       {error && <p className="warning" role="alert">{error}</p>}
       <div className="proposal-tabs" role="tablist" aria-label="Conteúdo da proposta"><button role="tab" aria-selected={proposalTab === 'details'} onClick={() => setProposalTab('details')}>Tarefa e etapas</button><button role="tab" aria-selected={proposalTab === 'attachments'} onClick={() => setProposalTab('attachments')}>Anexos <span>{proposal.attachments.length}</span></button></div>
       {proposalTab === 'details' ? <div className="proposal-pane">
@@ -371,14 +435,29 @@ function App() {
         </>
       )}
     </section></div>}
-    <div className="board">{columns.map(column => <section className="lane" key={column.id}>
-      <h2>{column.label} <span>{data.tasks.filter(t => t.column === column.id).length}</span></h2>
+    <nav className="board-controls" aria-label="Filtrar tarefas">
+      {([['today', 'Hoje'], ['week', 'Esta semana'], ['all', 'Todas'], ['archive', 'Arquivo']] as const).map(([key, label]) =>
+        <button key={key} aria-current={view === key ? 'page' : undefined} onClick={() => setView(key)}>{label}</button>)}
+      <button className="weekly-toggle" aria-expanded={weeklyOpen} onClick={() => setWeeklyOpen(open => !open)}>↻ Rotinas semanais</button>
+    </nav>
+    {weeklyOpen && <section className="weekly-panel" aria-label="Rotinas semanais"><div><span className="eyebrow">PLANEJAMENTO</span><h2>Rotinas da semana</h2><p>Uma ocorrência nasce nos dias selecionados quando você abre o quadro. Cada dia mantém seu próprio histórico.</p></div>
+      <form onSubmit={addWeeklyPlan} className="weekly-form"><input aria-label="Nome da rotina" placeholder="Ex.: verificar e-mails" value={weeklyName} onChange={e => setWeeklyName(e.target.value)} /><label>Min <input aria-label="Tempo estimado da rotina" type="number" min="1" max="480" value={weeklyEstimate} onChange={e => setWeeklyEstimate(+e.target.value)} /></label>
+        <div className="weekdays" role="group" aria-label="Dias da semana">{weekdays.map((day, index) => <label key={day}><input type="checkbox" checked={weeklyDays.includes(index)} onChange={() => setWeeklyDays(days => days.includes(index) ? days.filter(d => d !== index) : [...days, index])} />{day}</label>)}</div><button className="primary">Criar rotina</button></form>
+      <div className="week-calendar">{calendarDays.map(day => <div className={localDay(day) === today ? 'calendar-day current' : 'calendar-day'} key={localDay(day)}><strong>{weekdays[day.getDay()]} <small>{day.getDate()}/{day.getMonth() + 1}</small></strong>
+        {data.weeklyPlans.filter(plan => plan.weekdays.includes(day.getDay()) && localDay(day) >= plan.startsOn).map(plan => <span key={plan.id}>{plan.name}</span>)}
+      </div>)}</div>
+      <div className="weekly-list">{data.weeklyPlans.map(plan => <article key={plan.id}><strong>{plan.name}</strong><span>{plan.weekdays.map(day => weekdays[day]).join(', ')} · {plan.estimate} min</span><button onClick={() => { if (window.confirm(`Excluir a rotina “${plan.name}”? As tarefas já criadas permanecerão no histórico.`)) update(old => ({ ...old, weeklyPlans: old.weeklyPlans.filter(p => p.id !== plan.id) })); }}>Excluir rotina</button></article>)}</div>
+    </section>}
+    {view === 'archive' ? <section className="archive-panel"><div className="archive-heading"><div><span className="eyebrow">HISTÓRICO</span><h2>Tarefas arquivadas</h2></div><label>Dia da conclusão <input type="date" value={archiveDay} onChange={e => setArchiveDay(e.target.value)} /></label></div>
+      {shownTasks.length === 0 ? <p>Nenhuma tarefa arquivada para este dia.</p> : shownTasks.slice().sort((a, b) => (b.completedAt ?? b.archivedAt ?? 0) - (a.completedAt ?? a.archivedAt ?? 0)).map(item => <article className="archive-entry" key={item.id}><div><strong>{item.name}</strong><span>{item.completedAt ? `Concluída em ${displayDate(item.completedAt)}` : `Conclusão sem data · arquivada em ${displayDate(item.archivedAt)}`} · {minutes(item.focusSeconds)} de foco</span></div><button onClick={() => setSelectedTask(item.id)}>Detalhes</button></article>)}
+    </section> : <div className="board">{columns.map(column => <section className="lane" key={column.id}>
+      <h2>{column.label} <span>{shownTasks.filter(t => t.column === column.id).length}</span></h2>
       {column.id === 'doing' && doingCount > 5 && <p className="warning">WIP acima de 5. Vale revisar a capacidade antes de assumir outra tarefa.</p>}
-      {data.tasks.filter(t => t.column === column.id).map(item => <article className="card" key={item.id}>
+      {shownTasks.filter(t => t.column === column.id).map(item => <article className="card" key={item.id}>
         <button className="card-title" onClick={() => { setSelectedTask(item.id); setScope('whole'); setSelectedSlices([]); }}>{item.name}</button>
-        <div className="meta"><span>Dificuldade {item.difficulty}</span><span>{item.estimate} min</span>{item.deadline && <span>{item.deadline}</span>}</div>
+        <div className="meta"><span>Dificuldade {item.difficulty}</span><span>{item.estimate} min</span>{item.deadline && <span>{item.deadline}</span>}{item.planId && <span>↻ {item.occurrenceDate}</span>}{item.column === 'done' && <span>Feita em {displayDate(item.completedAt)}</span>}</div>
         <div className="slice-strip">{item.slices.map(slice => <span className={slice.done ? 'slice done' : 'slice'} key={slice.id}>{slice.name}</span>)}</div>
-      </article>)}</section>)}</div>
+      </article>)}{!shownTasks.some(t => t.column === column.id) && <p className="empty-lane">Nenhuma tarefa nesta coluna.</p>}</section>)}</div>}
     {task && <div className="backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setSelectedTask(null); }}><section className="dialog" role="dialog" aria-modal="true" aria-label="Detalhes da tarefa">
       <button className="close" onClick={() => setSelectedTask(null)}>✕</button><span className="eyebrow">DETALHES DA TAREFA</span>
       <input className="task-name" aria-label="Nome" value={task.name} onChange={e => changeTask(task.id, x => ({ ...x, name: e.target.value }))} />
@@ -392,8 +471,12 @@ function App() {
       <h3>Iniciar foco</h3><div className="scope"><label><input type="radio" checked={scope === 'whole'} onChange={() => setScope('whole')} /> Tarefa inteira</label><label><input type="radio" checked={scope === 'slices'} onChange={() => setScope('slices')} /> Selecionar slices</label></div>
       {scope === 'slices' && <div className="slices">{task.slices.filter(s => !s.done).map(s => <label key={s.id}><input type="checkbox" checked={selectedSlices.includes(s.id)} onChange={() => setSelectedSlices(old => old.includes(s.id) ? old.filter(v => v !== s.id) : [...old, s.id])} />{s.name}</label>)}</div>}
       <p className="summary">{minutes(task.focusSeconds)} de foco registrado · {task.failures} tentativas falhas</p>
+      {task.column === 'done' && <p className="summary">Concluída em {displayDate(task.completedAt)}{task.archivedAt ? ` · arquivada em ${displayDate(task.archivedAt)}` : ''}</p>}
       {!!task.attachments?.length && <><h3>Anexos</h3><div className="task-attachments">{task.attachments.map((link, index) => <a key={index} href={link.url} target="_blank" rel="noopener noreferrer">{link.title} ↗</a>)}</div></>}
-      <button className="primary" disabled={!!active} onClick={() => { startFocus(task); if (!active) setSelectedTask(null); }}>Iniciar ciclo de {task.estimate} min</button>
+      <div className="task-actions"><button className="primary" disabled={!!active || !!task.archivedAt} onClick={() => { startFocus(task); if (!active) setSelectedTask(null); }}>Iniciar ciclo de {task.estimate} min</button>
+        {task.column === 'done' && !task.archivedAt && <button onClick={() => archiveTask(task)}>Arquivar concluída</button>}
+        {task.archivedAt && <button onClick={() => { changeTask(task.id, current => ({ ...current, archivedAt: undefined })); setSelectedTask(null); setToast('Tarefa restaurada para o quadro.'); }}>Restaurar</button>}
+        <button className="delete-task" onClick={() => deleteTask(task)}>Apagar tarefa</button></div>
     </section></div>}
   </main>;
 }

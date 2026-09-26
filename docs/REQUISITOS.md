@@ -9,6 +9,8 @@ Este documento é vivo. Uma solução melhor pode substituir a regra anterior de
 - Cada tarefa tem nome, descrição, dificuldade, estimativa, prazo opcional e slices concluíveis. A dificuldade proposta pela IA e a estimativa são revisáveis pelo usuário.
 - Uma tarefa em atraso volta a Em andamento ao iniciar novo ciclo. O número de tentativas falhas não zera.
 - Ao ultrapassar cinco tarefas em andamento, avisar sobre WIP e permitir continuar; sugestão da IA é opcional, sempre justificável.
+- O quadro oferece Hoje, Esta semana, Todas e Arquivo. Registrar data de conclusão e permitir arquivar/restaurar sem perder tempo e histórico. Apagar requer confirmação e exclui também eventos de foco daquela tarefa; não pode apagar a sessão em uso.
+- Rotinas semanais têm nome, duração e dias selecionados. Ao abrir o quadro em um dia agendado, gerar uma ocorrência independente no máximo uma vez naquele dia; excluir uma ocorrência não a recria. Dias com a extensão fechada não são preenchidos retroativamente. Excluir a rotina preserva ocorrências passadas.
 
 ## Sessões
 
@@ -28,6 +30,7 @@ Este documento é vivo. Uma solução melhor pode substituir a regra anterior de
 - Dúvida na tarefa: contexto estruturado completo daquela tarefa; avaliação decisória: acrescentar histórico e estatísticas pertinentes.
 - Assistência comum responde, sugere e identifica erros graves. Alterações estruturadas exigem modo proposta e confirmação humana.
 - Proposta pode ser solicitada ou sugerida pela IA, com campo explícito no contrato. Som e animação ao abrir; durante foco e descanso, armazenar na caixa para revisão posterior.
+- Reescrever uma proposta mostra novamente o modal com animação. Para personalizar por histórico, selecionar somente resumo e exemplos relevantes; não enviar todo o histórico a cada requisição. SQLite já armazena eventos estruturados.
 - Score e eficiência só após volume mínimo de eventos; mostrar dados, recorte e justificativa, sem apresentar estimativas incertas como fatos.
 
 ## UX

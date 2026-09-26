@@ -1,6 +1,11 @@
 import { readFileSync, existsSync } from 'node:fs';
 
 const manifest = JSON.parse(readFileSync('dist/manifest.json', 'utf8'));
+const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'));
+if (manifest.version !== pkg.version || lock.version !== pkg.version) {
+  throw new Error('Versões de manifest.json, package.json e package-lock.json devem coincidir');
+}
 for (const script of manifest.content_scripts.flatMap(entry => entry.js)) {
   const path = `dist/${script}`;
   if (!existsSync(path)) throw new Error(`Content script ausente: ${path}`);

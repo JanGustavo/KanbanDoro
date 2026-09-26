@@ -4,17 +4,17 @@
 
 # KanbanDoro
 
-Extensão Manifest V3 que reúne Kanban, ciclos de foco vinculados a tarefas e assistência de IA. O projeto está na fase de esqueleto e validação do fluxo principal.
+Extensão Manifest V3 que reúne Kanban, ciclos de foco vinculados a tarefas e assistência de IA. Versão 0.2.0 em desenvolvimento.
 
 ## Rodar o esqueleto
 
 1. Execute `npm install` e `npm run build`.
 2. No Chrome/Chromium, abra `chrome://extensions`, habilite o modo de desenvolvedor e carregue a pasta `dist` como extensão sem compactação.
-3. Clique no ícone da extensão para abrir o quadro. Nesta primeira versão, tarefas, slices e sessões ficam em `chrome.storage.local` no próprio navegador.
+3. Clique no ícone da extensão para abrir o quadro. Tarefas, rotinas, slices e sessões ficam em `chrome.storage.local` no próprio navegador.
 
 Ao atualizar a extensão, recarregue também as abas que já estavam abertas. O botão **Mostrar bolha** tenta instalar o script na aba ativa, inclusive quando ela foi aberta antes da extensão. O navegador bloqueia scripts em páginas internas ou restritas. A instalação solicita acesso aos sites para exibir a bolha sobre eles.
 
-**Implementado neste marco:** quadro local editável, slices, registro de foco, uma sessão por vez, dois pedidos de extensão com teto combinado de 50%, tentativa falha, interrupção e pausa com confirmação. O badge indica foco ativo (vinho), pausa ativa (amarelo queimado) e foco/pausa vencidos (vermelho). Preferências de pausa são editáveis no cabeçalho. Bolha flutuante nos sites permitidos — com recolher/ocultar/expandir funcionando de fato e injeção em abas já abertas — e aviso sonoro real (Web Audio via página offscreen) somado à notificação do sistema ao fim do timer. A criação assistida de tarefas com Groq consulta modelos reais e abre um modal revisável. **Ainda pendente:** ligação do quadro à API, ajuda contextual da IA, fala, sincronização, alerta automático de prazo e relatórios. O quadro ainda não envia dados para a API.
+**Implementado neste marco:** quadro local editável, slices, registro de foco, rotinas semanais, filtro por dia/semana, arquivo e exclusão de tarefas, uma sessão por vez, duas extensões com teto combinado de 50%, tentativa falha, interrupção e pausa com confirmação. O badge indica foco ativo, pausa ativa e vencimento. A bolha aparece nos sites permitidos e o aviso sonoro usa uma página offscreen. A criação assistida com Groq consulta modelos reais e abre um modal revisável; reescrever a proposta reapresenta o modal animado. **Ainda pendente:** ligação do quadro à API, ajuda contextual da IA, fala, sincronização, alerta automático de prazo e relatórios. O quadro ainda não envia dados para a API.
 
 ## Produto
 
@@ -24,6 +24,8 @@ Ao atualizar a extensão, recarregue também as abas que já estavam abertas. O 
 - Interrupção: evento separado da tentativa falha. O tempo já trabalhado permanece registrado; o usuário escolhe recomeçar ou adiar.
 - Descanso: categoria livre ou sugestões de água, comida, detox e descanso; cronômetro e som ao finalizar; foco seguinte depende de confirmação.
 - WIP: cinco tarefas em andamento geram aviso orientativo, nunca bloqueio.
+- Rotinas: selecione dias da semana; ao abrir o quadro em um dia escolhido, nasce uma tarefa independente. Reabrir o quadro ou apagar a tarefa daquele dia não cria outra ocorrência no mesmo dia. Não há geração retroativa para dias em que a extensão ficou fechada.
+- Conclusão e arquivo: "Hoje" e "Esta semana" mostram as concluídas no período e todas as pendentes; "Arquivo" filtra por data de conclusão. Arquivar preserva histórico; apagar remove também os registros de foco daquela tarefa, após confirmação. Apagar uma ocorrência não apaga sua rotina.
 
 ## Proposta visual
 
@@ -51,3 +53,11 @@ Veja [docs/REQUISITOS.md](docs/REQUISITOS.md) para regras e decisões em aberto.
 Em `backend/`, execute `python -m pip install -e ".[dev]"`, configure `.env` a partir de `.env.example` e inicie com `uvicorn app.main:app --reload --host 127.0.0.1`. A documentação interativa está em `/docs`. Use `POST /auth/register`, `POST /auth/login` e o Bearer token nas demais rotas. O servidor mantém uma sessão ativa por conta e decide as transições pelo próprio relógio; o cliente não altera diretamente tempo, fase, pontuação ou histórico. `GET /sessions/active` retoma o estado. Os horários de sessão usam milissegundos desde a época Unix; campos de criação/histórico usam segundos.
 
 A API ainda cria tabelas com `create_all`; alterações futuras de esquema exigirão migrações antes de servir dados de produção. A chave informada na extensão fica em `chrome.storage.local` com acesso restrito aos contextos da extensão; a tela da bolha recebe somente estado do timer.
+
+## Contexto para IA
+
+O histórico ainda não é enviado ao modelo. Quando essa etapa for ligada, o contexto deve ser montado para cada decisão: tarefa atual completa, resumo recente por tipo e dificuldade, estimativa versus tempo realizado e algumas ocorrências comparáveis. Um limite por quantidade de eventos e tamanho do JSON evita enviar toda a base a cada pergunta. O histórico estruturado pode ficar no SQLite existente; migrar para MongoDB não é necessário para montar esse recorte.
+
+## Publicar uma versão 0.x
+
+Atualize `package.json`, `package-lock.json` e `public/manifest.json` para a mesma versão; faça commit na `main` e sincronize com o remoto. Execute `make release VERSION=0.2.0`. O comando verifica versões, árvore limpa, build e testes, e envia a tag `v0.2.0`. A GitHub Action da tag recompila e publica a Release com o ZIP da pasta `dist`. Não rode o comando novamente para uma tag já publicada; versões 0.x são marcadas como pré-lançamento. Criar uma tag é uma ação de publicação, feita apenas ao executar explicitamente o comando.

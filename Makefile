@@ -1,4 +1,4 @@
-.PHONY: dev build typecheck backend-dev backend-build backend-test backend-lint
+.PHONY: dev build typecheck release backend-dev backend-build backend-test backend-lint
 
 dev:
 	npm run dev
@@ -8,6 +8,10 @@ build:
 
 typecheck:
 	npx tsc --noEmit
+
+# Example: make release VERSION=0.2.0 (run from a clean, updated main branch).
+release:
+	bash scripts/release.sh "$(VERSION)"
 
 backend-build:
 	cd backend && python -m pip install -e '.[dev]'
