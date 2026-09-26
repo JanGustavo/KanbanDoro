@@ -14,7 +14,8 @@ if settings.app_env != "development" and settings.jwt_secret == "development-onl
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await init_db()
+    if settings.app_env == "development":
+        await init_db()
     yield
 
 

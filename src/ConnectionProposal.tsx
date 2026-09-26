@@ -48,7 +48,7 @@ export default function ConnectionProposal({ kind, initial, listId, onClose, onS
         <label>Descrição<textarea maxLength={4000} value={draft.description} onChange={event => edit('description', event.target.value)} /></label>
         {kind === 'calendar' && <div className="connection-dates"><label>Começa em<input required type="datetime-local" value={draft.start} onChange={event => edit('start', event.target.value)} /></label>
           <label>Termina em<input required type="datetime-local" value={draft.end} onChange={event => edit('end', event.target.value)} /></label></div>}
-        {kind === 'tasks' && <small>Lista selecionada no Google Tasks: {listId || 'carregue uma lista antes de confirmar'}</small>}
+        {kind === 'tasks' && <small>Lista selecionada no Google Tasks: {listId || 'clique em “Carregar listas” na aba Tasks para escolher onde salvar; a proposta pode ser revisada antes disso.'}</small>}
       </> : <>
         <label>Para<input required type="email" value={draft.to} onChange={event => edit('to', event.target.value)} /></label>
         <label>Assunto<input required maxLength={250} value={draft.subject} onChange={event => edit('subject', event.target.value)} /></label>
@@ -56,7 +56,7 @@ export default function ConnectionProposal({ kind, initial, listId, onClose, onS
       </>}
       {error && <p role="alert" className="warning">{error}</p>}
       <div className="connection-review-actions"><button type="button" onClick={onClose} disabled={busy}>Descartar proposta</button>
-        <button className="primary" disabled={busy}>{busy ? 'Enviando…' : kind === 'email' ? 'Revisar e enviar e-mail' : kind === 'calendar' ? 'Confirmar e criar evento' : 'Confirmar e criar tarefa'}</button></div>
+        <button className="primary" disabled={busy || (kind === 'tasks' && !listId)}>{busy ? 'Enviando…' : kind === 'email' ? 'Revisar e enviar e-mail' : kind === 'calendar' ? 'Confirmar e criar evento' : 'Confirmar e criar tarefa'}</button></div>
     </form>
   </section>;
 }

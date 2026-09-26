@@ -8,6 +8,7 @@ export type WeeklyPlan = {
   endsOn?: string;
   description?: string;
   difficulty?: 1 | 2 | 3;
+  skill?: string;
   sliceNames?: string[];
   attachments?: Array<{ title: string; url: string; verifiedAt: number | null; reason: string }>;
 };

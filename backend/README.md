@@ -1,7 +1,17 @@
 # KanbanDoro API
 
-API experimental em FastAPI e SQLite. Instale com `pip install -e '.[dev]'` nesta pasta e execute `uvicorn app.main:app --reload`. Configure `JWT_SECRET` no `.env` antes de expor a API; veja `.env.example`.
+API FastAPI e SQLite. O quadro e as estatísticas da extensão continuam no armazenamento local do navegador; **não existe sincronização do quadro com esta API**. A API atende autenticação própria e Connections Google com OAuth, renovação de tokens e consultas ou escritas somente quando a extensão solicitar. A chave de IA fica no navegador.
 
-O quadro da extensão ainda usa armazenamento local. A API atende as Connections Google com troca OAuth, renovação de token, consultas sob demanda e endpoints de criação de eventos e tarefas e de envio de e-mail mediante requisição explícita da extensão. A IA produz apenas um rascunho editável no navegador; não chama endpoints de escrita. A API não sincroniza as tarefas locais nem chama um provedor de IA. Não coloque a chave de IA no cadastro: a chave fica no navegador.
+## Desenvolvimento
 
-Para OAuth, configure em `.env` as variáveis `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_EXTENSION_ID` (e `GOOGLE_EXTENSION_IDS` se instalar em outros navegadores com IDs diferentes) e `GOOGLE_TOKEN_ENCRYPTION_KEY`. O cliente Google deve ser do tipo **Aplicativo da Web** e aceitar cada `https://<id>.chromiumapp.org/`. Mantenha o segredo OAuth e a chave Fernet somente no servidor; use HTTPS ao expor o backend na VPS. A tabela `google_connections` nasce via `create_all` em banco novo; ao atualizar banco já existente, crie a tabela por migração controlada antes do deploy.
+Na pasta `backend`, copie `.env.example` para `.env`, instale `pip install -e '.[dev]'` e rode `uvicorn app.main:app --reload`. Em desenvolvimento, as tabelas são criadas automaticamente. Para testar o mesmo caminho da VPS: `alembic -c alembic.ini upgrade head` e `pytest -q`.
+
+## VPS com Docker Compose
+
+1. Na VPS, copie o projeto e crie `backend/.env` com `APP_ENV=production`, um `JWT_SECRET` aleatório longo, `CORS_ORIGINS` restrito às origens da extensão e os parâmetros OAuth indicados em `.env.example`. O segredo OAuth e `GOOGLE_TOKEN_ENCRYPTION_KEY` ficam somente nesse arquivo, nunca na extensão ou no Compose.
+2. Execute `docker compose up -d --build` na raiz. A inicialização aplica as migrações antes de subir um único processo de API. A porta padrão **18080** fica acessível apenas em `127.0.0.1`; configure `KANBANDORO_BIND_PORT` se essa porta já estiver ocupada.
+3. Configure no seu proxy reverso existente um hostname HTTPS dedicado para `http://127.0.0.1:18080` e reconstrua a extensão com `KANBANDORO_API_URL=https://seu-host` e `KANBANDORO_GOOGLE_CLIENT_ID=...`. Cadastre `https://<extension-id>.chromiumapp.org/` como redirect de cada instalação Chrome, Brave ou Edge no cliente Google do tipo **Aplicativo da Web**. Instale os IDs correspondentes no `.env`.
+
+A exposição pública exige revisar a autenticação e o cadastro de contas (`/auth/register`) antes de publicar: este serviço nasceu para uso pessoal e Connections ainda usam sessões próprias da extensão. Mantenha o binding local enquanto prepara essa revisão. Antes da primeira migração de uma base existente, copie o banco: a revisão `0001_baseline` cria tabelas que faltam e registra a versão sem apagar tabelas anteriores; revisões futuras usarão Alembic.
+
+Para criar um backup consistente de um banco ativo, execute no container `python -m app.scripts.backup /caminho/de/backups` após montar um destino externo ao volume. O volume `kanbandoro_data` persiste `/data/kanbandoro.db`; faça cópias regulares **fora** do volume e teste a restauração em um volume separado. Não troque `GOOGLE_TOKEN_ENCRYPTION_KEY` sem planejar a reautenticação das Connections já gravadas.

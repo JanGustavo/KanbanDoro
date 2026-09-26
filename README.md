@@ -78,3 +78,7 @@ O histórico ainda não é enviado ao modelo. Quando essa etapa for ligada, o co
 ## Publicar uma versão 0.x
 
 Atualize `package.json`, `package-lock.json` e `public/manifest.json` para a mesma versão; faça commit na `main` e sincronize com o remoto. Execute `make release VERSION=0.2.0`. O comando verifica versões, árvore limpa, build e testes, e envia a tag `v0.2.0`. A GitHub Action da tag recompila e publica a Release com o ZIP da pasta `dist`. Não rode o comando novamente para uma tag já publicada; versões 0.x são marcadas como pré-lançamento. Criar uma tag é uma ação de publicação, feita apenas ao executar explicitamente o comando.
+
+### VPS e estatísticas
+
+O backend agora tem `compose.yaml` e `backend/Dockerfile` com SQLite em volume persistente, migração Alembic e porta ligada a `127.0.0.1:18080`. Consulte [backend/README.md](backend/README.md) antes de configurar a VPS. O painel **Estatísticas** calcula foco semanal, estimativas e resultados a partir das tarefas locais: você pode atribuir uma habilidade ou área na criação ou nos detalhes; tarefas antigas aparecem em “Sem categoria”. Ainda não existe sincronização de tarefas com o backend.

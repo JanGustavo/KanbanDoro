@@ -17,7 +17,6 @@ export default function Connections({ onClose, onDraft }: { onClose: () => void;
   const emptyDraft = (): ConnectionDraft => ({ title: '', description: '', start: '', end: '', to: '', subject: '', body: '' });
   async function propose() {
     if (!prompt.trim()) return setNotice('Descreva o que deseja criar.');
-    if (tab === 'tasks' && !listId) return setNotice('Carregue uma lista na aba Tasks antes de propor uma tarefa.');
     setAiBusy(true); setNotice('');
     try {
       const kind: Destination = tab === 'gmail' ? 'email' : tab;
@@ -65,7 +64,7 @@ export default function Connections({ onClose, onDraft }: { onClose: () => void;
           placeholder={tab === 'gmail' ? 'Ex.: prepare um e-mail para a pessoa informada no pedido…' : tab === 'calendar' ? 'Ex.: reunião amanhã às 14h por uma hora…' : 'Ex.: estudar Linux com três pontos no texto…'} />
         <div className="connection-assistant-actions"><button type="button" disabled={aiBusy || !prompt.trim()} onClick={() => void propose()}>{aiBusy ? 'Preparando…' : 'Propor com IA'}</button>
           <button type="button" onClick={() => setProposal({ kind: tab === 'gmail' ? 'email' : tab, draft: emptyDraft() })}>Preencher manualmente</button></div>
-        <small>A IA só usa o texto que você digitar aqui. Revise a proposta antes de gravar no Google.</small>
+        <small>A IA só usa o texto que você digitar aqui. Revise a proposta antes de gravar no Google. Para Google Tasks, escolha uma lista antes de confirmar.</small>
       </section>}
       {proposal && <ConnectionProposal key={proposal.kind + JSON.stringify(proposal.draft)} kind={proposal.kind} initial={proposal.draft} listId={listId}
         onClose={() => setProposal(null)} onSuccess={message => { setProposal(null); setNotice(message); }} />}
