@@ -23,7 +23,7 @@ const chrome = {
   action: { onClicked: { addListener(fn) { listeners.click = fn; } }, setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {} },
   runtime: { getURL: path => path, sendMessage: async message => { if (message.type === 'PLAY_ALERT') alerts++; }, onInstalled: { addListener() {} }, onStartup: { addListener() {} }, onMessage: { addListener(fn) { listeners.message = fn; } } },
   identity: { getRedirectURL: () => 'https://extension.chromiumapp.org/', launchWebAuthFlow: async ({ url, interactive }) => { launched++; assert(interactive); const query = new URL(url).searchParams; assert.equal(query.get('code_challenge_method'), 'S256'); return `https://extension.chromiumapp.org/?code=code-test&state=${query.get('state')}`; } },
-  storage: { local: { setAccessLevel: async () => {}, get: async () => ({ session, focusBlocking, soundEnabled, kanbandoro_ai_settings: aiSettings, google_connection_session: googleSession }), set: async item => { googleSession = item.google_connection_session; }, remove: async () => { googleSession = ''; } }, onChanged: { addListener(fn) { listeners.storage = fn; } } },
+  storage: { local: { setAccessLevel: async () => {}, get: async () => ({ session, focusBlocking, soundEnabled, kanbandoro_ai_settings: aiSettings, google_connection_session: googleSession }), set: async item => { if ('google_connection_session' in item) googleSession = item.google_connection_session; if ('session' in item) { session = item.session; listeners.storage?.({ session: { newValue: session } }, 'local'); } }, remove: async () => { googleSession = ''; } }, onChanged: { addListener(fn) { listeners.storage = fn; } } },
   declarativeNetRequest: { updateSessionRules: async ({ removeRuleIds, addRules }) => { assert.deepEqual(Array.from(removeRuleIds), [900001]); focusRules = addRules; } },
   tabs: { query: async () => [{ id: 42 }], update: async (id, props) => { if (props.url === 'chrome://newtab/' && id === 42) newTabNavigations++; }, create: async () => {}, onActivated: { addListener() {} },
     async sendMessage(id, message) {
@@ -135,6 +135,12 @@ session = { phase: 'running', endsAt: Date.now() - 1000 };
 listeners.storage({ session: { newValue: session } }, 'local');
 await new Promise(resolve => setTimeout(resolve, 0));
 assert.equal(focusRules.length, 0, 'expired focus must not block sites');
+session = { phase: 'running', stepEndsAt: Date.now() - 1000, endsAt: Date.now() + 60_000 };
+focusBlocking = { mode: 'strict', exceptions: [], customDomains: [] };
+await listeners.alarm({ name: 'timer-end' });
+assert.equal(session.phase, 'decision', 'ending a task pauses the cycle even while the overall timer has time left');
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(focusRules.length, 0, 'decision mode releases focus blocking');
 session = { phase: 'running', endsAt: Date.now() + 60_000 };
 focusBlocking = { mode: 'off', exceptions: [], customDomains: [] };
 requests.length = 0;
@@ -167,15 +173,17 @@ listeners.message({ type: 'SHOW_TIMER' }, {}, () => {});
 await new Promise(resolve => setTimeout(resolve, 0));
 assert.equal(injections, 1, 'an existing content script must not be injected twice');
 session = { phase: 'running', endsAt: Date.now() - 1000 };
+const alertsBeforeFinalAlarms = alerts;
+const notificationsBeforeFinalAlarms = notifications;
 await listeners.alarm({ name: 'timer-end' });
 await new Promise(resolve => setTimeout(resolve, 0));
-assert.equal(alerts, 1);
+assert.equal(alerts, alertsBeforeFinalAlarms + 1);
 soundEnabled = false;
 session = { phase: 'break', endsAt: Date.now() - 1000 };
 await listeners.alarm({ name: 'timer-end' });
-assert.equal(alerts, 1, 'muting must disable sound');
-assert.equal(notifications, 2, 'system notifications stay available when muted');
+assert.equal(alerts, alertsBeforeFinalAlarms + 1, 'muting must disable sound');
+assert.equal(notifications, notificationsBeforeFinalAlarms + 2, 'system notifications stay available when muted');
 session = null;
 await listeners.alarm({ name: 'timer-end' });
-assert.equal(notifications, 2, 'stale alarms must be ignored');
+assert.equal(notifications, notificationsBeforeFinalAlarms + 2, 'stale alarms must be ignored');
 console.log('Bolha instalada em aba antiga e reutilizada na próxima abertura.');

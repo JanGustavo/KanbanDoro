@@ -5,7 +5,7 @@ Este documento é vivo. Uma solução melhor pode substituir a regra anterior de
 ## Tarefas e quadro
 
 - Colunas: A fazer, Em andamento, Em atraso, Concluído.
-- O prazo é opcional. Prazo vencido ou “Não consegui terminar” pode levar a “Em atraso”; o motivo precisa ser distinguível no histórico.
+- O prazo é opcional. Prazo vencido aparece como aviso calculado no card e não altera a coluna. “Não consegui terminar” registra tentativa falha e move a tarefa para “Em atraso”.
 - Cada tarefa tem nome, descrição, dificuldade, estimativa, prazo opcional e slices concluíveis. A dificuldade proposta pela IA e a estimativa são revisáveis pelo usuário.
 - Uma tarefa em atraso volta a Em andamento ao iniciar novo ciclo. O número de tentativas falhas não zera.
 - Ao ultrapassar cinco tarefas em andamento, avisar sobre WIP e permitir continuar; sugestão da IA é opcional, sempre justificável.
@@ -15,11 +15,12 @@ Este documento é vivo. Uma solução melhor pode substituir a regra anterior de
 ## Sessões
 
 - Um ciclo escolhe tarefa inteira ou subconjunto de slices. Tempo de seleção múltipla permanece compartilhado. Concluir o escopo de slices marca apenas os slices selecionados; a tarefa só vai para Concluído se todos os slices estiverem completos. Concluir a tarefa inteira move o card para Concluído.
-- Persistir timestamps, duração original, extensão acumulada, status e histórico de eventos. Evitar usar intervalos de tela como relógio de verdade.
-- Ao zerar: pedir decisão; descanso não começa sozinho. Permitir até duas extensões, total máximo de metade da duração original.
-- Ao esgotar as extensões: permitir registrar falha de conclusão e abrir ciclo novo mais tarde.
+- Estimativa da tarefa é esforço total; minutos reservados para ela em um ciclo não alteram essa estimativa. Um ciclo aceita várias tarefas em ordem, com uma sessão ativa. O tempo restante ao concluir uma tarefa antes do prazo passa para a próxima; concluir a última encerra o foco e permite escolher uma pausa, registrando apenas os minutos trabalhados.
+- Persistir timestamps, prazo da tarefa atual, duração original, extensão acumulada, status e histórico de eventos. Evitar usar intervalos de tela como relógio de verdade.
+- Avisar aos 5 e 2 minutos restantes da tarefa, por 10 segundos, sem interromper. Ao zerar o tempo reservado à tarefa, pausar o relógio e exigir uma decisão no modal. O tempo esperando não é contabilizado.
+- Cada tarefa admite no máximo duas extensões; a soma é limitada a 50% da estimativa total da própria tarefa. Ao esgotar as extensões, o modal oferece concluir/avançar e abrir detalhes; registrar “Não consegui terminar” fica nos detalhes, mesmo antes de zerar. A tentativa falha move apenas essa tarefa para “Em atraso” e avança; se for a última, encerra o foco sem contar ciclo concluído. Descanso não começa sozinho.
 - Pausa tem categoria e duração configuráveis; aviso sonoro ao fim e confirmação para o próximo foco.
-- Ocultar ou recolher a bolha não pausa o tempo. Ícone informa atividade. Múltiplas tarefas podem ter bolhas empilhadas; é preciso definir se seus ciclos podem contar simultaneamente.
+- Ocultar ou recolher a bolha não pausa o tempo. Ícone informa atividade. Há uma sessão ativa e um cronômetro, mesmo quando o ciclo contém várias tarefas.
 - Interrupção externa tem evento separado de falha. Tempo já trabalhado conta; recomeçar e adiar são decisões do usuário.
 - Ao reabrir o navegador, reconciliar timestamps e apresentar sessão em andamento ou decisão pendente.
 
@@ -46,7 +47,6 @@ Este documento é vivo. Uma solução melhor pode substituir a regra anterior de
 3. Regra de sessão ao ficar offline e sincronização entre dispositivos.
 4. Local de armazenamento e escopo de chaves de provedores informadas pelo usuário.
 5. Suporte inicial a navegadores Chromium e compatibilidade posterior.
-6. Semântica exata da duração estimada: tarefa inteira, ciclo ou ambas.
 
 ## Marcos de aceitação
 

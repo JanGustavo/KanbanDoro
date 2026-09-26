@@ -1074,6 +1074,15 @@ header p {
 .cycle-builder-steps input { width: 75px; }
 .cycle-select { display: flex; align-items: center; gap: 7px; margin-bottom: 12px; font-size: .76rem; color: #e7ca9b; }
 .cycle-step-summary,.break-recommendation { color: #efc477; font-weight: 700; }
+.step-notice { max-width: 42rem; padding: 10px 14px; border: 1px solid #d5a343; border-radius: 10px; background: #d5a34322; color: #ffe5aa; font-weight: 700; }
+.cycle-decision-backdrop { z-index: 12; }
+.task-detail-backdrop { z-index: 13; }
+.cycle-decision { max-width: 480px; border: 1px solid #d5a343; box-shadow: 0 16px 60px #000b; }
+.cycle-decision h2 { margin: 10px 0; }
+.cycle-decision-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin-top: 20px; }
+.cycle-decision-actions label { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.cycle-decision-actions input { width: 75px; }
+.overdue-badge { color: #ffb7ae; font-weight: 800; }
 .slice-editor { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; border-bottom: 1px solid #65515a; padding: 7px 0; }
 .slice-editor > label:first-child { flex: 1 1 190px; }
 .slice-editor input[type=number] { width: 76px; margin-left: 5px; }

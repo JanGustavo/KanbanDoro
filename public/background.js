@@ -60,7 +60,7 @@ async function syncFocusRules() {
   const domains = mode === 'gentle' ? FOCUS_GENTLE : mode === 'strict' ? FOCUS_STRICT : mode === 'custom' ? focusBlocking.customDomains : [];
   const blocked = Array.isArray(domains) ? [...new Set(domains.filter(validFocusDomain))].slice(0, 250) : [];
   const exceptions = Array.isArray(focusBlocking?.exceptions) ? [...new Set(focusBlocking.exceptions.filter(validFocusDomain))].slice(0, 250) : [];
-  const addRules = session?.phase === 'running' && session.endsAt > Date.now() && blocked.length ? [{
+  const addRules = session?.phase === 'running' && Math.min(session.stepEndsAt ?? session.endsAt, session.endsAt) > Date.now() && blocked.length ? [{
     id: FOCUS_RULE_ID, priority: 1,
     action: { type: 'redirect', redirect: { extensionPath: '/focus-blocked.html' } },
     condition: { requestDomains: blocked, excludedRequestDomains: exceptions, resourceTypes: ['main_frame'] }
@@ -367,7 +367,7 @@ async function broadcastTimer(session) {
 
 chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   const { session } = await chrome.storage.local.get('session');
-  if (session && (session.phase === 'running' || session.phase === 'break')) {
+  if (session && ['running', 'decision', 'break'].includes(session.phase)) {
     await ensureTimerInTab(tabId);
   }
 });
@@ -378,12 +378,19 @@ const COLOR_DUE = '#d94f4f';
 
 async function reconcile() {
   const { session } = await chrome.storage.local.get('session');
-  if (!session || (session.phase !== 'running' && session.phase !== 'break')) {
+  if (!session || !['running', 'decision', 'break'].includes(session.phase)) {
     await chrome.action.setBadgeText({ text: '' });
     return;
   }
-  const remaining = session.endsAt - Date.now();
+  const deadline = session.phase === 'running' ? Math.min(session.stepEndsAt ?? session.endsAt, session.endsAt) : session.endsAt;
+  const remaining = deadline - Date.now();
   const due = remaining <= 0;
+  if (session.phase === 'decision') {
+    await chrome.action.setBadgeText({ text: '!' });
+    await chrome.action.setBadgeBackgroundColor({ color: COLOR_DUE });
+    await chrome.alarms.clear('timer-end');
+    return;
+  }
   if (session.phase === 'running') {
     await chrome.action.setBadgeText({ text: due ? '!' : 'FOCO' });
     await chrome.action.setBadgeBackgroundColor({ color: due ? COLOR_DUE : COLOR_FOCUS });
@@ -392,7 +399,7 @@ async function reconcile() {
     await chrome.action.setBadgeBackgroundColor({ color: due ? COLOR_DUE : COLOR_BREAK });
   }
   if (remaining > 0) {
-    await chrome.alarms.create('timer-end', { when: session.endsAt });
+    await chrome.alarms.create('timer-end', { when: deadline });
   } else {
     await chrome.alarms.clear('timer-end');
   }
@@ -403,15 +410,18 @@ chrome.runtime.onStartup.addListener(() => { reconcile(); queueFocusRules(); });
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name !== 'timer-end') return;
   const { session, soundEnabled } = await chrome.storage.local.get(['session', 'soundEnabled']);
-  if (!session || !['running', 'break'].includes(session.phase) || session.endsAt > Date.now()) return;
+  if (!session || !['running', 'break'].includes(session.phase)) return;
+  const deadline = session.phase === 'running' ? Math.min(session.stepEndsAt ?? session.endsAt, session.endsAt) : session.endsAt;
+  if (deadline > Date.now()) return;
   queueFocusRules();
   const isBreak = session?.phase === 'break';
+  if (!isBreak) await chrome.storage.local.set({ session: { ...session, phase: 'decision' } });
   reconcile();
   chrome.notifications.create({
     type: 'basic',
     iconUrl: chrome.runtime.getURL('icon128.png'),
     title: 'KanbanDoro',
-    message: isBreak ? 'Sua pausa acabou! Hora de voltar ao foco.' : 'O tempo do seu ciclo de foco acabou!',
+    message: isBreak ? 'Sua pausa acabou! Hora de voltar ao foco.' : 'O tempo desta tarefa acabou. Abra o quadro para decidir.',
     silent: true
   });
   if (soundEnabled !== false) playAlert(isBreak ? 'break' : 'focus');

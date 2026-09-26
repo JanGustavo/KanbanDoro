@@ -1,11 +1,25 @@
 import assert from 'node:assert/strict';
-import { completedCycleCount, elapsedCredit, suggestedBreakMinutes } from '../src/cycleRules.ts';
+import { completedCycleCount, elapsedCredit, extensionBudget, nextStepTiming, stepDeadline, suggestedBreakMinutes } from '../src/cycleRules.ts';
 
 const session = { startedAt: 0, endsAt: 90_000, creditedSeconds: 0, excludedSeconds: 0 };
 assert.equal(elapsedCredit(session, 30_000), 30);
 assert.equal(elapsedCredit({ ...session, creditedSeconds: 30 }, 75_000), 45, 'switching tasks credits only the new segment');
 assert.equal(elapsedCredit({ ...session, creditedSeconds: 75 }, 120_000), 15, 'time beyond the cycle is not credited');
 assert.equal(elapsedCredit({ ...session, creditedSeconds: 90 }, 120_000), 0, 'finishing cannot credit a segment twice');
+const multi = { ...session, endsAt: 90 * 60_000, stepEndsAt: 30 * 60_000 };
+assert.equal(stepDeadline(multi), 30 * 60_000, 'the task ends before the whole cycle');
+assert.equal(elapsedCredit(multi, 45 * 60_000), 30 * 60, 'waiting for a decision is never credited');
+const early = nextStepTiming(multi, 20 * 60_000, 15);
+assert.equal(early.stepEndsAt, 45 * 60_000, 'unused time carries into the next task');
+assert.equal(early.endsAt, 90 * 60_000, 'early completion keeps the planned cycle length');
+assert.equal(elapsedCredit({ ...multi, ...early }, 35 * 60_000), 15 * 60, 'the next task receives only its own seconds');
+const late = nextStepTiming(multi, 35 * 60_000, 60);
+assert.equal(late.stepEndsAt, 95 * 60_000);
+assert.equal(late.endsAt, 95 * 60_000, 'decision waiting shifts the whole cycle');
+assert.equal(elapsedCredit({ ...multi, ...late }, 45 * 60_000), 10 * 60, 'decision waiting is not credited to the next task');
+assert.equal(extensionBudget(40, 0, 0), 20);
+assert.equal(extensionBudget(40, 13, 1), 7);
+assert.equal(extensionBudget(40, 0, 2), 0, 'at most two extensions per task');
 assert.equal(completedCycleCount([{ kind: 'completed' }, { kind: 'completed', cycleId: '1' }, { kind: 'switched', cycleId: '1' }, { kind: 'cycle-completed', cycleId: '1' }]), 2);
 assert.equal(suggestedBreakMinutes(4, true, { short: 5, long: 20 }), 20);
 assert.equal(suggestedBreakMinutes(4, false, { short: 5, long: 20 }), 5);
