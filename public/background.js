@@ -26,7 +26,7 @@ async function playAlert(variant) {
 // Content scripts display the floating timer and must not access saved API keys.
 chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type === 'GROQ_MODELS' || message?.type === 'GROQ_TASK_PROPOSAL') {
+  if (['GROQ_MODELS', 'GROQ_TASK_PROPOSAL', 'CHECK_ATTACHMENT'].includes(message?.type)) {
     if (_sender.url !== chrome.runtime.getURL('index.html')) return;
     handleGroq(message).then(sendResponse).catch(error => sendResponse({ error: error.message }));
     return true;
@@ -44,6 +44,43 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 const GROQ_URL = 'https://api.groq.com/openai/v1';
+function safeAttachmentUrl(value) {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+    if (url.protocol !== 'https:' || url.username || url.password || url.port || !host.includes('.')
+      || host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal')
+      || /^\d+(\.\d+){3}$/.test(host) || host.includes(':')) return null;
+    return url.href;
+  } catch { return null; }
+}
+async function checkAttachment(value) {
+  const url = safeAttachmentUrl(value);
+  if (!url) return { url: String(value || '').slice(0, 1000), verifiedAt: null, reason: 'Use um link público HTTPS válido.' };
+  try {
+    let { response, finalUrl } = await fetchPublicPage(url, 'HEAD');
+    if ([403, 405, 501].includes(response.status)) ({ response, finalUrl } = await fetchPublicPage(url, 'GET'));
+    if (response.ok && finalUrl) return { url: finalUrl, verifiedAt: Date.now(), reason: '' };
+    return { url, verifiedAt: null, reason: `Não foi possível confirmar o endereço (${response.status}).` };
+  } catch {
+    return { url, verifiedAt: null, reason: 'O site não permitiu confirmar o link agora.' };
+  }
+}
+async function fetchPublicPage(start, method) {
+  let url = start;
+  for (let hop = 0; hop < 4; hop++) {
+    const response = await fetch(url, { method, signal: AbortSignal.timeout(7000), redirect: 'manual' });
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get('location');
+      if (!location) throw Error('Redirecionamento sem destino');
+      url = safeAttachmentUrl(new URL(location, url).href);
+      if (!url) throw Error('Redirecionamento inválido');
+      continue;
+    }
+    return { response, finalUrl: safeAttachmentUrl(response.url) };
+  }
+  throw Error('Redirecionamentos em excesso');
+}
 async function groqRequest(path, apiKey, body) {
   const response = await fetch(GROQ_URL + path, {
     method: body ? 'POST' : 'GET',
@@ -59,6 +96,7 @@ async function groqRequest(path, apiKey, body) {
   return response.json();
 }
 async function handleGroq(message) {
+  if (message.type === 'CHECK_ATTACHMENT') return { check: await checkAttachment(message.url) };
   const stored = await chrome.storage.local.get('kanbandoro_ai_settings');
   const settings = stored.kanbandoro_ai_settings;
   if (settings?.provider !== 'groq' || !settings.apiKey) throw Error('Salve sua chave da Groq em Preferências → IA.');
@@ -75,22 +113,24 @@ async function handleGroq(message) {
   const result = await groqRequest('/chat/completions', settings.apiKey, {
     model: settings.model,
     messages: [
-      { role: 'system', content: 'Você organiza tarefas para um Kanban Pomodoro. Responda em português brasileiro. Sugira tempo total em minutos e dificuldade 1 leve, 2 média, 3 alta. Slices são etapas curtas e concretas. Nunca execute ações nem considere que a proposta foi aceita.' },
+      { role: 'system', content: 'Você organiza tarefas para um Kanban Pomodoro. Responda em português brasileiro. Sugira tempo total em minutos e dificuldade 1 leve, 2 média, 3 alta. Slices são etapas curtas e concretas. Sugira até 3 links HTTPS específicos e relevantes como anexos apenas se conhecer os endereços reais; nunca invente URLs, paths de busca ou vagas. Se não tiver certeza, devolva anexos vazios. Nunca execute ações nem considere que a proposta foi aceita.' },
       { role: 'user', content: JSON.stringify({ pedido: input, proposta_anterior: previous, comentario: feedback }) }
     ],
     response_format: { type: 'json_schema', json_schema: { name: 'task_proposal', strict: ['openai/gpt-oss-20b', 'openai/gpt-oss-120b'].includes(settings.model), schema: {
-      type: 'object', additionalProperties: false, required: ['name', 'description', 'difficulty', 'estimate', 'slices'],
-      properties: { name: { type: 'string' }, description: { type: 'string' }, difficulty: { type: 'integer' }, estimate: { type: 'integer' }, slices: { type: 'array', items: { type: 'string' } } }
+      type: 'object', additionalProperties: false, required: ['name', 'description', 'difficulty', 'estimate', 'slices', 'attachments'],
+      properties: { name: { type: 'string' }, description: { type: 'string' }, difficulty: { type: 'integer' }, estimate: { type: 'integer' }, slices: { type: 'array', items: { type: 'string' } }, attachments: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['title', 'url'], properties: { title: { type: 'string' }, url: { type: 'string' } } } } }
     } } },
-    max_completion_tokens: 800
+    max_completion_tokens: 1200
   });
   const text = result.choices?.[0]?.message?.content;
   if (!text) throw Error('O modelo não retornou uma proposta. Tente novamente.');
   let draft;
   try { draft = JSON.parse(text); } catch { throw Error('O modelo retornou uma proposta incompleta. Tente novamente.'); }
   if (typeof draft.name !== 'string' || !draft.name.trim() || typeof draft.description !== 'string' || !Number.isInteger(draft.estimate) || draft.estimate < 1 || draft.estimate > 480 || ![1, 2, 3].includes(draft.difficulty)
-    || !Array.isArray(draft.slices) || draft.slices.some(s => typeof s !== 'string')) throw Error('A proposta precisa de revisão. Tente novamente.');
-  return { proposal: { name: draft.name.trim().slice(0, 140), description: draft.description.slice(0, 3000), difficulty: draft.difficulty, estimate: draft.estimate, slices: draft.slices.filter(s => s.trim()).slice(0, 8).map(s => s.trim().slice(0, 140)) } };
+    || !Array.isArray(draft.slices) || draft.slices.some(s => typeof s !== 'string') || !Array.isArray(draft.attachments)) throw Error('A proposta precisa de revisão. Tente novamente.');
+  const attachments = await Promise.all(draft.attachments.slice(0, 3).filter(a => typeof a?.title === 'string' && typeof a?.url === 'string')
+    .map(async a => ({ title: a.title.trim().slice(0, 120), ...await checkAttachment(a.url) })));
+  return { proposal: { name: draft.name.trim().slice(0, 140), description: draft.description.slice(0, 3000), difficulty: draft.difficulty, estimate: draft.estimate, slices: draft.slices.filter(s => s.trim()).slice(0, 8).map(s => s.trim().slice(0, 140)), attachments } };
 }
 
 async function ensureTimerInTab(tabId) {

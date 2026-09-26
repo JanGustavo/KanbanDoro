@@ -5,6 +5,7 @@ import { getAISettings, saveAISettings, clearAISettings, AI_PROVIDERS, type AISe
 
 type Column = 'todo' | 'doing' | 'late' | 'done';
 type Slice = { id: string; name: string; done: boolean };
+type Attachment = { title: string; url: string; verifiedAt: number | null; reason: string };
 type Task = {
   id: string;
   name: string;
@@ -16,6 +17,7 @@ type Task = {
   failures: number;
   focusSeconds: number;
   slices: Slice[];
+  attachments?: Attachment[];
 };
 type Session = {
   taskId: string;
@@ -32,7 +34,7 @@ type Session = {
   excludedSeconds: number;
 };
 type HistoryEntry = { id: string; taskId: string; kind: string; seconds: number; at: number; sliceIds: string[] };
-type Proposal = { name: string; description: string; difficulty: 1 | 2 | 3; estimate: number; slices: string[] };
+type Proposal = { name: string; description: string; difficulty: 1 | 2 | 3; estimate: number; slices: string[]; attachments: Attachment[] };
 type GroqModel = { id: string; name: string };
 type Data = { tasks: Task[]; session: Session | null; history: HistoryEntry[]; breakPreferences: string[] };
 const columns: { id: Column; label: string }[] = [
@@ -72,6 +74,8 @@ function App() {
   const [aiBusy, setAiBusy] = useState(false);
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const [feedback, setFeedback] = useState('');
+  const [proposalTab, setProposalTab] = useState<'details' | 'attachments'>('details');
+  const [checkingLink, setCheckingLink] = useState<number | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [tipsDismissed, setTipsDismissed] = useState(true);
   const [tipIndex, setTipIndex] = useState(0);
@@ -149,17 +153,33 @@ function App() {
       const response = await chrome.runtime.sendMessage({ type: 'GROQ_TASK_PROPOSAL', input: name, previous: proposal, feedback: comment }) as { proposal?: Proposal; error?: string };
       if (response.error || !response.proposal) throw Error(response.error || 'A IA não retornou uma proposta.');
       setProposal(response.proposal); setFeedback('');
+      if (!comment) setProposalTab('details');
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'A Groq não respondeu.'); }
     finally { setAiBusy(false); }
+  }
+  function changeAttachment(index: number, patch: Partial<Attachment>) {
+    setProposal(old => old && ({ ...old, attachments: old.attachments.map((item, i) => i === index ? { ...item, ...patch } : item) }));
+  }
+  async function verifyAttachment(index: number) {
+    const originalUrl = proposal?.attachments[index]?.url;
+    if (!originalUrl) return;
+    setCheckingLink(index);
+    try {
+      const result = await chrome.runtime.sendMessage({ type: 'CHECK_ATTACHMENT', url: originalUrl }) as { check?: Omit<Attachment, 'title'>; error?: string };
+      if (result.error || !result.check) throw Error(result.error || 'Não foi possível verificar o link.');
+      setProposal(old => old && ({ ...old, attachments: old.attachments.map((item, i) => i === index && item.url === originalUrl ? { ...item, ...result.check } : item) }));
+    } catch { changeAttachment(index, { verifiedAt: null, reason: 'Não foi possível verificar o link agora.' }); }
+    finally { setCheckingLink(null); }
   }
   function acceptProposal() {
     if (!proposal?.name.trim() || !Number.isFinite(proposal.estimate) || proposal.estimate < 1 || proposal.estimate > 480) return setError('Revise o nome e o tempo estimado (1 a 480 minutos).');
     const item: Task = { id: id(), name: proposal.name.trim(), description: proposal.description, difficulty: proposal.difficulty,
       estimate: proposal.estimate, deadline: '', column: 'todo', failures: 0, focusSeconds: 0,
-      slices: proposal.slices.filter(s => s.trim()).map(s => ({ id: id(), name: s.trim(), done: false })) };
+      slices: proposal.slices.filter(s => s.trim()).map(s => ({ id: id(), name: s.trim(), done: false })),
+      attachments: proposal.attachments.filter(link => link.title.trim() && link.verifiedAt && Date.now() - link.verifiedAt < 10 * 60_000) };
     update(old => ({ ...old, tasks: [...old.tasks, item] }));
     setProposal(null); setName(''); setSelectedTask(item.id);
-    setToast('Proposta aceita. Revise os detalhes antes de começar o foco.');
+    setToast('Proposta aceita. Só os anexos verificados foram salvos.');
   }
   function startFocus(item: Task) {
     if (active) return setError('Encerre o ciclo ou descanso atual antes de iniciar outro.');
@@ -252,17 +272,29 @@ function App() {
       </div>
     </section>}
     <form className="create" onSubmit={addTask}><input aria-label="Nome da tarefa" placeholder="Qual é a próxima tarefa?" value={name} onChange={e => setName(e.target.value)} /><button type="submit">+ Criar tarefa</button><button type="button" disabled={aiBusy || !name.trim()} onClick={() => void requestProposal()}>{aiBusy ? 'Consultando…' : 'Propor com IA'}</button></form>
-    {proposal && <div className="backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setProposal(null); }}><section className="dialog" role="dialog" aria-modal="true" aria-label="Revisar proposta da IA">
-      <button className="close" onClick={() => setProposal(null)} aria-label="Fechar proposta">✕</button><span className="eyebrow">PROPOSTA DA IA · REVISE ANTES DE SALVAR</span>
+    {proposal && <div className="backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setProposal(null); }}><section className="dialog proposal-dialog" role="dialog" aria-modal="true" aria-label="Revisar proposta da IA">
+      <header className="proposal-header"><span className="proposal-spark" aria-hidden="true">ϟ</span><div><span className="eyebrow">NOVA PROPOSTA</span><h2>Uma ideia para começar</h2><p>Revise os detalhes antes de adicionar ao quadro.</p></div><button className="close" onClick={() => setProposal(null)} aria-label="Fechar proposta">✕</button></header>
       {error && <p className="warning" role="alert">{error}</p>}
+      <div className="proposal-tabs" role="tablist" aria-label="Conteúdo da proposta"><button role="tab" aria-selected={proposalTab === 'details'} onClick={() => setProposalTab('details')}>Tarefa e etapas</button><button role="tab" aria-selected={proposalTab === 'attachments'} onClick={() => setProposalTab('attachments')}>Anexos <span>{proposal.attachments.length}</span></button></div>
+      {proposalTab === 'details' ? <div className="proposal-pane">
       <label>Nome <input className="task-name" value={proposal.name} onChange={e => setProposal({ ...proposal, name: e.target.value })} /></label>
       <label>Descrição <textarea value={proposal.description} onChange={e => setProposal({ ...proposal, description: e.target.value })} /></label>
       <div className="fields"><label className="highlight-time">Tempo sugerido (min) <input type="number" min="1" max="480" value={proposal.estimate} onChange={e => setProposal({ ...proposal, estimate: +e.target.value })} /></label>
       <label>Dificuldade <select value={proposal.difficulty} onChange={e => setProposal({ ...proposal, difficulty: +e.target.value as 1 | 2 | 3 })}><option value="1">1 · leve</option><option value="2">2 · média</option><option value="3">3 · alta</option></select></label></div>
       <h3>Slices sugeridos</h3>{proposal.slices.map((slice, index) => <div className="proposal-slice" key={index}><input aria-label={`Slice ${index + 1}`} value={slice} onChange={e => setProposal({ ...proposal, slices: proposal.slices.map((s, i) => i === index ? e.target.value : s) })} /><button onClick={() => setProposal({ ...proposal, slices: proposal.slices.filter((_, i) => i !== index) })} aria-label={`Remover slice ${index + 1}`}>✕</button></div>)}
       <button onClick={() => setProposal({ ...proposal, slices: [...proposal.slices, ''] })}>+ Slice</button>
+      </div> : <div className="proposal-pane"><p className="attachment-hint">Links úteis para a tarefa. Um link verificado respondeu agora; a disponibilidade e o conteúdo da página podem mudar.</p>
+        {proposal.attachments.length === 0 && <p className="attachment-empty">Nenhum link sugerido. Você pode adicionar um endereço e verificá-lo.</p>}
+        {proposal.attachments.map((link, index) => <div className="attachment-card" key={index}>
+          <label>Título <input value={link.title} onChange={e => changeAttachment(index, { title: e.target.value })} /></label>
+          <label>Endereço HTTPS <input type="url" value={link.url} onChange={e => changeAttachment(index, { url: e.target.value, verifiedAt: null, reason: 'Verifique o endereço após editar.' })} /></label>
+          <div className="attachment-meta"><span className={link.verifiedAt ? 'link-ok' : 'link-pending'}>{link.verifiedAt ? '✓ Link respondeu' : link.reason || 'Link ainda não verificado'}</span><button disabled={checkingLink !== null} onClick={() => void verifyAttachment(index)}>{checkingLink === index ? 'Verificando…' : 'Verificar link'}</button><button aria-label={`Remover anexo ${index + 1}`} onClick={() => setProposal({ ...proposal, attachments: proposal.attachments.filter((_, i) => i !== index) })}>Remover</button></div>
+          {link.verifiedAt && <a href={link.url} target="_blank" rel="noopener noreferrer">Abrir página ↗</a>}
+        </div>)}
+        <button onClick={() => setProposal({ ...proposal, attachments: [...proposal.attachments, { title: '', url: '', verifiedAt: null, reason: 'Informe um endereço para verificar.' }] })}>+ Adicionar link</button>
+      </div>}
       <label className="revision-label">Quer mudar algo? <textarea placeholder="Ex.: reduza o tempo e separe o backend em duas etapas" value={feedback} onChange={e => setFeedback(e.target.value)} /></label>
-      <div className="proposal-actions"><button disabled={aiBusy || !feedback.trim()} onClick={() => void requestProposal(feedback)}>Reescrever com IA</button><button className="primary" onClick={acceptProposal}>Aceitar e criar tarefa</button></div>
+      <div className="proposal-actions"><button className="reject" onClick={() => { setProposal(null); setFeedback(''); }}>Rejeitar</button><button disabled={aiBusy || !feedback.trim()} onClick={() => void requestProposal(feedback)}>Reescrever com IA</button><button className="accept" disabled={aiBusy} onClick={acceptProposal}>Aceitar e criar tarefa</button></div>
     </section></div>}
     {showSettings && <div className="backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setShowSettings(false); }}><section className="dialog" role="dialog" aria-modal="true" aria-label="Preferências">
       <button className="close" onClick={() => setShowSettings(false)}>✕</button><span className="eyebrow">PREFERÊNCIAS</span>
@@ -360,6 +392,7 @@ function App() {
       <h3>Iniciar foco</h3><div className="scope"><label><input type="radio" checked={scope === 'whole'} onChange={() => setScope('whole')} /> Tarefa inteira</label><label><input type="radio" checked={scope === 'slices'} onChange={() => setScope('slices')} /> Selecionar slices</label></div>
       {scope === 'slices' && <div className="slices">{task.slices.filter(s => !s.done).map(s => <label key={s.id}><input type="checkbox" checked={selectedSlices.includes(s.id)} onChange={() => setSelectedSlices(old => old.includes(s.id) ? old.filter(v => v !== s.id) : [...old, s.id])} />{s.name}</label>)}</div>}
       <p className="summary">{minutes(task.focusSeconds)} de foco registrado · {task.failures} tentativas falhas</p>
+      {!!task.attachments?.length && <><h3>Anexos</h3><div className="task-attachments">{task.attachments.map((link, index) => <a key={index} href={link.url} target="_blank" rel="noopener noreferrer">{link.title} ↗</a>)}</div></>}
       <button className="primary" disabled={!!active} onClick={() => { startFocus(task); if (!active) setSelectedTask(null); }}>Iniciar ciclo de {task.estimate} min</button>
     </section></div>}
   </main>;
