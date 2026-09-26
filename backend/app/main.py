@@ -1,11 +1,13 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.api import auth, connections, sessions, tasks
 from app.core.config import get_settings
-from app.core.database import init_db
+from app.core.database import async_session_maker, init_db
 
 settings = get_settings()
 if settings.app_env != "development" and settings.jwt_secret == "development-only-change-before-deploy":
@@ -42,6 +44,14 @@ app.include_router(connections.router)
 
 @app.get("/health")
 async def health_check():
+    try:
+        async with async_session_maker() as session:
+            if settings.app_env == "development":
+                await session.execute(text("SELECT 1"))
+            elif (await session.execute(text("SELECT version_num FROM alembic_version LIMIT 1"))).scalar_one_or_none() is None:
+                raise HTTPException(status_code=503, detail="Migração do banco pendente")
+    except SQLAlchemyError:
+        raise HTTPException(status_code=503, detail="Banco indisponível") from None
     return {"status": "ok"}
 
 
