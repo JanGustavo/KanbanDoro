@@ -8,11 +8,12 @@ import Statistics from './Statistics';
 import { focusBlockingDefault, type FocusBlocking } from './focusBlocking';
 import FocusBlockingSettings from './FocusBlockingSettings';
 import { completedCycleCount, elapsedCredit, extensionBudget, nextStepTiming, stepDeadline, suggestedBreakMinutes } from './cycleRules';
+import { makeBackup, mergeBackup, parseBackup, MAX_BACKUP_BYTES, type Backup } from './backup';
 
 type Column = 'todo' | 'doing' | 'late' | 'done';
 type Slice = { id: string; name: string; done: boolean; estimateMinutes?: number };
 type Attachment = { title: string; url: string; verifiedAt: number | null; reason: string };
-type Task = {
+export type Task = {
   id: string;
   name: string;
   description: string;
@@ -51,11 +52,11 @@ type Session = {
   warnedMinutes?: number[];
   postFocusCompleted?: boolean;
 };
-type HistoryEntry = { id: string; taskId: string; kind: string; seconds: number; at: number; sliceIds: string[]; cycleId?: string };
+export type HistoryEntry = { id: string; taskId: string; kind: string; seconds: number; at: number; sliceIds: string[]; cycleId?: string };
 type Proposal = { name: string; description: string; difficulty: 1 | 2 | 3; skill?: string; estimate: number; slices: string[]; attachments: Attachment[]; deadline?: string };
 type ScheduleChoice = { mode: 'once' | 'selected-days' | 'weekly'; startDate: string; weekdays: number[] };
 type AIModel = { id: string; name: string };
-type Data = { tasks: Task[]; session: Session | null; history: HistoryEntry[]; breakPreferences: string[]; weeklyPlans: WeeklyPlan[];
+export type Data = { tasks: Task[]; session: Session | null; history: HistoryEntry[]; breakPreferences: string[]; weeklyPlans: WeeklyPlan[];
   wipLimits: { doing: number; late: number | null }; breakDurations: { short: number; long: number } };
 const columns: { id: Column; label: string }[] = [
   { id: 'todo', label: 'A fazer' }, { id: 'doing', label: 'Em andamento' },
@@ -95,7 +96,10 @@ function App() {
   const [restart, setRestart] = useState<Task | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showConnections, setShowConnections] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<'breaks' | 'board' | 'ai' | 'blocking'>('breaks');
+  const [settingsTab, setSettingsTab] = useState<'breaks' | 'board' | 'ai' | 'blocking' | 'data'>('breaks');
+  const [importPreview, setImportPreview] = useState<Backup | null>(null);
+  const [backupError, setBackupError] = useState('');
+  const [backupBusy, setBackupBusy] = useState(false);
   const [focusBlocking, setFocusBlocking] = useState<FocusBlocking | null>(null);
   const [aiSettings, setAiSettings] = useState<AISettings>({ provider: '', apiKey: '', geminiApiKey: '', model: '', customEndpoint: '' });
   const [aiKeyVisible, setAiKeyVisible] = useState(false);
@@ -164,6 +168,41 @@ function App() {
   function changeFocusBlocking(next: FocusBlocking) {
     setFocusBlocking(next);
     void chrome.storage.local.set({ focusBlocking: next });
+  }
+  function saveBackup(snapshot: Backup, prefix = 'kanbandoro-backup') {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${prefix}-${snapshot.exportedAt.slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  }
+  async function chooseBackup(file?: File) {
+    setImportPreview(null);
+    setBackupError('');
+    if (!file) return;
+    if (file.size > MAX_BACKUP_BYTES) return setBackupError('Arquivo acima de 16 MB.');
+    try { setImportPreview(parseBackup(await file.text())); }
+    catch (err) { setBackupError(err instanceof Error ? err.message : 'Não foi possível ler o backup.'); }
+  }
+  async function restoreBackup(mode: 'merge' | 'replace') {
+    if (!importPreview || backupBusy) return;
+    if (data.session) return setBackupError('Encerre a sessão ou a pausa antes de restaurar um backup.');
+    if (mode === 'replace' && !window.confirm('Substituir tarefas, histórico, rotinas e preferências locais? Um backup do estado atual será baixado antes.')) return;
+    setBackupBusy(true);
+    setBackupError('');
+    try {
+      const current = makeBackup(data, focusBlocking ?? focusBlockingDefault, soundEnabled);
+      const target = mode === 'merge' ? mergeBackup(current, importPreview) : importPreview;
+      saveBackup(current, 'kanbandoro-antes-de-importar');
+      await chrome.storage.local.set({ ...target.data, session: null });
+      window.location.reload();
+    } catch (err) {
+      setBackupError(err instanceof Error ? err.message : 'Não foi possível restaurar o backup.');
+      setBackupBusy(false);
+    }
   }
   const today = localDay(new Date(now));
   useEffect(() => {
@@ -511,11 +550,12 @@ function App() {
     </section></div>}
     {showSettings && <div className="backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setShowSettings(false); }}><section className="dialog" role="dialog" aria-modal="true" aria-label="Preferências">
       <button className="close" onClick={() => setShowSettings(false)}>✕</button><span className="eyebrow">PREFERÊNCIAS</span>
-      <div className="settings-tabs slide-tabs" role="tablist" style={{ '--tab-count': 4, '--active-index': settingsTab === 'breaks' ? 0 : settingsTab === 'board' ? 1 : settingsTab === 'ai' ? 2 : 3 } as React.CSSProperties}>
+      <div className="settings-tabs slide-tabs" role="tablist" style={{ '--tab-count': 5, '--active-index': settingsTab === 'breaks' ? 0 : settingsTab === 'board' ? 1 : settingsTab === 'ai' ? 2 : settingsTab === 'blocking' ? 3 : 4 } as React.CSSProperties}>
         <button role="tab" aria-selected={settingsTab === 'breaks'} onClick={() => setSettingsTab('breaks')}>Pausas</button>
         <button role="tab" aria-selected={settingsTab === 'board'} onClick={() => setSettingsTab('board')}>Quadro</button>
         <button role="tab" aria-selected={settingsTab === 'ai'} onClick={() => setSettingsTab('ai')}>IA</button>
         <button role="tab" aria-selected={settingsTab === 'blocking'} onClick={() => setSettingsTab('blocking')}>Bloqueio</button>
+        <button role="tab" aria-selected={settingsTab === 'data'} onClick={() => setSettingsTab('data')}>Dados</button>
       </div>
       {settingsTab === 'breaks' && (
         <>
@@ -590,6 +630,19 @@ function App() {
         </>
       )}
       {settingsTab === 'blocking' && <FocusBlockingSettings settings={focusBlocking} onChange={changeFocusBlocking} />}
+      {settingsTab === 'data' && <section className="backup-panel" aria-label="Backup dos dados">
+        <h3>Backup local</h3><p>Tarefas, slices, histórico, rotinas e preferências vão para o JSON. Chaves de IA, tokens Google e a sessão de foco ativa ficam fora.</p>
+        <button disabled={backupBusy} onClick={() => { try { saveBackup(makeBackup(data, focusBlocking ?? focusBlockingDefault, soundEnabled)); setBackupError(''); } catch (err) { setBackupError(err instanceof Error ? err.message : 'Não foi possível exportar.'); } }}>Exportar JSON</button>
+        <label>Escolher arquivo para prévia <input type="file" accept=".json,application/json" onChange={e => { void chooseBackup(e.target.files?.[0]); e.target.value = ''; }} /></label>
+        {backupError && <p className="warning" role="alert">{backupError}</p>}
+        {importPreview && <div className="backup-preview"><h4>Prévia · versão {importPreview.schemaVersion}</h4>
+          <p>Exportado em {new Date(importPreview.exportedAt).toLocaleString('pt-BR')} ({importPreview.timeZone}).</p>
+          <p>{importPreview.data.tasks.length} tarefas · {importPreview.data.history.length} eventos · {importPreview.data.weeklyPlans.length} rotinas.</p>
+          <p>Ao mesclar, IDs repetidos preservam o registro local; datas de ocorrências semanais são reunidas. Substituir troca os dados locais. As credenciais atuais nunca são importadas.</p>
+          <div className="backup-actions"><button disabled={backupBusy || !!data.session} onClick={() => void restoreBackup('merge')}>Mesclar sem duplicar</button><button className="delete-task" disabled={backupBusy || !!data.session} onClick={() => void restoreBackup('replace')}>Substituir dados</button><button onClick={() => setImportPreview(null)}>Cancelar</button></div>
+          {data.session && <p className="warning">Encerre o ciclo ou a pausa atual antes de importar.</p>}
+        </div>}
+      </section>}
     </section></div>}
     <nav className="board-controls" aria-label="Filtrar tarefas">
       <div className="board-view-scroll"><div className="board-view-slider slide-tabs" style={{ '--tab-count': 5, '--active-index': showStatistics ? 0 : ['today', 'week', 'all', 'archive'].indexOf(view) + 1 } as React.CSSProperties}>

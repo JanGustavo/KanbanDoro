@@ -12,6 +12,8 @@ Extensão Manifest V3 que reúne Kanban, ciclos de foco vinculados a tarefas e a
 2. No Chrome/Chromium, abra `chrome://extensions`, habilite o modo de desenvolvedor e carregue a pasta `dist` como extensão sem compactação.
 3. Clique no ícone da extensão para abrir o quadro. Tarefas, rotinas, slices e sessões ficam em `chrome.storage.local` no próprio navegador.
 
+Para copiar o quadro entre perfis ou guardar uma cópia, vá a **Preferências → Dados → Exportar JSON**. O arquivo versionado inclui tarefas, slices, histórico, rotinas e preferências de quadro, pausa e bloqueio. Ele não inclui chaves de IA, credenciais Google ou sessão de foco ativa. A importação valida o arquivo (até 16 MB) e mostra quantidades antes de gravar. **Mesclar** preserva o registro local quando o ID já existe e reúne as datas de ocorrência das rotinas; **Substituir** pede confirmação. Ambas baixam antes um backup do estado atual e recarregam a extensão depois de salvar. Encerre o foco ou a pausa antes de importar.
+
 Ao atualizar a extensão, recarregue também as abas que já estavam abertas. O botão **Mostrar bolha** tenta instalar o script na aba ativa, inclusive quando ela foi aberta antes da extensão. O navegador bloqueia scripts em páginas internas ou restritas. A instalação solicita acesso aos sites para exibir a bolha sobre eles.
 
 **Implementado neste marco:** quadro local editável, slices, registro de foco, rotinas semanais, filtro por dia/semana, arquivo e exclusão de tarefas, uma sessão por vez, duas extensões com teto combinado de 50%, tentativa falha, interrupção e pausa com confirmação. O badge indica foco ativo, pausa ativa e vencimento. A bolha aparece nos sites permitidos e o aviso sonoro usa uma página offscreen. A criação assistida com Groq ou Gemini consulta modelos reais e abre um modal revisável; reescrever a proposta reapresenta o modal animado. **Ainda pendente:** ligação das tarefas/sessões do quadro à API, ajuda contextual da IA, fala, sincronização, alerta automático de prazo e relatórios. As Connections já consultam o backend; as tarefas e sessões do quadro ainda ficam locais.
@@ -66,7 +68,7 @@ Os escopos solicitados juntos são `gmail.readonly`, `gmail.send`, `calendar.rea
 1. **Base:** quadro, slices, persistência local e ciclos com histórico e recuperação.
 2. **Extensão completa:** bolha opcional nos sites permitidos, badge, alertas e preferências de pausa.
 3. **Integração:** migração local → servidor, ajuda contextual, contratos de IA para decisões e propostas com aprovação. O cadastro da API não recebe chaves de IA; a criação assistida usa Groq ou Gemini configurado na extensão.
-4. **Após histórico real:** score transparente de eficiência e WIP, voz local em tempo real, relatórios, exportação e modos da comunidade.
+4. **Após histórico real:** score transparente de eficiência e WIP, voz local em tempo real, relatórios, formatos de exportação adicionais e modos da comunidade.
 
 Veja [docs/REQUISITOS.md](docs/REQUISITOS.md) para regras e decisões em aberto. Ideias novas dentro deste conceito podem substituir o desenho atual; registre a motivação e atualize requisitos antes da implementação.
 

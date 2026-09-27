@@ -1083,6 +1083,14 @@ header p {
 .cycle-decision-actions label { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .cycle-decision-actions input { width: 75px; }
 .overdue-badge { color: #ffb7ae; font-weight: 800; }
+.backup-panel { display: grid; gap: 14px; line-height: 1.5; }
+.backup-panel h3,.backup-preview h4 { margin: 0; color: #efc477; }
+.backup-panel p { margin: 0; color: #d5c7c1; }
+.backup-panel > label { display: grid; gap: 8px; }
+.backup-panel input[type=file] { max-width: 100%; }
+.backup-preview { display: grid; gap: 10px; padding: 16px; border: 1px solid #795f66; border-radius: 12px; background: #342c30; }
+.backup-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 530px) { .settings-tabs.slide-tabs button { padding: 8px 4px; font-size: .75rem; } }
 .slice-editor { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; border-bottom: 1px solid #65515a; padding: 7px 0; }
 .slice-editor > label:first-child { flex: 1 1 190px; }
 .slice-editor input[type=number] { width: 76px; margin-left: 5px; }
