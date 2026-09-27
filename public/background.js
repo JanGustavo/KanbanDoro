@@ -292,13 +292,19 @@ async function handleGroq(message) {
   if (message.type === 'GROQ_MODELS') {
     if (settings.provider === 'gemini') {
       const result = await geminiRequest('/models?pageSize=1000', settings.geminiApiKey);
+      // models.list does not include pricing or free-tier eligibility. Keep this allowlist
+      // limited to exact text models confirmed in Google's public pricing table.
+      const freeTier = new Set(['gemini-2.5-flash', 'gemini-2.5-flash-lite']);
       return { models: (result.models || []).filter(model => model.name?.startsWith('models/gemini-') && model.name.includes('flash') && !model.name.includes('preview') && model.supportedGenerationMethods?.includes('generateContent'))
-        .map(model => ({ id: model.name.replace('models/', ''), name: model.displayName || model.name })) };
+        .map(model => ({ id: model.name.replace('models/', ''), name: model.displayName || model.name, freeTier: freeTier.has(model.name.replace('models/', '')) })) };
     }
     const result = await groqRequest('/models', settings.apiKey);
+    // /models pricing is the paid token rate, not free-plan eligibility. These
+    // exact IDs are listed in Groq's Free Plan Limits; do not guess new models.
+    const freeTier = new Set(['openai/gpt-oss-20b', 'openai/gpt-oss-120b', 'qwen/qwen3.8-27b']);
     const models = (result.data || []).filter(model => model.active && model.input_modalities?.includes('text') && model.output_modalities?.includes('text')
       && model.supported_features?.includes('structured_outputs') && !model.id.includes('safeguard'));
-    return { models: models.map(model => ({ id: model.id, name: model.name || model.id })) };
+    return { models: models.map(model => ({ id: model.id, name: model.name || model.id, freeTier: freeTier.has(model.id) })) };
   }
   if (message.type === 'AI_SLICE_INSIGHT') {
     const item = message.task;

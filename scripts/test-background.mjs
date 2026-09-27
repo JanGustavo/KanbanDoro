@@ -175,6 +175,7 @@ requests.length = 0;
 assert.equal(requests.length, 0);
 const catalog = await aiMessage({ type: 'GROQ_MODELS' });
 assert.equal(catalog.models.length, 1, 'only eligible text models should be offered');
+assert.equal(catalog.models[0].freeTier, true, 'known Groq free-plan models should be labeled');
 const draft = await aiMessage({ type: 'GROQ_TASK_PROPOSAL', input: 'Criar API', areas: ['Programação', 'Estudo'] });
 assert.equal(draft.proposal.estimate, 35);
 assert.equal(draft.proposal.skill, 'Programação');
@@ -191,6 +192,7 @@ assert.equal((await aiMessage({ type: 'AI_SLICE_INSIGHT', task: { name: 'Estudar
 assert(!requests.at(-1).options.body.includes('private-server-session'));
 aiSettings = { provider: 'gemini', apiKey: 'test-only', geminiApiKey: 'gemini-test-key', model: 'gemini-2.5-flash-lite' };
 assert.equal((await aiMessage({ type: 'GROQ_MODELS' })).models[0].id, 'gemini-2.5-flash-lite');
+assert.equal((await aiMessage({ type: 'GROQ_MODELS' })).models[0].freeTier, true, 'known Gemini free-tier models should be labeled');
 assert.equal((await aiMessage({ type: 'AI_SLICE_INSIGHT', task: { name: 'Estudar', estimate: 100, slices: [{ name: 'Módulo', estimateMinutes: 90 }] } })).insight, 'Divida o slice mais longo em dois.');
 assert.equal((await aiMessage({ type: 'GROQ_TASK_PROPOSAL', input: 'Estudar' })).proposal.name, 'Estudar');
 assert.equal((await aiMessage({ type: 'GROQ_CONNECTION_PROPOSAL', kind: 'calendar', prompt: 'Planejar reunião', now: '2026-09-26T12:00:00Z', timeZone: 'America/Sao_Paulo' })).draft.title, 'Reunião');

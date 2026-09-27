@@ -1169,6 +1169,15 @@ header p {
 .blocking-profiles { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin: 16px 0; }
 .blocking-profiles button { display: grid; gap: 5px; text-align: left; border: 1px solid #70555e; border-radius: 10px; background: #2b252a; }
 .blocking-profiles button.selected { border-color: #d5a343; background: #4b3038; box-shadow: inset 0 0 0 1px #d5a34377; }
+.blocking-profiles .blocking-profile-off { border-color: #68717e; background: #30343b; }
+.blocking-profiles .blocking-profile-gentle { border-color: #9a8051; background: #3b3328; }
+.blocking-profiles .blocking-profile-strict { border-color: #9966b8; background: #3e2b4e; }
+.blocking-profiles .blocking-profile-custom { border-color: #658d9c; background: #2b3b42; }
+.blocking-profiles .blocking-profile-off.selected { border-color: #aab6c4; background: #46505a; box-shadow: inset 0 0 0 1px #aab6c477; }
+.blocking-profiles .blocking-profile-gentle.selected { border-color: #e7bd69; background: #5d492b; box-shadow: inset 0 0 0 1px #e7bd6977; }
+.blocking-profiles .blocking-profile-strict.selected { border-color: #d49bea; background: #5a3671; box-shadow: inset 0 0 0 1px #d49bea77; }
+.blocking-profiles .blocking-profile-custom.selected { border-color: #91cede; background: #355664; box-shadow: inset 0 0 0 1px #91cede77; }
+.blocking-profiles .blocking-profile:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .blocking-profiles button small { font-size: .75rem; line-height: 1.4; color: #cbb7ae; }
 .blocking-import,.blocking-add { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin: 14px 0; }
 .blocking-add input { flex: 1 1 220px; }
@@ -1176,6 +1185,15 @@ header p {
 .blocking-list > div { display: flex; align-items: center; gap: 5px; max-width: 100%; border: 1px solid #74545e; border-radius: 7px; padding: 5px 7px; background: #32292d; font-size: .78rem; overflow-wrap: anywhere; }
 .blocking-list button { padding: 3px 5px; font-size: .7rem; color: #f1c180; }
 .blocking-settings h4 { margin-bottom: 6px; }
+.preferences-dialog { padding-top: 30px; }
+.preferences-dialog > .eyebrow { display: block; padding-right: 50px; line-height: 36px; }
+.preferences-dialog > .close { top: 14px; right: 18px; width: 38px; height: 38px; display: grid; place-items: center; padding: 0; line-height: 1; color: #ffdddc; background: #6f2b39; border: 1px solid #cc6475; border-radius: 9px; }
+.preferences-dialog > .close:hover { background: #99384c; }
+.ai-free-models { display: flex; flex-wrap: wrap; gap: 7px; margin: 4px 0 10px; }
+.ai-free-models button { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; background: #292c2a; border: 1px solid #586d59; font-size: .78rem; }
+.ai-free-models button:hover,.ai-free-models button.selected { border-color: #a4cd92; background: #344737; }
+.ai-free-models button span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-free-badge { flex: none; color: #183021; background: #add69b; border-radius: 5px; padding: 2px 5px; font-size: .68rem; font-weight: 800; }
 @media (max-width: 600px) {
   .blocking-profiles { grid-template-columns: 1fr; }
   .focus-top { padding: 13px 15px; }

@@ -21,7 +21,7 @@ export default function FocusBlockingSettings({ settings: saved, onChange }: { s
     <p className="settings-hint">Ativo apenas enquanto o cronômetro está em foco. Mostra uma tela escura por cinco segundos ao abrir um site bloqueado e depois abre a nova guia. Durante a pausa, os sites ficam livres. Se preferir, use o tema escuro dos sites que você acessa; o KanbanDoro não muda o tema deles.</p>
     <div className="blocking-profiles" role="group" aria-label="Perfil de bloqueio">
       {([['off', 'Desligado', 'Navegação livre.'], ['gentle', 'Essencial', 'Redes e jogos que costumam interromper o foco.'], ['strict', 'Intenso', 'Mais redes, vídeos, jogos e entretenimento.'], ['custom', 'Meu perfil', 'Você escolhe os domínios.']] as const).map(([mode, title, detail]) =>
-        <button type="button" className={settings.mode === mode ? 'selected' : ''} aria-pressed={settings.mode === mode} key={mode} onClick={() => select(mode)}><strong>{title}</strong><small>{detail}</small></button>)}
+        <button type="button" className={`blocking-profile blocking-profile-${mode}${settings.mode === mode ? ' selected' : ''}`} aria-pressed={settings.mode === mode} key={mode} onClick={() => select(mode)}><strong>{title}</strong><small>{detail}</small></button>)}
     </div>
     {editingCustom && <div className="blocking-import"><span>Começar com os sites de:</span><button type="button" onClick={() => onChange({ ...settings, customDomains: [...gentleDomains] })}>Essencial</button><button type="button" onClick={() => onChange({ ...settings, customDomains: [...strictDomains] })}>Intenso</button></div>}
     {settings.mode !== 'off' && <>

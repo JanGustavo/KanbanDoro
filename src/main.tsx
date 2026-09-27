@@ -59,7 +59,7 @@ type Session = {
 export type HistoryEntry = { id: string; taskId: string; kind: string; seconds: number; at: number; sliceIds: string[]; cycleId?: string };
 type Proposal = { name: string; description: string; difficulty: 1 | 2 | 3; skill?: string; estimate: number; slices: string[]; attachments: Attachment[]; deadline?: string };
 type ScheduleChoice = { mode: 'once' | 'selected-days' | 'weekly'; startDate: string; weekdays: number[] };
-type AIModel = { id: string; name: string };
+type AIModel = { id: string; name: string; freeTier?: boolean };
 export type Data = { tasks: Task[]; session: Session | null; history: HistoryEntry[]; breakPreferences: string[]; weeklyPlans: WeeklyPlan[];
   wipLimits: { doing: number; late: number | null }; breakDurations: { short: number; long: number }; areas: string[] };
 const columns: { id: Column; label: string }[] = [
@@ -674,8 +674,8 @@ function App() {
       {proposalSource === 'ai' && <label className="revision-label">Quer mudar algo? <textarea placeholder="Ex.: reduza o tempo e separe o backend em duas etapas" value={feedback} onChange={e => setFeedback(e.target.value)} /></label>}
       <div className="proposal-actions"><button className="reject" onClick={() => { setProposal(null); setFeedback(''); }}>{proposalSource === 'ai' ? 'Rejeitar' : 'Cancelar'}</button>{proposalSource === 'ai' && <button disabled={aiBusy || !feedback.trim()} onClick={() => void requestProposal(feedback)}>Reescrever com IA</button>}<button className="accept" disabled={aiBusy} onClick={acceptProposal}>{schedule.mode === 'once' ? 'Criar tarefa' : 'Criar programação'}</button></div>
     </section></div>}
-    {showSettings && <div className="backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setShowSettings(false); }}><section className="dialog" role="dialog" aria-modal="true" aria-label="Preferências">
-      <button className="close" onClick={() => setShowSettings(false)}>✕</button><span className="eyebrow">PREFERÊNCIAS</span>
+    {showSettings && <div className="backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setShowSettings(false); }}><section className="dialog preferences-dialog" role="dialog" aria-modal="true" aria-label="Preferências">
+      <button className="close" type="button" onClick={() => setShowSettings(false)} aria-label="Fechar preferências">✕</button><span className="eyebrow">PREFERÊNCIAS</span>
       <div className="settings-tabs slide-tabs" role="tablist" style={{ '--tab-count': 4, '--active-index': settingsTab === 'breaks' ? 0 : settingsTab === 'board' ? 1 : settingsTab === 'ai' ? 2 : 3 } as React.CSSProperties}>
         <button role="tab" aria-selected={settingsTab === 'breaks'} onClick={() => setSettingsTab('breaks')}>Pausas</button>
         <button role="tab" aria-selected={settingsTab === 'board'} onClick={() => setSettingsTab('board')}>Quadro</button>
@@ -721,8 +721,10 @@ function App() {
               <>
                 <label>
                   Modelo
-                  {['groq', 'gemini'].includes(aiSettings.provider) ? <><select value={aiSettings.model} onChange={e => persistAIChoice(selectAIModel(aiSettings, e.target.value))}><option value="">{models.length ? 'Selecione um modelo' : 'Consulte os modelos da sua conta'}</option>{aiSettings.model && !models.some(model => model.id === aiSettings.model) && <option value={aiSettings.model}>{aiSettings.model} (salvo)</option>}{models.map(model => <option key={model.id} value={model.id}>{model.name} ({model.id})</option>)}</select><button type="button" disabled={aiBusy} onClick={() => void loadModels()}>Atualizar modelos</button></> : <input value={aiSettings.model} onChange={e => setAiSettings(s => ({ ...s, model: e.target.value }))} />}
+                  {['groq', 'gemini'].includes(aiSettings.provider) ? <><select value={aiSettings.model} onChange={e => persistAIChoice(selectAIModel(aiSettings, e.target.value))}><option value="">{models.length ? 'Selecione um modelo' : 'Consulte os modelos da sua conta'}</option>{aiSettings.model && !models.some(model => model.id === aiSettings.model) && <option value={aiSettings.model}>{aiSettings.model} (salvo)</option>}{models.map(model => <option key={model.id} value={model.id}>{model.name} ({model.id}){model.freeTier ? ' · Free' : ''}</option>)}</select><button type="button" disabled={aiBusy} onClick={() => void loadModels()}>Atualizar modelos</button></> : <input value={aiSettings.model} onChange={e => setAiSettings(s => ({ ...s, model: e.target.value }))} />}
                 </label>
+                {models.some(model => model.freeTier) && <div className="ai-free-models" aria-label="Modelos com plano gratuito confirmado">{models.filter(model => model.freeTier).map(model => <button type="button" key={model.id} className={aiSettings.model === model.id ? 'selected' : ''} onClick={() => persistAIChoice(selectAIModel(aiSettings, model.id))}><span className="ai-free-badge">Free</span><span>{model.name}</span></button>)}</div>}
+                {models.length > 0 && <small className="settings-hint">Free indica modelo listado no plano gratuito do provedor; sujeito às cotas e condições da sua conta. Sem selo, a gratuidade não foi confirmada.</small>}
                 {aiSettings.provider === 'custom' && (
                   <label>
                     Endpoint personalizado (OpenAI-compatível)
