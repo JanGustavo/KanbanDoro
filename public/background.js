@@ -340,15 +340,16 @@ async function handleGroq(message) {
   if (!input || !settings.model) throw Error('Informe a tarefa e escolha um modelo da Groq.');
   const previous = message.previous && typeof message.previous === 'object' ? JSON.stringify(message.previous).slice(0, 3000) : '';
   const feedback = String(message.feedback || '').trim().slice(0, 1000);
+  const areas = Array.isArray(message.areas) ? message.areas.filter(area => typeof area === 'string').slice(0, 50).map(area => area.trim().slice(0, 50)) : [];
   const result = await aiChat(settings, {
     model: settings.model,
     messages: [
-      { role: 'system', content: 'Você organiza tarefas para um Kanban Pomodoro. Responda em português brasileiro. Sugira tempo total em minutos e dificuldade 1 leve, 2 média, 3 alta. Slices são etapas curtas e concretas. Sugira até 3 links HTTPS específicos e relevantes como anexos apenas se conhecer os endereços reais; nunca invente URLs, paths de busca ou vagas. Se não tiver certeza, devolva anexos vazios. Nunca execute ações nem considere que a proposta foi aceita.' },
-      { role: 'user', content: JSON.stringify({ pedido: input, proposta_anterior: previous, comentario: feedback }) }
+      { role: 'system', content: 'Você organiza tarefas para um Kanban Pomodoro. Responda em português brasileiro. Sugira tempo total em minutos e dificuldade 1 leve, 2 média, 3 alta. Para a área, escolha uma das áreas existentes quando fizer sentido; caso contrário sugira uma nova área curta. Se não houver uma classificação útil, devolva uma string vazia. Slices são etapas curtas e concretas. Sugira até 3 links HTTPS específicos e relevantes como anexos apenas se conhecer os endereços reais; nunca invente URLs, paths de busca ou vagas. Se não tiver certeza, devolva anexos vazios. Nunca execute ações nem considere que a proposta foi aceita.' },
+      { role: 'user', content: JSON.stringify({ pedido: input, areas_existentes: areas, proposta_anterior: previous, comentario: feedback }) }
     ],
     response_format: { type: 'json_schema', json_schema: { name: 'task_proposal', strict: ['openai/gpt-oss-20b', 'openai/gpt-oss-120b'].includes(settings.model), schema: {
-      type: 'object', additionalProperties: false, required: ['name', 'description', 'difficulty', 'estimate', 'slices', 'attachments'],
-      properties: { name: { type: 'string' }, description: { type: 'string' }, difficulty: { type: 'integer' }, estimate: { type: 'integer' }, slices: { type: 'array', items: { type: 'string' } }, attachments: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['title', 'url'], properties: { title: { type: 'string' }, url: { type: 'string' } } } } }
+      type: 'object', additionalProperties: false, required: ['name', 'description', 'difficulty', 'estimate', 'skill', 'slices', 'attachments'],
+      properties: { name: { type: 'string' }, description: { type: 'string' }, difficulty: { type: 'integer' }, estimate: { type: 'integer' }, skill: { type: 'string' }, slices: { type: 'array', items: { type: 'string' } }, attachments: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['title', 'url'], properties: { title: { type: 'string' }, url: { type: 'string' } } } } }
     } } },
     max_completion_tokens: 1200
   });
@@ -356,11 +357,11 @@ async function handleGroq(message) {
   if (!text) throw Error('O modelo não retornou uma proposta. Tente novamente.');
   let draft;
   try { draft = JSON.parse(text); } catch { throw Error('O modelo retornou uma proposta incompleta. Tente novamente.'); }
-  if (typeof draft.name !== 'string' || !draft.name.trim() || typeof draft.description !== 'string' || !Number.isInteger(draft.estimate) || draft.estimate < 1 || draft.estimate > 480 || ![1, 2, 3].includes(draft.difficulty)
+  if (typeof draft.name !== 'string' || !draft.name.trim() || typeof draft.description !== 'string' || typeof draft.skill !== 'string' || !Number.isInteger(draft.estimate) || draft.estimate < 1 || draft.estimate > 480 || ![1, 2, 3].includes(draft.difficulty)
     || !Array.isArray(draft.slices) || draft.slices.some(s => typeof s !== 'string') || !Array.isArray(draft.attachments)) throw Error('A proposta precisa de revisão. Tente novamente.');
   const attachments = await Promise.all(draft.attachments.slice(0, 3).filter(a => typeof a?.title === 'string' && typeof a?.url === 'string')
     .map(async a => ({ title: a.title.trim().slice(0, 120), ...await checkAttachment(a.url) })));
-  return { proposal: { name: draft.name.trim().slice(0, 140), description: draft.description.slice(0, 3000), difficulty: draft.difficulty, estimate: draft.estimate, slices: draft.slices.filter(s => s.trim()).slice(0, 8).map(s => s.trim().slice(0, 140)), attachments } };
+  return { proposal: { name: draft.name.trim().slice(0, 140), description: draft.description.slice(0, 3000), difficulty: draft.difficulty, estimate: draft.estimate, skill: draft.skill.trim().slice(0, 50), slices: draft.slices.filter(s => s.trim()).slice(0, 8).map(s => s.trim().slice(0, 140)), attachments } };
 }
 
 async function ensureTimerInTab(tabId) {
@@ -397,7 +398,7 @@ async function broadcastTimer(session) {
 
 chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   const { session } = await chrome.storage.local.get('session');
-  if (session && ['running', 'decision', 'break'].includes(session.phase)) {
+  if (session && ['running', 'decision', 'break', 'intermission', 'intermission-done'].includes(session.phase)) {
     await ensureTimerInTab(tabId);
   }
 });
@@ -408,11 +409,17 @@ const COLOR_DUE = '#d94f4f';
 
 async function reconcile() {
   const { session } = await chrome.storage.local.get('session');
-  if (!session || !['running', 'decision', 'break'].includes(session.phase)) {
+  if (!session || !['running', 'decision', 'break', 'intermission', 'intermission-done'].includes(session.phase)) {
     await chrome.action.setBadgeText({ text: '' });
     return;
   }
-  const deadline = session.phase === 'running' ? Math.min(session.stepEndsAt ?? session.endsAt, session.endsAt) : session.endsAt;
+  const deadline = session.phase === 'running' ? Math.min(session.stepEndsAt ?? session.endsAt, session.endsAt) : session.phase.startsWith('intermission') ? session.pauseEndsAt : session.endsAt;
+  if (session.phase === 'intermission-done') {
+    await chrome.action.setBadgeText({ text: '!' });
+    await chrome.action.setBadgeBackgroundColor({ color: COLOR_DUE });
+    await chrome.alarms.clear('timer-end');
+    return;
+  }
   const remaining = deadline - Date.now();
   const due = remaining <= 0;
   if (session.phase === 'decision') {
@@ -441,10 +448,18 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === 'deadline-check') return queueDeadlines();
   if (alarm.name !== 'timer-end') return;
   const { session, soundEnabled } = await chrome.storage.local.get(['session', 'soundEnabled']);
-  if (!session || !['running', 'break'].includes(session.phase)) return;
-  const deadline = session.phase === 'running' ? Math.min(session.stepEndsAt ?? session.endsAt, session.endsAt) : session.endsAt;
+  if (!session || !['running', 'break', 'intermission'].includes(session.phase)) return;
+  const deadline = session.phase === 'running' ? Math.min(session.stepEndsAt ?? session.endsAt, session.endsAt) : session.phase === 'intermission' ? session.pauseEndsAt : session.endsAt;
   if (deadline > Date.now()) return;
   queueFocusRules();
+  if (session.phase === 'intermission') {
+    await chrome.storage.local.set({ session: { ...session, phase: 'intermission-done' } });
+    await reconcile();
+    chrome.notifications.create({ type: 'basic', iconUrl: chrome.runtime.getURL('icon128.png'), title: 'KanbanDoro',
+      message: 'Sua pausa rápida terminou. Retome o foco no quadro quando estiver pronto.', silent: true });
+    if (soundEnabled !== false) playAlert('break');
+    return;
+  }
   const isBreak = session?.phase === 'break';
   if (!isBreak) await chrome.storage.local.set({ session: { ...session, phase: 'decision' } });
   reconcile();

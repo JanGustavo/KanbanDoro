@@ -1,4 +1,4 @@
-type TimerSession = { phase: string; endsAt: number; stepEndsAt?: number };
+type TimerSession = { phase: string; endsAt: number; stepEndsAt?: number; pauseEndsAt?: number; pauseStartedAt?: number };
 let session: TimerSession | null = null;
 let mode: 'open' | 'compact' | 'hidden' = 'open';
 const host = document.createElement('div');
@@ -29,16 +29,16 @@ shadow.appendChild(bubble);
 (document.body || document.documentElement).appendChild(host);
 
 function render() {
-  const active = session && ['running', 'decision', 'break'].includes(session.phase);
+  const active = session && ['running', 'decision', 'break', 'intermission', 'intermission-done'].includes(session.phase);
   if (!active || mode === 'hidden') {
     host.style.display = 'none';
     return;
   }
   host.style.display = 'block';
   host.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:2147483647;display:block';
-  const remaining = session!.phase === 'decision' ? 0 : Math.max(0, (session!.phase === 'running' ? Math.min(session!.stepEndsAt ?? session!.endsAt, session!.endsAt) : session!.endsAt) - Date.now());
+  const remaining = session!.phase === 'decision' || session!.phase === 'intermission-done' ? 0 : Math.max(0, (session!.phase === 'running' ? Math.min(session!.stepEndsAt ?? session!.endsAt, session!.endsAt) : session!.phase === 'intermission' ? session!.pauseEndsAt ?? Date.now() : session!.endsAt) - Date.now());
   const clock = `${String(Math.floor(remaining / 60_000)).padStart(2, '0')}:${String(Math.floor(remaining / 1_000) % 60).padStart(2, '0')}`;
-  const label = session!.phase === 'break' ? 'PAUSA' : session!.phase === 'decision' ? 'DECIDIR' : 'FOCO';
+  const label = session!.phase.startsWith('intermission') ? 'PAUSA RÁPIDA' : session!.phase === 'break' ? 'PAUSA' : session!.phase === 'decision' ? 'DECIDIR' : 'FOCO';
   bubble.replaceChildren();
   bubble.className = `timer ${mode}`;
   if (mode === 'compact') {

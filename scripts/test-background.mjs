@@ -62,7 +62,7 @@ vm.runInNewContext(readFileSync('dist/background.js', 'utf8'), { chrome, AbortSi
       assert(!JSON.stringify(body).includes('gemini-test-key'));
       const response = body.generationConfig.responseSchema.properties.insight ? { insight: 'Divida o slice mais longo em dois.' }
         : body.generationConfig.responseSchema.properties.title ? { title: 'Reunião', description: 'Planejar', start: '', end: '', to: '', subject: '', body: '' }
-          : { name: 'Estudar', description: 'Revisar', difficulty: 1, estimate: 25, slices: ['Ler'], attachments: [] };
+          : { name: 'Estudar', description: 'Revisar', difficulty: 1, estimate: 25, skill: 'Estudo', slices: ['Ler'], attachments: [] };
       return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: JSON.stringify(response) }] } }] }) };
     }
     if (url.startsWith('http://localhost:8000/connections/google')) {
@@ -90,7 +90,7 @@ vm.runInNewContext(readFileSync('dist/background.js', 'utf8'), { chrome, AbortSi
     const sliceInsight = options?.body?.includes('slice_insight');
     return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(sliceInsight ? { insight: 'Separe o slice maior em etapas curtas.' } : connectionDraft ?
       { title: 'Estudar', description: 'Linux', start: '', end: '', to: '', subject: '', body: '' } :
-      { name: 'Criar API', description: 'Implementar rotas', difficulty: 2, estimate: 35, slices: ['Rotas', 'Testes'], attachments: [{ title: 'Documentação', url: 'https://example.org/info' }, { title: 'Interno', url: 'http://localhost/private' }] }) } }] }) };
+      { name: 'Criar API', description: 'Implementar rotas', difficulty: 2, estimate: 35, skill: 'Programação', slices: ['Rotas', 'Testes'], attachments: [{ title: 'Documentação', url: 'https://example.org/info' }, { title: 'Interno', url: 'http://localhost/private' }] }) } }] }) };
   } });
 const aiMessage = (message, senderUrl = 'index.html') => new Promise(resolve => {
   const accepted = listeners.message(message, { url: senderUrl }, resolve);
@@ -134,6 +134,12 @@ session = { phase: 'break', endsAt: Date.now() + 60_000 };
 listeners.storage({ session: { newValue: session } }, 'local');
 await new Promise(resolve => setTimeout(resolve, 0));
 assert.equal(focusRules.length, 0, 'breaks must not block sites');
+session = { phase: 'intermission', pauseStartedAt: Date.now(), pauseEndsAt: Date.now() - 1000, endsAt: Date.now() + 60_000 };
+listeners.storage({ session: { newValue: session } }, 'local');
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(focusRules.length, 0, 'short breaks must release blocked sites');
+await listeners.alarm({ name: 'timer-end' });
+assert.equal(session.phase, 'intermission-done', 'short breaks wait for a manual resume');
 session = { phase: 'running', endsAt: Date.now() + 60_000 };
 focusBlocking = { mode: 'custom', exceptions: [], customDomains: ['example.org'] };
 listeners.storage({ focusBlocking: { newValue: focusBlocking }, session: { newValue: session } }, 'local');
@@ -169,8 +175,10 @@ requests.length = 0;
 assert.equal(requests.length, 0);
 const catalog = await aiMessage({ type: 'GROQ_MODELS' });
 assert.equal(catalog.models.length, 1, 'only eligible text models should be offered');
-const draft = await aiMessage({ type: 'GROQ_TASK_PROPOSAL', input: 'Criar API' });
+const draft = await aiMessage({ type: 'GROQ_TASK_PROPOSAL', input: 'Criar API', areas: ['Programação', 'Estudo'] });
 assert.equal(draft.proposal.estimate, 35);
+assert.equal(draft.proposal.skill, 'Programação');
+assert(requests.some(request => request.url.includes('api.groq.com') && request.options?.body?.includes('areas_existentes')), 'AI proposals receive the known areas');
 assert.equal(draft.proposal.attachments[0].verifiedAt > 0, true);
 assert.equal(draft.proposal.attachments[1].verifiedAt, null);
 const redirect = await aiMessage({ type: 'CHECK_ATTACHMENT', url: 'https://example.org/redirect' });

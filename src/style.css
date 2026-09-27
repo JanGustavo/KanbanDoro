@@ -1093,6 +1093,45 @@ header p {
 .slice-progress { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 17px; color: #d3bbb3; font-size: .75rem; }
 .slice-progress strong { color: #f4ce8a; font-variant-numeric: tabular-nums; }
 .card .slice-progress + .slice-strip { margin-top: 7px; }
+
+/* Controles do quadro: contornos legíveis inclusive nas colunas vazias. */
+.board { padding: 5px 4px 12px; }
+.lane { border-color: #66505c; background: linear-gradient(160deg,#29252a 0%,#211f23 45%); box-shadow: inset 0 3px #a45e70, 0 12px 28px #0004; }
+.lane:nth-child(2) { border-color: #76604f; box-shadow: inset 0 3px #d5a343, 0 12px 28px #0004; }
+.lane:nth-child(3) { border-color: #76505b; box-shadow: inset 0 3px #d27779, 0 12px 28px #0004; }
+.lane:nth-child(4) { border-color: #547466; box-shadow: inset 0 3px #74aa8b, 0 12px 28px #0004; }
+.lane.lane-over-wip { border-color: #e6b267; box-shadow: inset 0 4px #e6b267, 0 0 25px #d5a34342; }
+.lane h2 { color: #fff1df; }
+.board-tools { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 9px; margin-left: auto; }
+.board-tools .skill-filter,.board-tools .weekly-toggle { margin-left: 0; }
+.board-tools .focus-toggle { border-color: #946171; background: #442a36; color: #ffe0c2; }
+.board-tools .focus-toggle:hover { border-color: #e3b16d; background: #603848; }
+.header-nav { min-width: 310px; }
+.header-nav button { white-space: nowrap; font-size: .82rem; }
+.create .ai-propose { background: #725024; color: #fff0d0; border: 1px solid #d5a343; }
+.create .ai-propose:hover { background: #96632b; }
+.create .ai-propose:disabled { background: #48372f; color: #b9a594; border-color: #765b43; }
+.proposal-header { position: relative; justify-content: center; text-align: center; padding: 0 45px; min-height: 62px; }
+.proposal-header > div { flex: 1; }
+.proposal-header .proposal-spark { position: absolute; left: 0; top: 2px; }
+.proposal-header .close { top: 2px; right: 0; color: #ffdddc; background: #6f2b39; border: 1px solid #cc6475; border-radius: 9px; width: 38px; height: 38px; padding: 4px; }
+.proposal-header .close:hover { background: #99384c; }
+.number-stepper { display: inline-flex; align-items: stretch; min-height: 39px; border: 1px solid #8b6874; border-radius: 9px; overflow: hidden; background: #252127; }
+.number-stepper button { border: 0; border-radius: 0; background: #44303a; color: #f6d39d; font-size: 1.2rem; font-weight: 800; min-width: 35px; padding: 5px 9px; }
+.number-stepper button:hover:not(:disabled) { background: #6c3f4a; }
+.number-stepper button:disabled { color: #948187; background: #342a31; }
+.number-stepper input,.fields .number-stepper input,.focus-actions .number-stepper input { appearance: textfield; width: 58px; min-width: 48px; border: 0; border-radius: 0; background: #2a2529; text-align: center; padding: 4px 2px; font-variant-numeric: tabular-nums; }
+.number-stepper input::-webkit-inner-spin-button,.number-stepper input::-webkit-outer-spin-button { appearance: none; margin: 0; }
+.proposal-pane label > small { color: #efc980; font-size: .75rem; }
+.area-list,.wip-presets { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.area-list span { display: inline-flex; gap: 6px; align-items: center; border: 1px solid #8b6268; background: #49313b; border-radius: 8px; padding: 4px 8px; }
+.area-list button { background: transparent; padding: 2px 4px; color: #ffcec6; }
+.wip-presets button { background: #423139; border: 1px solid #895d67; color: #f6d39d; }
+.wip-presets button:hover { border-color: #d5a343; }
+.inline-help { display: inline; padding: 0; color: #e9bd7f; background: none; text-decoration: underline; }
+.wip-toast { bottom: 80px; max-width: min(470px,calc(100vw - 40px)); }
+@media (max-width: 920px) { .board-tools { margin-left: 0; justify-content: flex-start; } .header-nav { min-width: 0; width: min(100%,380px); } }
+@media (max-width: 520px) { .proposal-header { padding-inline: 37px; } .proposal-header h2 { font-size: 1.2rem; } .proposal-header .proposal-spark { width: 32px; height: 32px; font-size: 1.3rem; } }
 .backup-panel { display: grid; gap: 14px; line-height: 1.5; }
 .backup-panel h3,.backup-preview h4 { margin: 0; color: #efc477; }
 .backup-panel p { margin: 0; color: #d5c7c1; }

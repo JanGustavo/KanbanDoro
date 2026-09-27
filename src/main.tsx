@@ -5,9 +5,10 @@ import { getAISettings, saveAISettings, AI_PROVIDERS, type AISettings, type AIPr
 import { dateFromDay, isVisible, localDay, materializeToday, weekEnd, type ViewMode, type WeeklyPlan } from './schedule';
 import Connections from './Connections';
 import Statistics from './Statistics';
+import NumberStepper from './NumberStepper';
 import { focusBlockingDefault, type FocusBlocking } from './focusBlocking';
 import FocusBlockingSettings from './FocusBlockingSettings';
-import { completedCycleCount, elapsedCredit, extensionBudget, nextStepTiming, stepDeadline, suggestedBreakMinutes } from './cycleRules';
+import { completedCycleCount, elapsedCredit, extensionBudget, nextStepTiming, resumeAfterPause, stepDeadline, suggestedBreakMinutes } from './cycleRules';
 import { makeBackup, mergeBackup, parseBackup, MAX_BACKUP_BYTES, type Backup } from './backup';
 
 type Column = 'todo' | 'doing' | 'late' | 'done';
@@ -34,7 +35,7 @@ export type Task = {
 };
 type Session = {
   taskId: string;
-  phase: 'running' | 'decision' | 'post-focus' | 'break' | 'break-done';
+  phase: 'running' | 'decision' | 'post-focus' | 'break' | 'break-done' | 'intermission' | 'intermission-done';
   startedAt: number;
   endsAt: number;
   originalMinutes: number;
@@ -49,6 +50,8 @@ type Session = {
   stepIndex?: number;
   stepStartedAt?: number;
   stepEndsAt?: number;
+  pauseStartedAt?: number;
+  pauseEndsAt?: number;
   warnedMinutes?: number[];
   postFocusCompleted?: boolean;
 };
@@ -57,12 +60,12 @@ type Proposal = { name: string; description: string; difficulty: 1 | 2 | 3; skil
 type ScheduleChoice = { mode: 'once' | 'selected-days' | 'weekly'; startDate: string; weekdays: number[] };
 type AIModel = { id: string; name: string };
 export type Data = { tasks: Task[]; session: Session | null; history: HistoryEntry[]; breakPreferences: string[]; weeklyPlans: WeeklyPlan[];
-  wipLimits: { doing: number; late: number | null }; breakDurations: { short: number; long: number } };
+  wipLimits: { doing: number; late: number | null }; breakDurations: { short: number; long: number }; areas: string[] };
 const columns: { id: Column; label: string }[] = [
   { id: 'todo', label: 'A fazer' }, { id: 'doing', label: 'Em andamento' },
   { id: 'late', label: 'Em atraso' }, { id: 'done', label: 'Concluído' },
 ];
-const initial: Data = { tasks: [], session: null, history: [], breakPreferences: ['Descanso', 'Água', 'Comida', 'Detox'], weeklyPlans: [], wipLimits: { doing: 5, late: null }, breakDurations: { short: 5, long: 15 } };
+const initial: Data = { tasks: [], session: null, history: [], breakPreferences: ['Descanso', 'Água', 'Comida', 'Detox'], weeklyPlans: [], wipLimits: { doing: 5, late: null }, breakDurations: { short: 5, long: 15 }, areas: ['Programação', 'Estudo', 'Escrita', 'Organização'] };
 const id = () => (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).substring(2) + Date.now().toString(36);
 const minutes = (seconds: number) => `${Math.floor(Math.max(0, seconds) / 60).toString().padStart(2, '0')}:${Math.floor(Math.max(0, seconds) % 60).toString().padStart(2, '0')}`;
 const loadingTips = [
@@ -89,6 +92,7 @@ function App() {
   const [scope, setScope] = useState<'whole' | 'slices'>('whole');
   const [selectedSlices, setSelectedSlices] = useState<string[]>([]);
   const [breakMinutes, setBreakMinutes] = useState(5);
+  const [quickBreakMinutes, setQuickBreakMinutes] = useState(3);
   const [requestedExtension, setRequestedExtension] = useState(5);
   const [stepNotice, setStepNotice] = useState('');
   const [breakType, setBreakType] = useState('Descanso');
@@ -96,7 +100,11 @@ function App() {
   const [restart, setRestart] = useState<Task | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showConnections, setShowConnections] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<'breaks' | 'board' | 'ai' | 'blocking' | 'data'>('breaks');
+  const [settingsTab, setSettingsTab] = useState<'breaks' | 'board' | 'ai' | 'data'>('breaks');
+  const [showFocusMode, setShowFocusMode] = useState(false);
+  const [headerTab, setHeaderTab] = useState(0);
+  const [wipHelp, setWipHelp] = useState(false);
+  const [creatingArea, setCreatingArea] = useState(false);
   const [importPreview, setImportPreview] = useState<Backup | null>(null);
   const [backupError, setBackupError] = useState('');
   const [backupBusy, setBackupBusy] = useState(false);
@@ -131,12 +139,13 @@ function App() {
   const [showStatistics, setShowStatistics] = useState(false);
 
   useEffect(() => {
-    chrome.storage.local.get(['tasks', 'session', 'history', 'breakPreferences', 'weeklyPlans', 'wipLimits', 'breakDurations']).then((stored) => {
+    chrome.storage.local.get(['tasks', 'session', 'history', 'breakPreferences', 'weeklyPlans', 'wipLimits', 'breakDurations', 'areas']).then((stored) => {
       const tasks = (stored.tasks as Task[] | undefined) ?? [];
       const weeklyPlans = (stored.weeklyPlans as WeeklyPlan[] | undefined) ?? [];
       const generated = materializeToday(tasks, weeklyPlans, new Date(), newOccurrence);
       setData({ tasks: generated.tasks, weeklyPlans: generated.plans, session: (stored.session as Session | undefined) ?? null, history: (stored.history as HistoryEntry[] | undefined) ?? [], breakPreferences: (stored.breakPreferences as string[] | undefined) ?? initial.breakPreferences,
-        wipLimits: (stored.wipLimits as Data['wipLimits'] | undefined) ?? initial.wipLimits, breakDurations: (stored.breakDurations as Data['breakDurations'] | undefined) ?? initial.breakDurations });
+        wipLimits: (stored.wipLimits as Data['wipLimits'] | undefined) ?? initial.wipLimits, breakDurations: (stored.breakDurations as Data['breakDurations'] | undefined) ?? initial.breakDurations,
+        areas: Array.isArray(stored.areas) ? (stored.areas as string[]).filter(area => typeof area === 'string') : initial.areas });
       setReady(true);
     });
     getAISettings().then(setAiSettings);
@@ -176,6 +185,11 @@ function App() {
     const timeout = window.setTimeout(() => setStepNotice(''), 10_000);
     return () => window.clearTimeout(timeout);
   }, [stepNotice]);
+  useEffect(() => {
+    if (!wipHelp) return;
+    const timeout = window.setTimeout(() => setWipHelp(false), 10_000);
+    return () => window.clearTimeout(timeout);
+  }, [wipHelp]);
   useEffect(() => {
     if (ready) void chrome.storage.local.set(data);
   }, [data, ready]);
@@ -245,9 +259,9 @@ function App() {
   const task = data.tasks.find(t => t.id === selectedTask);
   const active = data.session;
   const activeTask = data.tasks.find(t => t.id === (active?.steps?.[active.stepIndex ?? 0]?.taskId ?? active?.taskId));
-  const due = active && (active.phase === 'running' || active.phase === 'break') && now >= (active.phase === 'running' ? stepDeadline(active) : active.endsAt);
-  const phase = due ? (active?.phase === 'running' ? 'decision' : 'break-done') : active?.phase;
-  const stepRemaining = active?.phase === 'running' ? stepDeadline(active) - now : 0;
+  const due = active && (active.phase === 'running' || active.phase === 'break' || active.phase === 'intermission') && now >= (active.phase === 'running' ? stepDeadline(active) : active.phase === 'intermission' ? active.pauseEndsAt ?? Infinity : active.endsAt);
+  const phase = due ? (active?.phase === 'running' ? 'decision' : active?.phase === 'intermission' ? 'intermission-done' : 'break-done') : active?.phase;
+  const stepRemaining = active && ['intermission', 'intermission-done'].includes(active.phase) ? stepDeadline(active) - (active.pauseStartedAt ?? now) : active?.phase === 'running' ? stepDeadline(active) - now : 0;
   const extensionRemaining = active ? extensionBudget(active.steps?.[active.stepIndex ?? 0]?.originalEstimate ?? activeTask?.estimate ?? active.originalMinutes, active.extensionMinutes, active.extensions) : 0;
   useEffect(() => {
     if (!ready || !data.session || data.session.phase !== 'running') return;
@@ -275,7 +289,7 @@ function App() {
   }, [data.session?.phase, finishedCycles, data.breakDurations.short, data.breakDurations.long]);
   const shownTasks = data.tasks.filter(t => isVisible(t, view, new Date(now), archiveDay)
     && (!skillFilter || (skillFilter === '__without_skill__' ? !t.skill?.trim() : t.skill?.trim() === skillFilter)));
-  const skills = [...new Set(data.tasks.map(t => t.skill?.trim()).filter((skill): skill is string => !!skill))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const skills = [...new Set([...data.areas, ...data.tasks.map(t => t.skill?.trim()).filter((skill): skill is string => !!skill)])].sort((a, b) => a.localeCompare(b, 'pt-BR'));
   const soonDate = dateFromDay(today);
   soonDate.setDate(soonDate.getDate() + 2);
   const soonDay = localDay(soonDate);
@@ -299,8 +313,14 @@ function App() {
   }
   function openManualDraft(title = '', recurring = false) {
     setError(''); setProposalSource('manual'); setProposalRevision(1); setProposalTab('details');
+    setCreatingArea(false);
     setSchedule({ mode: recurring ? 'weekly' : 'once', startDate: localDay(new Date()), weekdays: [1, 2, 3, 4, 5] });
     setProposal({ name: title, description: '', difficulty: 1, estimate: 25, slices: [], attachments: [] });
+  }
+  function addArea(raw: string) {
+    const area = raw.trim().slice(0, 50);
+    if (!area || area === '__without_skill__') return;
+    update(old => old.areas.some(existing => existing.toLocaleLowerCase() === area.toLocaleLowerCase()) ? old : { ...old, areas: [...old.areas, area] });
   }
   function draftFromConnection(draft: { name: string; description: string; deadline?: string }) {
     openManualDraft(draft.name);
@@ -346,7 +366,7 @@ function App() {
     if (!name.trim()) return setError('Descreva a tarefa antes de pedir uma proposta.');
     setAiBusy(true); setError('');
     try {
-      const response = await chrome.runtime.sendMessage({ type: 'GROQ_TASK_PROPOSAL', input: name, previous: proposal, feedback: comment }) as { proposal?: Proposal; error?: string };
+      const response = await chrome.runtime.sendMessage({ type: 'GROQ_TASK_PROPOSAL', input: name, previous: proposal, feedback: comment, areas: skills.slice(0, 50) }) as { proposal?: Proposal; error?: string };
       if (response.error || !response.proposal) throw Error(response.error || 'A IA não retornou uma proposta.');
       setProposal({ ...response.proposal, skill: response.proposal.skill ?? proposal?.skill ?? '' }); setProposalSource('ai'); setFeedback(''); setProposalRevision(value => comment ? value + 1 : 1);
       if (!comment) setSchedule({ mode: 'once', startDate: localDay(new Date()), weekdays: [1, 2, 3, 4, 5] });
@@ -393,6 +413,7 @@ function App() {
       }).some(Boolean)) return setError('Nesta semana não restam dias selecionados. Escolha outra data inicial ou outros dias.');
     }
     const attachments = proposal.attachments.filter(link => link.title.trim() && link.verifiedAt && Date.now() - link.verifiedAt < 10 * 60_000);
+    if (proposal.skill?.trim()) addArea(proposal.skill);
     if (schedule.mode !== 'once') {
       const plan: WeeklyPlan = { id: id(), name: proposal.name.trim(), description: proposal.description, difficulty: proposal.difficulty, skill: proposal.skill?.trim().slice(0, 50),
         estimate: proposal.estimate, sliceNames: proposal.slices.filter(s => s.trim()).map(s => s.trim()), attachments,
@@ -420,7 +441,7 @@ function App() {
     if (active) return setError('Encerre o ciclo ou descanso atual antes de iniciar outro.');
     if (item && scope === 'slices' && selectedSlices.length === 0) return setError('Escolha ao menos um slice.');
     if (!steps.length || steps.some(step => !Number.isInteger(step.minutes) || step.minutes < 1 || step.minutes > 480) || steps.reduce((sum, step) => sum + step.minutes, 0) > 480) return setError('O ciclo precisa de tarefas com duração total de até 480 min.');
-    if (new Set(steps.map(step => step.taskId)).size !== steps.length || steps.some(step => !data.tasks.some(task => task.id === step.taskId && !task.archivedAt && (item ? task.column !== 'done' : task.column === 'doing')))) return setError('Revise as tarefas selecionadas para o ciclo.');
+    if (new Set(steps.map(step => step.taskId)).size !== steps.length || steps.some(step => !data.tasks.some(task => task.id === step.taskId && !task.archivedAt && (item ? task.column !== 'done' : ['todo', 'doing'].includes(task.column))))) return setError('Revise as tarefas selecionadas para o ciclo.');
     const t = Date.now();
     update(old => ({ ...old,
       tasks: old.tasks.map(x => steps.some(step => step.taskId === x.id) ? { ...x, column: 'doing' } : x),
@@ -477,6 +498,18 @@ function App() {
     });
     setStepNotice('');
   }
+  function pauseFocus() {
+    if (!active || phase !== 'running' || stepDeadline(active) <= Date.now()) return;
+    const started = Date.now();
+    update(old => old.session?.phase === 'running' ? { ...old, session: { ...old.session, phase: 'intermission', pauseStartedAt: started,
+      pauseEndsAt: started + quickBreakMinutes * 60_000 } } : old);
+    setToast(`Foco pausado. Avisaremos após ${quickBreakMinutes} min; retome quando estiver pronto.`);
+  }
+  function resumeFocus() {
+    if (!active || !['intermission', 'intermission-done'].includes(active.phase)) return;
+    update(old => old.session ? { ...old, session: resumeAfterPause(old.session, Date.now()) } : old);
+    setToast('Foco retomado. O tempo da pausa não entra na tarefa.');
+  }
   function stopFocus(kind: 'completed' | 'failed' | 'interrupted') {
     if (!active) return;
     setToast(kind === 'completed' ? 'Escopo concluído. Registre uma pausa ou finalize o ciclo.' : kind === 'failed' ? 'Tentativa registrada. A tarefa foi movida para Em atraso.' : 'Ciclo interrompido. O tempo usado foi registrado.');
@@ -510,35 +543,40 @@ function App() {
   return <main className="shell">
     <header><div><span className="eyebrow">TRABALHO COM RITMO</span><h1><span className="brand-kanban">Kanban</span><span className="brand-doro">Doro</span></h1><p>Organize a tarefa. Dê tempo ao que importa.</p></div>
       <div className="header-actions">
-        <button className="ghost" onClick={() => chrome.runtime.sendMessage({ type: 'SHOW_TIMER' })}>Mostrar bolha</button>
-        <button className="ghost" onClick={() => setShowConnections(true)}>Connections</button>
-        <button className="ghost" onClick={() => setShowSettings(true)}>Preferências</button>
+        <div className="header-nav slide-tabs" aria-label="Ferramentas" style={{ '--tab-count': 3, '--active-index': headerTab } as React.CSSProperties}>
+          <button onClick={() => { setHeaderTab(0); void chrome.runtime.sendMessage({ type: 'SHOW_TIMER' }); }}>Bolha</button>
+          <button onClick={() => { setHeaderTab(1); setShowConnections(true); }}>Connections</button>
+          <button onClick={() => { setHeaderTab(2); setSettingsTab('breaks'); setShowSettings(true); }}>Preferências</button>
+        </div>
         <span className="pomodoro-count" title="Ciclos de foco concluídos hoje">◷ {todayCycles} hoje</span>
         <div className="status">{active ? '● Ciclo ativo' : '○ Pronto para começar'}</div>
       </div>
     </header>
     {error && <p className="warning" role="alert">{error} <button onClick={() => setError('')}>Fechar</button></p>}
     {toast && <div className="toast" role="status">{toast}{undo?.message === toast && <button className="toast-undo" onClick={undoLastAction}>Desfazer</button>}<button aria-label="Dispensar aviso" onClick={() => { setToast(''); setUndo(null); }}>✕</button></div>}
+    {wipHelp && <div className="toast wip-toast" role="status">WIP é a quantidade de tarefas abertas ao mesmo tempo. Se você escolher meta 2 e tiver 3 em andamento, o quadro avisa sem bloquear. Conclua ou reorganize antes de assumir outra.<button aria-label="Fechar dica WIP" onClick={() => setWipHelp(false)}>✕</button></div>}
     {showConnections && <Connections onClose={() => setShowConnections(false)} onDraft={draftFromConnection} />}
+    {showFocusMode && <div className="backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setShowFocusMode(false); }}><section className="dialog" role="dialog" aria-modal="true" aria-label="Modo foco"><button className="close" onClick={() => setShowFocusMode(false)} aria-label="Fechar modo foco">✕</button><span className="eyebrow">MODO FOCO</span><h2>Sites que atrapalham o ciclo</h2><p className="settings-hint">O bloqueio funciona somente com o cronômetro em foco. Durante as pausas, a navegação fica liberada.</p><FocusBlockingSettings settings={focusBlocking} onChange={changeFocusBlocking} /></section></div>}
     {!tipsDismissed && data.tasks.length === 0 && <aside className="first-use" aria-label="Primeiros passos">
       <span className="eyebrow">PRIMEIROS PASSOS</span><p>Crie uma tarefa, ajuste o tempo e os slices nos detalhes e inicie seu primeiro ciclo de foco.</p>
       <button onClick={() => { setTipsDismissed(true); void chrome.storage.local.set({ tipsDismissed: true }); }}>Entendi</button>
     </aside>}
     {active && <section className="focus" aria-label="Ciclo atual">
-      <div className="focus-top"><span className="focus-lights" aria-hidden="true"><i /><i /><i /></span><span>KANBANDORO / CICLO ATUAL</span><span className="focus-state">● {phase === 'break' || phase === 'break-done' ? 'EM PAUSA' : phase === 'running' ? 'EM FOCO' : 'AGUARDANDO VOCÊ'}</span></div>
+      <div className="focus-top"><span className="focus-lights" aria-hidden="true"><i /><i /><i /></span><span>KANBANDORO / CICLO ATUAL</span><span className="focus-state">● {phase?.startsWith('intermission') ? 'PAUSA RÁPIDA' : phase === 'break' || phase === 'break-done' ? 'EM PAUSA' : phase === 'running' ? 'EM FOCO' : 'AGUARDANDO VOCÊ'}</span></div>
       <div className="focus-content"><div className="focus-task"><div className="focus-task-heading"><span>{phase === 'break' || phase === 'break-done' ? active.breakType : 'SEU PRÓXIMO PASSO'}</span><span>{active.originalMinutes + active.extensionMinutes} MIN</span></div>
         <h2>{activeTask?.name ?? 'Tarefa removida'}</h2><p>{activeTask?.description || (active.scope === 'whole' ? 'Tarefa inteira' : `${active.selectedSliceIds.length} slices · tempo compartilhado`)}</p>
         {!!active.steps && <p className="cycle-step-summary">Tarefa {(active.stepIndex ?? 0) + 1} de {active.steps.length} · {active.steps[active.stepIndex ?? 0].minutes} min reservados inicialmente · tempo restante nesta tarefa: {minutes(Math.ceil(Math.max(0, stepRemaining) / 1000))}</p>}
         {stepNotice && phase === 'running' && <p className="step-notice" role="status">{stepNotice}</p>}
         {!!activeTask?.slices.length && <div className="focus-slices" aria-label="Etapas da tarefa">{activeTask.slices.map(slice => <span className={slice.done ? 'finished' : ''} key={slice.id}>{slice.name}{slice.done ? ' ✓' : ''}</span>)}</div>}</div>
-      <div className="focus-progress"><div className="focus-ring" style={{ '--ring-progress': `${Math.min(100, Math.max(0, ((now - active.startedAt) / Math.max(1, active.endsAt - active.startedAt)) * 100))}%` } as React.CSSProperties}><div><small>{phase === 'break' || phase === 'break-done' ? 'PAUSA' : 'FOCO'}</small><strong className="clock">{phase === 'decision' || phase === 'break-done' ? '00:00' : minutes(Math.ceil((active.endsAt - now) / 1000))}</strong><span>do ciclo atual</span></div></div>
+      <div className="focus-progress"><div className="focus-ring" style={{ '--ring-progress': `${Math.min(100, Math.max(0, (((phase?.startsWith('intermission') ? active.pauseStartedAt ?? now : now) - active.startedAt) / Math.max(1, active.endsAt - active.startedAt)) * 100))}%` } as React.CSSProperties}><div><small>{phase?.startsWith('intermission') ? 'PAUSA RÁPIDA' : phase === 'break' || phase === 'break-done' ? 'PAUSA' : 'FOCO'}</small><strong className="clock">{phase === 'decision' || phase === 'break-done' || phase === 'intermission-done' ? '00:00' : minutes(Math.ceil((((phase === 'intermission' ? active.pauseEndsAt : active.endsAt) ?? now) - now) / 1000))}</strong><span>{phase?.startsWith('intermission') ? 'restantes da pausa' : 'do ciclo atual'}</span></div></div>
         <div className="focus-next"><span className="eyebrow">EM SEGUIDA</span><strong>{phase === 'running' ? 'Continue do ponto em que parou.' : phase === 'break' ? 'Aproveite sua pausa.' : 'Escolha o próximo passo.'}</strong><p>{active.scope === 'whole' ? 'Tempo associado à tarefa inteira.' : `Tempo compartilhado entre ${active.selectedSliceIds.length} slices.`}</p><div className="focus-progress-line"><span style={{ width: `${activeTask?.slices.length ? (activeTask.slices.filter(slice => slice.done).length / activeTask.slices.length) * 100 : 0}%` }} /></div><small>{activeTask?.slices.filter(slice => slice.done).length ?? 0} DE {activeTask?.slices.length ?? 0} ETAPAS CONCLUÍDAS</small></div></div></div>
       <div className="focus-actions">
-        {phase === 'running' && <><button onClick={() => (active.stepIndex ?? 0) < (active.steps?.length ?? 1) - 1 ? nextCycleTask() : stopFocus('completed')}>{(active.stepIndex ?? 0) < (active.steps?.length ?? 1) - 1 ? 'Concluir tarefa e avançar ↗' : 'Concluir tarefa e ciclo'}</button><button onClick={() => stopFocus('interrupted')}>Interromper e deixar para depois</button><button onClick={() => { stopFocus('interrupted'); if (activeTask) setRestart(activeTask); }}>Interromper e recomeçar</button></>}
+        {phase === 'running' && <><button onClick={() => (active.stepIndex ?? 0) < (active.steps?.length ?? 1) - 1 ? nextCycleTask() : stopFocus('completed')}>{(active.stepIndex ?? 0) < (active.steps?.length ?? 1) - 1 ? 'Concluir tarefa e avançar ↗' : 'Concluir tarefa e ciclo'}</button><label>Pausa rápida (min) <NumberStepper label="Minutos da pausa rápida" value={quickBreakMinutes} min={1} max={30} onChange={setQuickBreakMinutes} /></label><button onClick={pauseFocus}>Pausar foco</button><button onClick={() => stopFocus('interrupted')}>Interromper e deixar para depois</button><button onClick={() => { stopFocus('interrupted'); if (activeTask) setRestart(activeTask); }}>Interromper e recomeçar</button></>}
+        {phase?.startsWith('intermission') && <><span role="status">{phase === 'intermission-done' ? 'A pausa rápida terminou. Seu foco continua parado.' : 'Tempo da tarefa congelado; retome quando voltar.'}</span><button className="primary" onClick={resumeFocus}>Retomar foco</button></>}
         {phase === 'post-focus' && <>
           <span className="break-recommendation">{active.postFocusCompleted && finishedCycles > 0 && finishedCycles % 4 === 0 ? 'Quarto ciclo concluído: pausa longa sugerida.' : 'Pausa curta sugerida.'}</span>
           <label>Pausa <select value={breakType} onChange={e => setBreakType(e.target.value)}>{[...data.breakPreferences, 'Outra'].map(x => <option key={x} value={x}>{x}</option>)}</select></label>
-          <label>min <input type="number" min="1" max="120" value={breakMinutes} onChange={e => setBreakMinutes(+e.target.value)} /></label>
+          <label>min <NumberStepper label="Minutos da pausa" value={breakMinutes} min={1} max={120} onChange={setBreakMinutes} /></label>
           <button onClick={startBreak}>Iniciar pausa</button><button onClick={() => update(old => ({ ...old, session: null }))}>Finalizar ciclo</button></>}
         {phase === 'break' && <button onClick={() => update(old => ({ ...old, session: null }))}>Encerrar pausa</button>}
         {phase === 'break-done' && <><span role="status">Pausa encerrada. Confirme antes de voltar ao foco.</span><button onClick={() => update(old => ({ ...old, session: null }))}>Entendi</button></>}
@@ -547,10 +585,10 @@ function App() {
     {active && phase === 'decision' && <div className="backdrop cycle-decision-backdrop"><section className="dialog cycle-decision" role="dialog" aria-modal="true" aria-label="Tempo reservado encerrado">
       <span className="eyebrow">TEMPO DA TAREFA ENCERRADO</span><h2>{activeTask?.name ?? 'Tarefa atual'}</h2><p>O relógio está pausado. Confirme sua decisão para continuar o ciclo.</p>
       <div className="cycle-decision-actions"><button className="primary" onClick={() => (active.stepIndex ?? 0) < (active.steps?.length ?? 1) - 1 ? nextCycleTask() : stopFocus('completed')}>Concluí e avançar</button>
-        {extensionRemaining > 0 && <label>Extensão (min) <input type="number" min="1" max={extensionRemaining} value={requestedExtension} onChange={e => setRequestedExtension(Number(e.target.value))} /><button onClick={() => extend(requestedExtension)}>Estender ({active.extensions}/2)</button></label>}
+        {extensionRemaining > 0 && <label>Extensão (min) <NumberStepper label="Minutos da extensão" value={Math.min(Math.max(1, requestedExtension), extensionRemaining)} min={1} max={extensionRemaining} onChange={setRequestedExtension} /><button onClick={() => extend(Math.min(Math.max(1, requestedExtension), extensionRemaining))}>Estender ({active.extensions}/2)</button></label>}
         <button onClick={() => { setSelectedTask(active.taskId); setScope(active.scope); setSelectedSlices(active.selectedSliceIds); }}>Abrir detalhes</button></div>
     </section></div>}
-    <form className="create" onSubmit={addTask}><input aria-label="Nome da tarefa" placeholder="Qual é a próxima tarefa?" value={name} onChange={e => setName(e.target.value)} /><button type="submit">+ Criar tarefa</button><button type="button" disabled={aiBusy || !name.trim()} onClick={() => void requestProposal()}>{aiBusy ? 'Consultando…' : 'Propor com IA'}</button></form>
+    <form className="create" onSubmit={addTask}><input aria-label="Nome da tarefa" placeholder="Qual é a próxima tarefa?" value={name} onChange={e => setName(e.target.value)} /><button type="submit">+ Criar tarefa</button><button className="ai-propose" type="button" disabled={aiBusy || !name.trim()} onClick={() => void requestProposal()}>{aiBusy ? 'Consultando…' : '✦ Propor com IA'}</button></form>
     {proposal && <div className="backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setProposal(null); }}><section key={proposalRevision} className="dialog proposal-dialog" role="dialog" aria-modal="true" aria-label={proposalSource === 'ai' ? 'Revisar proposta da IA' : 'Criar tarefa'}>
       <header className="proposal-header"><span className="proposal-spark" aria-hidden="true">{proposalSource === 'ai' ? 'ϟ' : '+'}</span><div><span className="eyebrow">{proposalSource === 'manual' ? 'CRIAR TAREFA' : proposalRevision > 1 ? 'PROPOSTA ATUALIZADA' : 'NOVA PROPOSTA'}</span><h2>{proposalSource === 'manual' ? 'Uma tarefa do seu jeito' : proposalRevision > 1 ? 'Uma nova versão para você' : 'Uma ideia para começar'}</h2><p>Defina as etapas e escolha quando ela deve aparecer.</p></div><button className="close" onClick={() => setProposal(null)} aria-label="Fechar proposta">✕</button></header>
       {error && <p className="warning" role="alert">{error}</p>}
@@ -558,9 +596,9 @@ function App() {
       {proposalTab === 'details' ? <div className="proposal-pane">
       <label>Nome <input className="task-name" value={proposal.name} onChange={e => setProposal({ ...proposal, name: e.target.value })} /></label>
       <label>Descrição <textarea value={proposal.description} onChange={e => setProposal({ ...proposal, description: e.target.value })} /></label>
-      <div className="fields"><label className="highlight-time">Tempo sugerido (min) <input type="number" min="1" max="480" value={proposal.estimate} onChange={e => setProposal({ ...proposal, estimate: +e.target.value })} /></label>
+      <div className="fields"><label className="highlight-time">Tempo sugerido (min) <NumberStepper label="Tempo estimado da tarefa" value={proposal.estimate} min={1} max={480} onChange={estimate => setProposal({ ...proposal, estimate })} /></label>
       <label>Dificuldade <select value={proposal.difficulty} onChange={e => setProposal({ ...proposal, difficulty: +e.target.value as 1 | 2 | 3 })}><option value="1">1 · leve</option><option value="2">2 · média</option><option value="3">3 · alta</option></select></label></div>
-      <label>Habilidade ou área (opcional) <input maxLength={50} list="skill-suggestions" placeholder="Ex.: Programação, Escrita, Estudo" value={proposal.skill ?? ''} onChange={e => setProposal({ ...proposal, skill: e.target.value })} /></label>
+      <label>Habilidade ou área (opcional) <select value={creatingArea ? '__new_area__' : proposal.skill ?? ''} onChange={event => { if (event.target.value === '__new_area__') { setCreatingArea(true); setProposal({ ...proposal, skill: '' }); } else { setCreatingArea(false); setProposal({ ...proposal, skill: event.target.value }); } }}><option value="">Sem área</option>{skills.map(area => <option key={area} value={area}>{area}</option>)}{proposal.skill && !skills.includes(proposal.skill) && !creatingArea && <option value={proposal.skill}>✦ Sugestão nova: {proposal.skill}</option>}<option value="__new_area__">+ Criar nova área…</option></select>{creatingArea && <input autoFocus maxLength={50} placeholder="Nome da nova área" value={proposal.skill ?? ''} onChange={event => setProposal({ ...proposal, skill: event.target.value })} />}{proposal.skill && !skills.includes(proposal.skill) && <small>Nova área: será adicionada quando você criar a tarefa.</small>}</label>
       <h3>Slices sugeridos</h3>{proposal.slices.map((slice, index) => <div className="proposal-slice" key={index}><input aria-label={`Slice ${index + 1}`} value={slice} onChange={e => setProposal({ ...proposal, slices: proposal.slices.map((s, i) => i === index ? e.target.value : s) })} /><button onClick={() => setProposal({ ...proposal, slices: proposal.slices.filter((_, i) => i !== index) })} aria-label={`Remover slice ${index + 1}`}>✕</button></div>)}
       <button onClick={() => setProposal({ ...proposal, slices: [...proposal.slices, ''] })}>+ Slice</button>
       </div> : <div className="proposal-pane"><p className="attachment-hint">Links úteis para a tarefa. Um link verificado respondeu agora; a disponibilidade e o conteúdo da página podem mudar.</p>
@@ -586,18 +624,17 @@ function App() {
     </section></div>}
     {showSettings && <div className="backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setShowSettings(false); }}><section className="dialog" role="dialog" aria-modal="true" aria-label="Preferências">
       <button className="close" onClick={() => setShowSettings(false)}>✕</button><span className="eyebrow">PREFERÊNCIAS</span>
-      <div className="settings-tabs slide-tabs" role="tablist" style={{ '--tab-count': 5, '--active-index': settingsTab === 'breaks' ? 0 : settingsTab === 'board' ? 1 : settingsTab === 'ai' ? 2 : settingsTab === 'blocking' ? 3 : 4 } as React.CSSProperties}>
+      <div className="settings-tabs slide-tabs" role="tablist" style={{ '--tab-count': 4, '--active-index': settingsTab === 'breaks' ? 0 : settingsTab === 'board' ? 1 : settingsTab === 'ai' ? 2 : 3 } as React.CSSProperties}>
         <button role="tab" aria-selected={settingsTab === 'breaks'} onClick={() => setSettingsTab('breaks')}>Pausas</button>
         <button role="tab" aria-selected={settingsTab === 'board'} onClick={() => setSettingsTab('board')}>Quadro</button>
         <button role="tab" aria-selected={settingsTab === 'ai'} onClick={() => setSettingsTab('ai')}>IA</button>
-        <button role="tab" aria-selected={settingsTab === 'blocking'} onClick={() => setSettingsTab('blocking')}>Bloqueio</button>
         <button role="tab" aria-selected={settingsTab === 'data'} onClick={() => setSettingsTab('data')}>Dados</button>
       </div>
       {settingsTab === 'breaks' && (
         <>
           <label className="sound-option"><input type="checkbox" checked={soundEnabled} onChange={e => { setSoundEnabled(e.target.checked); void chrome.storage.local.set({ soundEnabled: e.target.checked }); }} /> Tocar aviso ao terminar foco ou pausa</label>
-          <div className="fields"><label>Pausa curta (min) <input type="number" min="1" max="120" value={data.breakDurations.short} onChange={e => update(old => ({ ...old, breakDurations: { ...old.breakDurations, short: Math.max(1, Math.min(120, Number(e.target.value) || 1)) } }))} /></label>
-          <label>Pausa longa após 4 ciclos (min) <input type="number" min="1" max="120" value={data.breakDurations.long} onChange={e => update(old => ({ ...old, breakDurations: { ...old.breakDurations, long: Math.max(1, Math.min(120, Number(e.target.value) || 1)) } }))} /></label></div>
+          <div className="fields"><label>Pausa curta (min) <NumberStepper label="Duração da pausa curta" value={data.breakDurations.short} min={1} max={120} onChange={short => update(old => ({ ...old, breakDurations: { ...old.breakDurations, short } }))} /></label>
+          <label>Pausa longa após 4 ciclos (min) <NumberStepper label="Duração da pausa longa" value={data.breakDurations.long} min={1} max={120} onChange={long => update(old => ({ ...old, breakDurations: { ...old.breakDurations, long } }))} /></label></div>
           <h3>Categorias de pausa</h3>
           <ul className="break-prefs-list">
             {data.breakPreferences.map(pref => <li key={pref}><span>{pref}</span> <button onClick={() => update(old => ({ ...old, breakPreferences: old.breakPreferences.filter(p => p !== pref) }))}>Remover</button></li>)}
@@ -608,8 +645,14 @@ function App() {
           </form>
         </>
       )}
-      {settingsTab === 'board' && <><h3>Limite orientativo de tarefas</h3><p className="settings-hint">Arraste tarefas entre colunas. Ultrapassar o limite destaca a coluna, mas não impede seu trabalho.</p><div className="fields"><label>Em andamento <input type="number" min="1" max="50" value={data.wipLimits.doing} onChange={e => update(old => ({ ...old, wipLimits: { ...old.wipLimits, doing: Math.max(1, Math.min(50, Number(e.target.value) || 1)) } }))} /></label>
-        <label>Em atraso (0 desliga o aviso) <input type="number" min="0" max="50" value={data.wipLimits.late ?? 0} onChange={e => update(old => ({ ...old, wipLimits: { ...old.wipLimits, late: Math.max(0, Math.min(50, Number(e.target.value) || 0)) || null } }))} /></label></div></>}
+      {settingsTab === 'board' && <><h3>Limite orientativo de tarefas</h3><p className="settings-hint">O WIP indica quantas tarefas você mantém em andamento. O limite só avisa; você continua livre para mover tarefas. <button type="button" className="inline-help" onClick={() => setWipHelp(true)}>Como funciona?</button></p>
+        <div className="wip-presets" aria-label="Metas de WIP"><button onClick={() => update(old => ({ ...old, wipLimits: { ...old.wipLimits, doing: 2 } }))}>Foco leve · 2</button><button onClick={() => update(old => ({ ...old, wipLimits: { ...old.wipLimits, doing: 5 } }))}>Equilibrado · 5</button><button onClick={() => update(old => ({ ...old, wipLimits: { ...old.wipLimits, doing: 8 } }))}>Mais frentes · 8</button></div>
+        <div className="fields"><label>Em andamento <NumberStepper label="Limite de tarefas em andamento" value={data.wipLimits.doing} min={1} max={50} onChange={doing => update(old => ({ ...old, wipLimits: { ...old.wipLimits, doing } }))} /></label>
+        <label>Em atraso (0 desliga o aviso) <NumberStepper label="Limite de tarefas em atraso" value={data.wipLimits.late ?? 0} min={0} max={50} onChange={late => update(old => ({ ...old, wipLimits: { ...old.wipLimits, late: late || null } }))} /></label></div>
+        <h3>Áreas de trabalho</h3><p className="settings-hint">Organize o quadro por área. A IA vê esses nomes ao propor uma tarefa e pode sugerir outra, sempre sujeita à sua aprovação.</p>
+        <div className="area-list">{data.areas.map(area => <span key={area}>{area} <button aria-label={`Remover área ${area}`} onClick={() => update(old => ({ ...old, areas: old.areas.filter(name => name !== area) }))}>×</button></span>)}</div>
+        <form className="add-slice" onSubmit={event => { event.preventDefault(); const input = event.currentTarget.elements.namedItem('area') as HTMLInputElement; addArea(input.value); input.value = ''; }}><input name="area" maxLength={50} placeholder="Nova área, ex.: Design" aria-label="Nome da nova área" /><button>Adicionar área</button></form>
+      </>}
       {settingsTab === 'ai' && (
         <>
           <h3>Assistência de IA</h3>
@@ -665,7 +708,6 @@ function App() {
           </div>
         </>
       )}
-      {settingsTab === 'blocking' && <FocusBlockingSettings settings={focusBlocking} onChange={changeFocusBlocking} />}
       {settingsTab === 'data' && <section className="backup-panel" aria-label="Backup dos dados">
         <h3>Backup local</h3><p>Tarefas, slices, histórico, rotinas e preferências vão para o JSON. Chaves de IA, tokens Google e a sessão de foco ativa ficam fora.</p>
         <button disabled={backupBusy} onClick={() => { try { saveBackup(makeBackup(data, focusBlocking ?? focusBlockingDefault, soundEnabled)); setBackupError(''); } catch (err) { setBackupError(err instanceof Error ? err.message : 'Não foi possível exportar.'); } }}>Exportar JSON</button>
@@ -688,11 +730,11 @@ function App() {
       {([['today', 'Hoje'], ['week', 'Esta semana'], ['all', 'Todas'], ['archive', 'Arquivo']] as const).map(([key, label]) =>
         <button key={key} aria-current={!showStatistics && view === key ? 'page' : undefined} onClick={() => { setView(key); setShowStatistics(false); }}>{label}</button>)}
       </div></div>
-      {!showStatistics && <label className="skill-filter">Área <select aria-label="Filtrar por habilidade ou área" value={skillFilter} onChange={event => setSkillFilter(event.target.value)}><option value="">Todas as áreas</option>{skills.map(skill => <option value={skill} key={skill}>{skill}</option>)}<option value="__without_skill__">Sem área</option></select></label>}
-      <button className="weekly-toggle" aria-expanded={weeklyOpen} onClick={() => setWeeklyOpen(open => !open)}>↻ Rotinas semanais</button>
+      <div className="board-tools">{!showStatistics && <label className="skill-filter">Área <select aria-label="Filtrar por habilidade ou área" value={skillFilter} onChange={event => setSkillFilter(event.target.value)}><option value="">Todas as áreas</option>{skills.map(skill => <option value={skill} key={skill}>{skill}</option>)}<option value="__without_skill__">Sem área</option></select></label>}
+      <button className="focus-toggle" onClick={() => setShowFocusMode(true)}>◷ Modo foco</button><button className="weekly-toggle" aria-expanded={weeklyOpen} onClick={() => setWeeklyOpen(open => !open)}>↻ Rotinas semanais</button></div>
     </nav>
     {!!cycleSelection.length && !showStatistics && view !== 'archive' && <section className="cycle-builder" aria-label="Montar ciclo com várias tarefas"><div><span className="eyebrow">CICLO DE FOCO</span><h2>Seu ciclo, suas tarefas</h2><p>{cycleSelection.length} {cycleSelection.length === 1 ? 'tarefa' : 'tarefas'} · {cycleSelection.reduce((sum, key) => sum + (cycleMinutes[key] ?? data.tasks.find(item => item.id === key)?.estimate ?? 0), 0)} min no total. A ordem abaixo define a sequência; avance manualmente quando mudar de tarefa.</p></div>
-      <div className="cycle-builder-steps">{cycleSelection.map((key, index) => { const item = data.tasks.find(t => t.id === key); return item && <label key={key}><span>{index + 1}. {item.name}</span><input aria-label={`Minutos para ${item.name}`} type="number" min="1" max="480" value={cycleMinutes[key] ?? item.estimate} onChange={e => setCycleMinutes(old => ({ ...old, [key]: Number(e.target.value) }))} /><small>min</small><button aria-label={`Mover ${item.name} para cima`} disabled={index === 0} onClick={() => setCycleSelection(old => { const next = [...old]; [next[index - 1], next[index]] = [next[index], next[index - 1]]; return next; })}>↑</button><button aria-label={`Mover ${item.name} para baixo`} disabled={index === cycleSelection.length - 1} onClick={() => setCycleSelection(old => { const next = [...old]; [next[index + 1], next[index]] = [next[index], next[index + 1]]; return next; })}>↓</button></label>; })}</div>
+      <div className="cycle-builder-steps">{cycleSelection.map((key, index) => { const item = data.tasks.find(t => t.id === key); return item && <label key={key}><span>{index + 1}. {item.name}</span><NumberStepper label={`Minutos para ${item.name}`} value={cycleMinutes[key] ?? item.estimate} min={1} max={480} onChange={minutes => setCycleMinutes(old => ({ ...old, [key]: minutes }))} /><small>min</small><button aria-label={`Mover ${item.name} para cima`} disabled={index === 0} onClick={() => setCycleSelection(old => { const next = [...old]; [next[index - 1], next[index]] = [next[index], next[index - 1]]; return next; })}>↑</button><button aria-label={`Mover ${item.name} para baixo`} disabled={index === cycleSelection.length - 1} onClick={() => setCycleSelection(old => { const next = [...old]; [next[index + 1], next[index]] = [next[index], next[index + 1]]; return next; })}>↓</button></label>; })}</div>
       <button className="primary" disabled={!!active} onClick={() => startFocusTasks(cycleSelection.map(key => ({ taskId: key, minutes: cycleMinutes[key] ?? data.tasks.find(item => item.id === key)?.estimate ?? 0 })))}>Iniciar ciclo com {cycleSelection.length} tarefas</button></section>}
     {weeklyOpen && <section className="weekly-panel" aria-label="Rotinas semanais"><div><span className="eyebrow">PLANEJAMENTO</span><h2>Programação da semana</h2><p>Escolha os dias na criação da tarefa. Cada ocorrência mantém seu próprio histórico.</p><button onClick={() => openManualDraft('', true)}>+ Nova tarefa programada</button></div>
       <div className="week-calendar">{calendarDays.map(day => <div className={localDay(day) === today ? 'calendar-day current' : 'calendar-day'} key={localDay(day)}><strong>{weekdays[day.getDay()]} <small>{day.getDate()}/{day.getMonth() + 1}</small></strong>
@@ -710,7 +752,7 @@ function App() {
         const dueSoon = item.column !== 'done' && !!item.deadline && item.deadline >= today && item.deadline <= soonDay;
         return <article className={`card${overdue ? ' card-overdue' : dueSoon ? ' card-due-soon' : ''}`} key={item.id} draggable onDragStart={event => event.dataTransfer.setData('text/plain', item.id)}>
         <div className="card-heading"><span>{String(index + 1).padStart(2, '0')} / {column.label.toUpperCase()}</span><span className="card-time">{item.estimate} MIN</span></div>
-        {column.id === 'doing' && !active && <label className="cycle-select"><input type="checkbox" checked={cycleSelection.includes(item.id)} onChange={event => setCycleSelection(old => event.target.checked ? [...old, item.id] : old.filter(key => key !== item.id))} /> Incluir no próximo ciclo</label>}
+        {(column.id === 'doing' || column.id === 'todo') && !active && <label className="cycle-select"><input type="checkbox" checked={cycleSelection.includes(item.id)} onChange={event => setCycleSelection(old => event.target.checked ? [...old, item.id] : old.filter(key => key !== item.id))} /> Incluir no próximo ciclo</label>}
         <button className="card-title" onClick={() => { setSelectedTask(item.id); setScope('whole'); setSelectedSlices([]); setSliceInsight(''); }}>{item.name}</button>
         <div className="meta"><span>Dificuldade {item.difficulty}</span><span>{item.estimate} min</span>{item.deadline && <span>{item.deadline}</span>}{overdue && <span className="overdue-badge">⚠ Prazo vencido</span>}{dueSoon && <span className="due-soon-badge">◷ Prazo próximo</span>}{item.planId && <span>↻ {item.occurrenceDate}</span>}{item.column === 'done' && <span>Feita em {displayDate(item.completedAt)}</span>}</div>
         {!!item.slices.length && <><div className="slice-progress">Etapas <strong>{item.slices.filter(slice => slice.done).length}/{item.slices.length}</strong></div><div className="slice-strip">{item.slices.map(slice => <span className={slice.done ? 'slice done' : 'slice'} title={slice.name} key={slice.id}>{slice.name}{slice.done ? ' ✓' : ''}</span>)}</div></>}
@@ -720,7 +762,7 @@ function App() {
       <input className="task-name" aria-label="Nome" value={task.name} onChange={e => changeTask(task.id, x => ({ ...x, name: e.target.value }))} />
       <textarea aria-label="Descrição" placeholder="Descrição da tarefa" value={task.description} onChange={e => changeTask(task.id, x => ({ ...x, description: e.target.value }))} />
       <div className="fields"><label>Dificuldade <select value={task.difficulty} onChange={e => changeTask(task.id, x => ({ ...x, difficulty: +e.target.value as 1 | 2 | 3 }))}><option value="1">1 · leve</option><option value="2">2 · média</option><option value="3">3 · alta</option></select></label>
-      <label>Estimativa total da tarefa (min) <input type="number" min="1" max="480" value={task.estimate} onChange={e => changeTask(task.id, x => ({ ...x, estimate: Math.max(1, +e.target.value) }))} /></label>
+      <label>Estimativa total da tarefa (min) <NumberStepper label="Estimativa total da tarefa" value={task.estimate} min={1} max={480} onChange={estimate => changeTask(task.id, x => ({ ...x, estimate }))} /></label>
       <label>Habilidade ou área <input maxLength={50} list="skill-suggestions" placeholder="Ex.: Programação" value={task.skill ?? ''} onChange={e => changeTask(task.id, x => ({ ...x, skill: e.target.value }))} /></label>
       <label>Prazo opcional <input type="date" value={task.deadline} onChange={e => changeTask(task.id, x => ({ ...x, deadline: e.target.value }))} /></label>
       <label>Coluna <select value={task.column} onChange={e => changeTask(task.id, x => ({ ...x, column: e.target.value as Column }))}>{columns.map(c => <option value={c.id} key={c.id}>{c.label}</option>)}</select></label></div>

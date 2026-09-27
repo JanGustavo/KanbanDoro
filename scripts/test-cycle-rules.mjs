@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { completedCycleCount, elapsedCredit, extensionBudget, nextStepTiming, stepDeadline, suggestedBreakMinutes } from '../src/cycleRules.ts';
+import { completedCycleCount, elapsedCredit, extensionBudget, nextStepTiming, resumeAfterPause, stepDeadline, suggestedBreakMinutes } from '../src/cycleRules.ts';
 
 const session = { startedAt: 0, endsAt: 90_000, creditedSeconds: 0, excludedSeconds: 0 };
 assert.equal(elapsedCredit(session, 30_000), 30);
@@ -17,6 +17,12 @@ const late = nextStepTiming(multi, 35 * 60_000, 60);
 assert.equal(late.stepEndsAt, 95 * 60_000);
 assert.equal(late.endsAt, 95 * 60_000, 'decision waiting shifts the whole cycle');
 assert.equal(elapsedCredit({ ...multi, ...late }, 45 * 60_000), 10 * 60, 'decision waiting is not credited to the next task');
+const paused = { ...session, phase: 'intermission', pauseStartedAt: 30_000, pauseEndsAt: 210_000, stepEndsAt: 90_000 };
+const resumed = resumeAfterPause(paused, 240_000);
+assert.equal(resumed.stepEndsAt, 300_000, 'focus deadline shifts by the actual break, even when the user returns late');
+assert.equal(resumed.endsAt, 300_000);
+assert.equal(elapsedCredit(resumed, 270_000), 60, 'the pause does not count as focus time');
+assert.equal(resumeAfterPause(resumed, 270_000), resumed, 'resuming twice does not shift the deadline again');
 assert.equal(extensionBudget(40, 0, 0), 20);
 assert.equal(extensionBudget(40, 13, 1), 7);
 assert.equal(extensionBudget(40, 0, 2), 0, 'at most two extensions per task');

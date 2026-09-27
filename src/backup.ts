@@ -11,7 +11,7 @@ export type Backup = {
   appVersion: string;
   exportedAt: string;
   timeZone: string;
-  data: Pick<Data, 'tasks' | 'history' | 'weeklyPlans' | 'breakPreferences' | 'wipLimits' | 'breakDurations'> & {
+  data: Pick<Data, 'tasks' | 'history' | 'weeklyPlans' | 'breakPreferences' | 'wipLimits' | 'breakDurations' | 'areas'> & {
     focusBlocking: FocusBlocking;
     soundEnabled: boolean;
   };
@@ -109,7 +109,7 @@ export function makeBackup(data: Data, focusBlocking: FocusBlocking, soundEnable
     schemaVersion: BACKUP_VERSION, appVersion: '0.2.0', exportedAt: new Date().toISOString(),
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     data: { tasks: data.tasks, history: data.history, weeklyPlans: data.weeklyPlans,
-      breakPreferences: data.breakPreferences, wipLimits: data.wipLimits, breakDurations: data.breakDurations,
+      breakPreferences: data.breakPreferences, wipLimits: data.wipLimits, breakDurations: data.breakDurations, areas: data.areas,
       focusBlocking, soundEnabled },
   };
   // Re-parse our own export to strip unknown keys added by older versions.
@@ -134,6 +134,7 @@ export function parseBackup(text: string): Backup {
       tasks: uniqueIds(list(d.tasks).map(readTask)), history: uniqueIds(list(d.history).map(readHistory)),
       weeklyPlans: uniqueIds(list(d.weeklyPlans, 5000).map(readPlan)),
       breakPreferences: list(d.breakPreferences, 100).map(v => str(v, 80)),
+      areas: [...new Set(list(d.areas ?? [], 100).map(v => str(v, 50).trim()).filter(Boolean))],
       wipLimits: { doing: num(wip.doing, 1, 50), late: wip.late == null ? null : num(wip.late, 1, 50) },
       breakDurations: { short: num(breaks.short, 1, 120), long: num(breaks.long, 1, 120) },
       focusBlocking: { mode: mode as FocusBlocking['mode'], exceptions: list(blocking.exceptions, 1000).map(readDomain),
@@ -169,5 +170,5 @@ export function mergeBackup(current: Backup, incoming: Backup): Backup {
     // A reused task ID can name different tasks on independent profiles. Its
     // imported events must never be attributed to the local task that wins.
     history: [...current.data.history, ...incoming.data.history.filter(entry => !localHistory.has(entry.id) && !localTasks.has(entry.taskId))],
-    weeklyPlans: [...plans.values()] } };
+    weeklyPlans: [...plans.values()], areas: [...new Set([...current.data.areas, ...incoming.data.areas])] } };
 }

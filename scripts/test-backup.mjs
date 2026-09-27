@@ -6,7 +6,7 @@ const item = { id: 'one', name: 'Estudar', description: 'Linux', difficulty: 1, 
   apiKey: 'this-field-must-never-be-exported' };
 const data = { tasks: [item], history: [{ id: 'event-1', taskId: 'one', kind: 'completed', seconds: 200, at: 10, sliceIds: [] }],
   weeklyPlans: [{ id: 'plan-1', name: 'Revisão', estimate: 20, weekdays: [1], startsOn: '2026-09-27', generatedDates: ['2026-09-27'] }],
-  breakPreferences: ['Água'], wipLimits: { doing: 5, late: null }, breakDurations: { short: 5, long: 15 },
+  breakPreferences: ['Água'], wipLimits: { doing: 5, late: null }, breakDurations: { short: 5, long: 15 }, areas: ['Programação'],
   session: { phase: 'running', token: 'never-export-this-session' } };
 const blocking = { mode: 'custom', exceptions: [], customDomains: ['example.com'] };
 const backup = makeBackup(data, blocking, true);
@@ -15,6 +15,7 @@ assert.equal(backup.schemaVersion, 1);
 assert(!serialized.includes('never-export-this-session'));
 assert(!serialized.includes('this-field-must-never-be-exported'));
 assert.equal(backup.data.tasks[0].focusSeconds, 200);
+assert.deepEqual(backup.data.areas, ['Programação']);
 
 const imported = parseBackup(serialized);
 assert.equal(imported.data.tasks[0].slices[0].name, 'Ler');

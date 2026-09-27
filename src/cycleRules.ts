@@ -7,6 +7,15 @@ export function stepDeadline(session: { stepEndsAt?: number; endsAt: number }) {
   return Math.min(session.stepEndsAt ?? session.endsAt, session.endsAt);
 }
 
+// Pausas dentro do foco congelam ambos os prazos; só o tempo efetivamente pausado é excluído do crédito.
+export function resumeAfterPause<T extends { phase: string; pauseStartedAt?: number; pauseEndsAt?: number; endsAt: number; stepEndsAt?: number; excludedSeconds: number }>(session: T, now: number): T {
+  if (!['intermission', 'intermission-done'].includes(session.phase) || !session.pauseStartedAt) return session;
+  const elapsed = Math.max(0, now - session.pauseStartedAt);
+  return { ...session, phase: 'running', pauseStartedAt: undefined, pauseEndsAt: undefined,
+    endsAt: session.endsAt + elapsed, stepEndsAt: session.stepEndsAt === undefined ? undefined : session.stepEndsAt + elapsed,
+    excludedSeconds: session.excludedSeconds + Math.floor(elapsed / 1000) };
+}
+
 export function extensionBudget(estimate: number, usedMinutes: number, count: number) {
   return count >= 2 ? 0 : Math.max(0, Math.floor(estimate * .5) - usedMinutes);
 }
