@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
 import { getAISettings, saveAISettings, waitForAISettingsSave, selectAIProvider, selectAIModel, nextAIChoice, savedAIChoices, emptyAISettings, AI_PROVIDERS, type AISettings, type AIProvider } from './aiSettings';
+import { verifiedAIModels, type ListedAIModel } from './aiModelCatalog';
 import { dateFromDay, isVisible, localDay, materializeToday, weekEnd, type ViewMode, type WeeklyPlan } from './schedule';
 import Connections from './Connections';
 import Statistics from './Statistics';
@@ -59,7 +60,7 @@ type Session = {
 export type HistoryEntry = { id: string; taskId: string; kind: string; seconds: number; at: number; sliceIds: string[]; cycleId?: string };
 type Proposal = { name: string; description: string; difficulty: 1 | 2 | 3; skill?: string; estimate: number; slices: string[]; attachments: Attachment[]; deadline?: string };
 type ScheduleChoice = { mode: 'once' | 'selected-days' | 'weekly'; startDate: string; weekdays: number[] };
-type AIModel = { id: string; name: string; freeTier?: boolean };
+type AIModel = ListedAIModel;
 export type Data = { tasks: Task[]; session: Session | null; history: HistoryEntry[]; breakPreferences: string[]; weeklyPlans: WeeklyPlan[];
   wipLimits: { doing: number; late: number | null }; breakDurations: { short: number; long: number }; areas: string[] };
 const columns: { id: Column; label: string }[] = [
@@ -129,6 +130,7 @@ function App() {
   const [aiKeyVisible, setAiKeyVisible] = useState(false);
   const [aiNotice, setAiNotice] = useState('');
   const [models, setModels] = useState<AIModel[]>([]);
+  const modelsRequestId = useRef(0);
   const [aiBusy, setAiBusy] = useState(false);
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const [proposalSource, setProposalSource] = useState<'manual' | 'ai'>('manual');
@@ -384,15 +386,19 @@ function App() {
     setUndo(null); setToast('Ação desfeita.');
   }
   async function loadModels() {
+    const requestId = ++modelsRequestId.current;
+    const provider = aiSettings.provider;
     setAiBusy(true); setAiNotice('');
     try {
       await waitForAISettingsSave();
       const response = await chrome.runtime.sendMessage({ type: 'GROQ_MODELS' }) as { models?: AIModel[]; error?: string };
+      if (requestId !== modelsRequestId.current) return;
       if (response.error) throw Error(response.error);
-      setModels(response.models ?? []);
-      if (!response.models?.length) setAiNotice('Nenhum modelo compatível com propostas estruturadas foi encontrado.');
-    } catch (reason) { setAiNotice(reason instanceof Error ? reason.message : 'Não foi possível consultar os modelos.'); }
-    finally { setAiBusy(false); }
+      const eligible = verifiedAIModels(provider, response.models);
+      setModels(eligible);
+      setAiNotice(eligible.length ? `${eligible.length} modelos encontrados. Selecione um abaixo.` : 'Nenhum modelo compatível com propostas estruturadas foi encontrado.');
+    } catch (reason) { if (requestId === modelsRequestId.current) setAiNotice(reason instanceof Error ? reason.message : 'Não foi possível consultar os modelos.'); }
+    finally { if (requestId === modelsRequestId.current) setAiBusy(false); }
   }
   function persistAIChoice(next: AISettings) {
     setAiSettings(next);
@@ -712,7 +718,7 @@ function App() {
           <div className="ai-settings-form">
             <label>
               Provedor
-              <select value={aiSettings.provider} onChange={e => { setModels([]); persistAIChoice(selectAIProvider(aiSettings, e.target.value as AIProvider)); }}>
+              <select value={aiSettings.provider} onChange={e => { modelsRequestId.current++; setAiBusy(false); setModels([]); persistAIChoice(selectAIProvider(aiSettings, e.target.value as AIProvider)); }}>
                 <option value="">Selecionar provedor</option>
                 {Object.entries(AI_PROVIDERS).map(([key, provider]) => <option key={key} value={key} disabled={!['groq', 'gemini'].includes(key)}>{provider}{!['groq', 'gemini'].includes(key) ? ' · em breve' : ''}</option>)}
               </select>
@@ -723,7 +729,7 @@ function App() {
                   Modelo
                   {['groq', 'gemini'].includes(aiSettings.provider) ? <><select value={aiSettings.model} onChange={e => persistAIChoice(selectAIModel(aiSettings, e.target.value))}><option value="">{models.length ? 'Selecione um modelo' : 'Consulte os modelos da sua conta'}</option>{aiSettings.model && !models.some(model => model.id === aiSettings.model) && <option value={aiSettings.model}>{aiSettings.model} (salvo)</option>}{models.map(model => <option key={model.id} value={model.id}>{model.name} ({model.id}){model.freeTier ? ' · Free' : ''}</option>)}</select><button type="button" disabled={aiBusy} onClick={() => void loadModels()}>Atualizar modelos</button></> : <input value={aiSettings.model} onChange={e => setAiSettings(s => ({ ...s, model: e.target.value }))} />}
                 </label>
-                {models.some(model => model.freeTier) && <div className="ai-free-models" aria-label="Modelos com plano gratuito confirmado">{models.filter(model => model.freeTier).map(model => <button type="button" key={model.id} className={aiSettings.model === model.id ? 'selected' : ''} onClick={() => persistAIChoice(selectAIModel(aiSettings, model.id))}><span className="ai-free-badge">Free</span><span>{model.name}</span></button>)}</div>}
+                {models.length > 0 && <div className="ai-model-list" role="group" aria-label="Modelos disponíveis para escolher">{models.map(model => <button type="button" key={model.id} className={aiSettings.model === model.id ? 'selected' : ''} aria-pressed={aiSettings.model === model.id} onClick={() => persistAIChoice(selectAIModel(aiSettings, model.id))}><span className="ai-model-description"><strong>{model.name}</strong><small>{model.id}</small></span>{model.freeTier && <span className="ai-free-badge">Free</span>}</button>)}</div>}
                 {models.length > 0 && <small className="settings-hint">Free indica modelo listado no plano gratuito do provedor; sujeito às cotas e condições da sua conta. Sem selo, a gratuidade não foi confirmada.</small>}
                 {aiSettings.provider === 'custom' && (
                   <label>
