@@ -119,7 +119,9 @@ function App() {
   const [tipsDismissed, setTipsDismissed] = useState(true);
   const [tipIndex, setTipIndex] = useState(0);
   const [toast, setToast] = useState('');
+  const [undo, setUndo] = useState<{ kind: 'delete' | 'archive'; task: Task; history: HistoryEntry[]; message: string } | null>(null);
   const [view, setView] = useState<ViewMode>('today');
+  const [skillFilter, setSkillFilter] = useState('');
   const [archiveDay, setArchiveDay] = useState('');
   const [cycleSelection, setCycleSelection] = useState<string[]>([]);
   const [cycleMinutes, setCycleMinutes] = useState<Record<string, number>>({});
@@ -156,9 +158,19 @@ function App() {
   }, []);
   useEffect(() => {
     if (!toast) return;
-    const timeout = window.setTimeout(() => setToast(''), 4500);
+    const timeout = window.setTimeout(() => { setToast(current => current === toast ? '' : current); setUndo(current => current?.message === toast ? null : current); }, undo?.message === toast ? 8000 : 4500);
     return () => window.clearTimeout(timeout);
-  }, [toast]);
+  }, [toast, undo]);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== 'n' || event.altKey || event.ctrlKey || event.metaKey || event.repeat || !ready || proposal || selectedTask || showSettings || showConnections) return;
+      if (event.target instanceof Element && event.target.closest('input,textarea,select,[contenteditable="true"]')) return;
+      event.preventDefault();
+      openManualDraft();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [ready, proposal, selectedTask, showSettings, showConnections]);
   useEffect(() => {
     if (!stepNotice) return;
     const timeout = window.setTimeout(() => setStepNotice(''), 10_000);
@@ -261,7 +273,9 @@ function App() {
   useEffect(() => {
     if (data.session?.phase === 'post-focus') setBreakMinutes(suggestedBreakMinutes(finishedCycles, !!data.session.postFocusCompleted, data.breakDurations));
   }, [data.session?.phase, finishedCycles, data.breakDurations.short, data.breakDurations.long]);
-  const shownTasks = data.tasks.filter(t => isVisible(t, view, new Date(now), archiveDay));
+  const shownTasks = data.tasks.filter(t => isVisible(t, view, new Date(now), archiveDay)
+    && (!skillFilter || (skillFilter === '__without_skill__' ? !t.skill?.trim() : t.skill?.trim() === skillFilter)));
+  const skills = [...new Set(data.tasks.map(t => t.skill?.trim()).filter((skill): skill is string => !!skill))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
   const soonDate = dateFromDay(today);
   soonDate.setDate(soonDate.getDate() + 2);
   const soonDay = localDay(soonDate);
@@ -296,14 +310,27 @@ function App() {
   }
   function deleteTask(item: Task) {
     if (active?.taskId === item.id || active?.steps?.some(step => step.taskId === item.id)) return setError('Encerre o ciclo atual antes de apagar esta tarefa.');
-    if (!window.confirm(`Apagar “${item.name}” e seu histórico de foco? Esta ação não pode ser desfeita.`)) return;
+    if (!window.confirm(`Apagar “${item.name}” e seu histórico de foco? Você terá 8 segundos para desfazer.`)) return;
+    const message = 'Tarefa e histórico removidos. A rotina semanal continua ativa.';
+    setUndo({ kind: 'delete', task: item, history: data.history.filter(entry => entry.taskId === item.id), message });
     update(old => ({ ...old, tasks: old.tasks.filter(task => task.id !== item.id), history: old.history.filter(entry => entry.taskId !== item.id) }));
-    setSelectedTask(null); setToast('Tarefa e histórico removidos. A rotina semanal, se houver, continua ativa.');
+    setSelectedTask(null); setToast(message);
   }
   function archiveTask(item: Task) {
     if (item.column !== 'done') return setError('Conclua a tarefa antes de arquivar.');
+    const message = 'Tarefa arquivada. Você pode desfazer agora ou encontrá-la no arquivo.';
+    setUndo({ kind: 'archive', task: item, history: [], message });
     changeTask(item.id, task => ({ ...task, archivedAt: Date.now() }));
-    setSelectedTask(null); setToast('Tarefa arquivada. Você pode consultá-la pelo dia da conclusão.');
+    setSelectedTask(null); setToast(message);
+  }
+  function undoLastAction() {
+    if (!undo) return;
+    if (undo.kind === 'archive') changeTask(undo.task.id, task => ({ ...task, archivedAt: undo.task.archivedAt }));
+    else update(old => ({ ...old,
+      tasks: old.tasks.some(task => task.id === undo.task.id) ? old.tasks : [...old.tasks, undo.task],
+      history: [...old.history, ...undo.history.filter(entry => !old.history.some(existing => existing.id === entry.id))],
+    }));
+    setUndo(null); setToast('Ação desfeita.');
   }
   async function loadModels() {
     setAiBusy(true); setAiNotice('');
@@ -491,7 +518,7 @@ function App() {
       </div>
     </header>
     {error && <p className="warning" role="alert">{error} <button onClick={() => setError('')}>Fechar</button></p>}
-    {toast && <div className="toast" role="status">{toast}<button aria-label="Dispensar aviso" onClick={() => setToast('')}>✕</button></div>}
+    {toast && <div className="toast" role="status">{toast}{undo?.message === toast && <button className="toast-undo" onClick={undoLastAction}>Desfazer</button>}<button aria-label="Dispensar aviso" onClick={() => { setToast(''); setUndo(null); }}>✕</button></div>}
     {showConnections && <Connections onClose={() => setShowConnections(false)} onDraft={draftFromConnection} />}
     {!tipsDismissed && data.tasks.length === 0 && <aside className="first-use" aria-label="Primeiros passos">
       <span className="eyebrow">PRIMEIROS PASSOS</span><p>Crie uma tarefa, ajuste o tempo e os slices nos detalhes e inicie seu primeiro ciclo de foco.</p>
@@ -661,6 +688,7 @@ function App() {
       {([['today', 'Hoje'], ['week', 'Esta semana'], ['all', 'Todas'], ['archive', 'Arquivo']] as const).map(([key, label]) =>
         <button key={key} aria-current={!showStatistics && view === key ? 'page' : undefined} onClick={() => { setView(key); setShowStatistics(false); }}>{label}</button>)}
       </div></div>
+      {!showStatistics && <label className="skill-filter">Área <select aria-label="Filtrar por habilidade ou área" value={skillFilter} onChange={event => setSkillFilter(event.target.value)}><option value="">Todas as áreas</option>{skills.map(skill => <option value={skill} key={skill}>{skill}</option>)}<option value="__without_skill__">Sem área</option></select></label>}
       <button className="weekly-toggle" aria-expanded={weeklyOpen} onClick={() => setWeeklyOpen(open => !open)}>↻ Rotinas semanais</button>
     </nav>
     {!!cycleSelection.length && !showStatistics && view !== 'archive' && <section className="cycle-builder" aria-label="Montar ciclo com várias tarefas"><div><span className="eyebrow">CICLO DE FOCO</span><h2>Seu ciclo, suas tarefas</h2><p>{cycleSelection.length} {cycleSelection.length === 1 ? 'tarefa' : 'tarefas'} · {cycleSelection.reduce((sum, key) => sum + (cycleMinutes[key] ?? data.tasks.find(item => item.id === key)?.estimate ?? 0), 0)} min no total. A ordem abaixo define a sequência; avance manualmente quando mudar de tarefa.</p></div>

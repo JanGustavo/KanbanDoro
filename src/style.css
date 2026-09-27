@@ -572,6 +572,7 @@ header p {
   padding: 3px;
   color: inherit;
 }
+.toast .toast-undo { margin-left: 0; color: #ffda8d; font-weight: 800; text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
 
 .sound-option {
   display: flex;
@@ -720,6 +721,8 @@ header p {
   align-items: center;
   margin: 0 0 18px;
 }
+.skill-filter { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; color: #d8c0b1; font-size: .82rem; }
+.skill-filter select { max-width: 190px; min-height: 36px; border: 1px solid #75575f; border-radius: 8px; background: #29272a; color: #fff0cf; padding: 5px 8px; }
 
 .board-controls button {
   border: 1px solid #544249;
