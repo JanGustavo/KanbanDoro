@@ -168,6 +168,28 @@ h1,h2,h3,p {
   color:#a99c95;
   font-size:.83rem
 }
+.release-status {
+  color:#e7c385;
+  font-size:.82rem;
+  line-height:1.5;
+  min-height:1.5em;
+  margin:-10px 0 17px
+}
+.test-access {
+  margin-top:22px;
+  padding:14px 16px;
+  max-width:530px;
+  border:1px solid #8d675466;
+  border-radius:10px;
+  background:#d5a34312;
+  color:#e3d3c8;
+  font-size:.83rem;
+  line-height:1.6
+}
+.test-access strong { display:block; color:#f2d59f; }
+.test-access a { color:#f1bb77; text-decoration:underline; text-underline-offset:3px; }
+.test-access a:hover { color:#ffe0a4; }
+.hero-caption code { font-size:.88em; color:#f0ce9a; }
 .caption-mark {
   font-size:1.1rem;
   color:var(--gold);

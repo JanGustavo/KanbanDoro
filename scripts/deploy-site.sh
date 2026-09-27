@@ -36,7 +36,7 @@ REMOTE
 # O domínio foi validado acima: pode ser usado como substituição literal no modelo.
 sed "s/__DOMAIN__/$domain/g" deploy/nginx-kanbandoro.conf.template | \
   ssh "${ssh_args[@]}" "$remote" 'cat > "$HOME/kanbandoro.nginx"'
-tar -C site -cf - index.html style.css icon.svg | ssh "${ssh_args[@]}" "$remote" 'tar -xf - -C "$HOME/kanbandoro-site"'
+tar -C site -cf - index.html style.css icon.svg release.js | ssh "${ssh_args[@]}" "$remote" 'tar -xf - -C "$HOME/kanbandoro-site"'
 # Se já existe HTTPS, preserva a configuração gerenciada pelo Certbot.
 nginx_result=$(ssh "${ssh_args[@]}" "$remote" 'bash -se' <<'REMOTE'
 sudo -n install -d -m 755 /var/www/kanbandoro

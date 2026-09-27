@@ -1083,6 +1083,13 @@ header p {
 .cycle-decision-actions label { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .cycle-decision-actions input { width: 75px; }
 .overdue-badge { color: #ffb7ae; font-weight: 800; }
+.card.card-due-soon,.card.card-due-soon:hover { border-color: #d5a343; box-shadow: inset 3px 0 #d5a343, 0 8px 24px #0003; }
+.card.card-overdue,.card.card-overdue:hover { border-color: #e17b83; box-shadow: inset 3px 0 #e17b83, 0 8px 24px #0003; }
+.card .meta .overdue-badge { background: #a5465133; color: #ffd2ca; font-weight: 800; }
+.card .meta .due-soon-badge { background: #d5a34333; color: #ffdc96; font-weight: 800; }
+.slice-progress { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 17px; color: #d3bbb3; font-size: .75rem; }
+.slice-progress strong { color: #f4ce8a; font-variant-numeric: tabular-nums; }
+.card .slice-progress + .slice-strip { margin-top: 7px; }
 .backup-panel { display: grid; gap: 14px; line-height: 1.5; }
 .backup-panel h3,.backup-preview h4 { margin: 0; color: #efc477; }
 .backup-panel p { margin: 0; color: #d5c7c1; }

@@ -1,6 +1,6 @@
 # Landing page KanbanDoro
 
-Site estático em HTML/CSS em `kanbandoro.jangustavo.me/`. O domínio raiz `jangustavo.me` e os subdomínios dos outros projetos não são modificados. Sem coleta de dados, scripts externos ou promessas clínicas. Os exemplos de tarefa e IA são ilustrativos; a instalação real da extensão é feita pelo repositório GitHub.
+Site estático em HTML/CSS/JS em `kanbandoro.jangustavo.me/`. O domínio raiz `jangustavo.me` e os subdomínios dos outros projetos não são modificados. Sem coleta de dados ou promessas clínicas. Os exemplos de tarefa e IA são ilustrativos. O botão de download consulta a API pública do GitHub e aponta para o ZIP da release publicada mais recentemente, inclusive versões 0.x marcadas como pré-lançamento. Quando não houver release ou a consulta falhar, leva à página de releases. O endereço de contato para solicitar acesso de teste ao Google está no `index.html`.
 
 Para visualizar localmente: `python3 -m http.server 4173 --directory site`, depois abra `http://127.0.0.1:4173/`.
 

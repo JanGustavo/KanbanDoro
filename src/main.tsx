@@ -262,6 +262,9 @@ function App() {
     if (data.session?.phase === 'post-focus') setBreakMinutes(suggestedBreakMinutes(finishedCycles, !!data.session.postFocusCompleted, data.breakDurations));
   }, [data.session?.phase, finishedCycles, data.breakDurations.short, data.breakDurations.long]);
   const shownTasks = data.tasks.filter(t => isVisible(t, view, new Date(now), archiveDay));
+  const soonDate = dateFromDay(today);
+  soonDate.setDate(soonDate.getDate() + 2);
+  const soonDay = localDay(soonDate);
   const calendarDays = Array.from({ length: 7 }, (_, offset) => {
     const day = new Date(now);
     day.setHours(12, 0, 0, 0);
@@ -675,13 +678,15 @@ function App() {
       <h2>{column.label} <span>{shownTasks.filter(t => t.column === column.id).length}{(column.id === 'doing' && doingCount > data.wipLimits.doing || column.id === 'late' && data.wipLimits.late && lateCount > data.wipLimits.late) ? ' ⚠' : ''}</span></h2>
       {column.id === 'doing' && doingCount > data.wipLimits.doing && <p className="warning">⚠ {doingCount}/{data.wipLimits.doing} em andamento. Considere concluir antes de assumir mais.</p>}
       {column.id === 'late' && data.wipLimits.late && lateCount > data.wipLimits.late && <p className="warning">⚠ {lateCount}/{data.wipLimits.late} em atraso. Vale revisar sua capacidade.</p>}
-      {shownTasks.filter(t => t.column === column.id).map((item, index) => <article className="card" key={item.id} draggable onDragStart={event => event.dataTransfer.setData('text/plain', item.id)}>
+      {shownTasks.filter(t => t.column === column.id).map((item, index) => { const overdue = item.column !== 'done' && !!item.deadline && item.deadline < today;
+        const dueSoon = item.column !== 'done' && !!item.deadline && item.deadline >= today && item.deadline <= soonDay;
+        return <article className={`card${overdue ? ' card-overdue' : dueSoon ? ' card-due-soon' : ''}`} key={item.id} draggable onDragStart={event => event.dataTransfer.setData('text/plain', item.id)}>
         <div className="card-heading"><span>{String(index + 1).padStart(2, '0')} / {column.label.toUpperCase()}</span><span className="card-time">{item.estimate} MIN</span></div>
         {column.id === 'doing' && !active && <label className="cycle-select"><input type="checkbox" checked={cycleSelection.includes(item.id)} onChange={event => setCycleSelection(old => event.target.checked ? [...old, item.id] : old.filter(key => key !== item.id))} /> Incluir no próximo ciclo</label>}
         <button className="card-title" onClick={() => { setSelectedTask(item.id); setScope('whole'); setSelectedSlices([]); setSliceInsight(''); }}>{item.name}</button>
-        <div className="meta"><span>Dificuldade {item.difficulty}</span><span>{item.estimate} min</span>{item.deadline && <span>{item.deadline}</span>}{item.deadline && item.deadline < today && item.column !== 'done' && <span className="overdue-badge">⚠ Prazo vencido</span>}{item.planId && <span>↻ {item.occurrenceDate}</span>}{item.column === 'done' && <span>Feita em {displayDate(item.completedAt)}</span>}</div>
-        {!!item.slices.length && <div className="slice-strip" aria-label={`${item.slices.filter(slice => slice.done).length} de ${item.slices.length} etapas concluídas`}>{item.slices.map(slice => <span className={slice.done ? 'slice done' : 'slice'} title={slice.name} key={slice.id}>{slice.name}{slice.done ? ' ✓' : ''}</span>)}</div>}
-      </article>)}{!shownTasks.some(t => t.column === column.id) && <p className="empty-lane">Nenhuma tarefa nesta coluna.</p>}</section>)}</div>}
+        <div className="meta"><span>Dificuldade {item.difficulty}</span><span>{item.estimate} min</span>{item.deadline && <span>{item.deadline}</span>}{overdue && <span className="overdue-badge">⚠ Prazo vencido</span>}{dueSoon && <span className="due-soon-badge">◷ Prazo próximo</span>}{item.planId && <span>↻ {item.occurrenceDate}</span>}{item.column === 'done' && <span>Feita em {displayDate(item.completedAt)}</span>}</div>
+        {!!item.slices.length && <><div className="slice-progress">Etapas <strong>{item.slices.filter(slice => slice.done).length}/{item.slices.length}</strong></div><div className="slice-strip">{item.slices.map(slice => <span className={slice.done ? 'slice done' : 'slice'} title={slice.name} key={slice.id}>{slice.name}{slice.done ? ' ✓' : ''}</span>)}</div></>}
+      </article>; })}{!shownTasks.some(t => t.column === column.id) && <p className="empty-lane">Nenhuma tarefa nesta coluna.</p>}</section>)}</div>}
     {task && <div className={`backdrop${phase === 'decision' ? ' task-detail-backdrop' : ''}`} onMouseDown={e => { if (e.target === e.currentTarget) setSelectedTask(null); }}><section className="dialog" role="dialog" aria-modal="true" aria-label="Detalhes da tarefa">
       <button className="close" onClick={() => setSelectedTask(null)}>✕</button><span className="eyebrow">DETALHES DA TAREFA</span>
       <input className="task-name" aria-label="Nome" value={task.name} onChange={e => changeTask(task.id, x => ({ ...x, name: e.target.value }))} />
