@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
-import { getAISettings, saveAISettings, AI_PROVIDERS, type AISettings, type AIProvider } from './aiSettings';
+import { getAISettings, saveAISettings, waitForAISettingsSave, selectAIProvider, selectAIModel, nextAIChoice, savedAIChoices, emptyAISettings, AI_PROVIDERS, type AISettings, type AIProvider } from './aiSettings';
 import { dateFromDay, isVisible, localDay, materializeToday, weekEnd, type ViewMode, type WeeklyPlan } from './schedule';
 import Connections from './Connections';
 import Statistics from './Statistics';
@@ -125,7 +125,7 @@ function App() {
   const [savedBeforeImport, setSavedBeforeImport] = useState('');
   const [backupAcknowledged, setBackupAcknowledged] = useState(false);
   const [focusBlocking, setFocusBlocking] = useState<FocusBlocking | null>(null);
-  const [aiSettings, setAiSettings] = useState<AISettings>({ provider: '', apiKey: '', geminiApiKey: '', model: '', customEndpoint: '' });
+  const [aiSettings, setAiSettings] = useState<AISettings>(emptyAISettings);
   const [aiKeyVisible, setAiKeyVisible] = useState(false);
   const [aiNotice, setAiNotice] = useState('');
   const [models, setModels] = useState<AIModel[]>([]);
@@ -386,6 +386,7 @@ function App() {
   async function loadModels() {
     setAiBusy(true); setAiNotice('');
     try {
+      await waitForAISettingsSave();
       const response = await chrome.runtime.sendMessage({ type: 'GROQ_MODELS' }) as { models?: AIModel[]; error?: string };
       if (response.error) throw Error(response.error);
       setModels(response.models ?? []);
@@ -393,10 +394,27 @@ function App() {
     } catch (reason) { setAiNotice(reason instanceof Error ? reason.message : 'Não foi possível consultar os modelos.'); }
     finally { setAiBusy(false); }
   }
+  function persistAIChoice(next: AISettings) {
+    setAiSettings(next);
+    setAiNotice('');
+    void saveAISettings(next).catch(() => setAiNotice('Não foi possível salvar a escolha da IA.'));
+  }
+  function cycleAIChoice() {
+    const next = nextAIChoice(aiSettings);
+    if (!next) {
+      setSettingsTab('ai'); setShowSettings(true);
+      setAiNotice('Escolha e salve pelo menos dois modelos para alternar por aqui.');
+      return;
+    }
+    setModels([]);
+    persistAIChoice(next);
+    setToast(`IA ativa: ${AI_PROVIDERS[next.provider as Exclude<AIProvider, ''>]} · ${next.model}`);
+  }
   async function requestProposal(comment = '') {
     if (!name.trim()) return setError('Descreva a tarefa antes de pedir uma proposta.');
     setAiBusy(true); setError('');
     try {
+      await waitForAISettingsSave();
       const response = await chrome.runtime.sendMessage({ type: 'GROQ_TASK_PROPOSAL', input: name, previous: proposal, feedback: comment, areas: skills.slice(0, 50) }) as { proposal?: Proposal; error?: string };
       if (response.error || !response.proposal) throw Error(response.error || 'A IA não retornou uma proposta.');
       setProposal({ ...response.proposal, skill: response.proposal.skill ?? proposal?.skill ?? '' }); setProposalSource('ai'); setFeedback(''); setProposalRevision(value => comment ? value + 1 : 1);
@@ -409,6 +427,7 @@ function App() {
     if (!item.slices.length) return setSliceInsight('Adicione pelo menos um slice para receber uma análise.');
     setInsightBusy(true); setSliceInsight('');
     try {
+      await waitForAISettingsSave();
       const response = await chrome.runtime.sendMessage({ type: 'AI_SLICE_INSIGHT', task: { name: item.name, estimate: item.estimate,
         slices: item.slices.map(slice => ({ name: slice.name, estimateMinutes: slice.estimateMinutes ?? null })) } }) as { insight?: string; error?: string };
       if (response.error || !response.insight) throw Error(response.error || 'A IA não retornou uma sugestão.');
@@ -621,7 +640,7 @@ function App() {
         {extensionRemaining > 0 && <label>Extensão (min) <NumberStepper label="Minutos da extensão" value={Math.min(Math.max(1, requestedExtension), extensionRemaining)} min={1} max={extensionRemaining} onChange={setRequestedExtension} /><button onClick={() => extend(Math.min(Math.max(1, requestedExtension), extensionRemaining))}>Estender ({active.extensions}/2)</button></label>}
         <button onClick={() => { setSelectedTask(active.taskId); setScope(active.scope); setSelectedSlices(active.selectedSliceIds); }}>Abrir detalhes</button></div>
     </section></div>}
-    <form className="create" id="tour-create" onSubmit={addTask}><input aria-label="Nome da tarefa" placeholder="Qual é a próxima tarefa?" value={name} onChange={e => setName(e.target.value)} /><button type="submit">+ Criar tarefa</button><button className="ai-propose" id="tour-ai" type="button" disabled={aiBusy || !name.trim()} onClick={() => void requestProposal()}>{aiBusy ? 'Consultando…' : '✦ Propor com IA'}</button></form>
+    <form className="create" id="tour-create" onSubmit={addTask}><input aria-label="Nome da tarefa" placeholder="Qual é a próxima tarefa?" value={name} onChange={e => setName(e.target.value)} /><button type="submit">+ Criar tarefa</button><div className="ai-create-actions"><button className="ai-propose" id="tour-ai" type="button" disabled={aiBusy || !name.trim()} onClick={() => void requestProposal()}>{aiBusy ? 'Consultando…' : '✦ Propor com IA'}</button><button className="ai-model-switch" type="button" disabled={aiBusy} onClick={cycleAIChoice} title={savedAIChoices(aiSettings).length > 1 ? `Alternar modelo · atual: ${aiSettings.provider} / ${aiSettings.model}` : 'Configurar modelos de IA'} aria-label={savedAIChoices(aiSettings).length > 1 ? `Alternar modelo de IA; atual ${aiSettings.provider} ${aiSettings.model}` : 'Configurar modelos de IA'}>🤖</button></div></form>
     {proposal && <div className="backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setProposal(null); }}><section key={proposalRevision} className="dialog proposal-dialog" role="dialog" aria-modal="true" aria-label={proposalSource === 'ai' ? 'Revisar proposta da IA' : 'Criar tarefa'}>
       <header className="proposal-header"><span className="proposal-spark" aria-hidden="true">{proposalSource === 'ai' ? 'ϟ' : '+'}</span><div><span className="eyebrow">{proposalSource === 'manual' ? 'CRIAR TAREFA' : proposalRevision > 1 ? 'PROPOSTA ATUALIZADA' : 'NOVA PROPOSTA'}</span><h2>{proposalSource === 'manual' ? 'Uma tarefa do seu jeito' : proposalRevision > 1 ? 'Uma nova versão para você' : 'Uma ideia para começar'}</h2><p>Defina as etapas e escolha quando ela deve aparecer.</p></div><button className="close" onClick={() => setProposal(null)} aria-label="Fechar proposta">✕</button></header>
       {error && <p className="warning" role="alert">{error}</p>}
@@ -693,7 +712,7 @@ function App() {
           <div className="ai-settings-form">
             <label>
               Provedor
-              <select value={aiSettings.provider} onChange={e => { setModels([]); setAiSettings((s: AISettings) => ({ ...s, provider: e.target.value as AIProvider, model: '', customEndpoint: '' })); }}>
+              <select value={aiSettings.provider} onChange={e => { setModels([]); persistAIChoice(selectAIProvider(aiSettings, e.target.value as AIProvider)); }}>
                 <option value="">Selecionar provedor</option>
                 {Object.entries(AI_PROVIDERS).map(([key, provider]) => <option key={key} value={key} disabled={!['groq', 'gemini'].includes(key)}>{provider}{!['groq', 'gemini'].includes(key) ? ' · em breve' : ''}</option>)}
               </select>
@@ -702,7 +721,7 @@ function App() {
               <>
                 <label>
                   Modelo
-                  {['groq', 'gemini'].includes(aiSettings.provider) ? <><select value={aiSettings.model} onChange={e => setAiSettings(s => ({ ...s, model: e.target.value }))}><option value="">{models.length ? 'Selecione um modelo' : 'Consulte os modelos da sua conta'}</option>{models.map(model => <option key={model.id} value={model.id}>{model.name} ({model.id})</option>)}</select><button type="button" disabled={aiBusy} onClick={() => void loadModels()}>Atualizar modelos</button></> : <input value={aiSettings.model} onChange={e => setAiSettings(s => ({ ...s, model: e.target.value }))} />}
+                  {['groq', 'gemini'].includes(aiSettings.provider) ? <><select value={aiSettings.model} onChange={e => persistAIChoice(selectAIModel(aiSettings, e.target.value))}><option value="">{models.length ? 'Selecione um modelo' : 'Consulte os modelos da sua conta'}</option>{aiSettings.model && !models.some(model => model.id === aiSettings.model) && <option value={aiSettings.model}>{aiSettings.model} (salvo)</option>}{models.map(model => <option key={model.id} value={model.id}>{model.name} ({model.id})</option>)}</select><button type="button" disabled={aiBusy} onClick={() => void loadModels()}>Atualizar modelos</button></> : <input value={aiSettings.model} onChange={e => setAiSettings(s => ({ ...s, model: e.target.value }))} />}
                 </label>
                 {aiSettings.provider === 'custom' && (
                   <label>
@@ -726,11 +745,11 @@ function App() {
                   </div>
                 </label>
                 <div className="ai-actions">
-                  <button className="primary" onClick={async () => { await saveAISettings(aiSettings); setAiNotice(aiSettings.model ? 'Modelo salvo. Já pode propor uma tarefa.' : 'Chave salva. Agora consulte os modelos e escolha um.'); }} disabled={!['groq', 'gemini'].includes(aiSettings.provider) || !(aiSettings.provider === 'gemini' ? aiSettings.geminiApiKey : aiSettings.apiKey)}>
-                    Salvar chave e modelo
+                  <button className="primary" onClick={async () => { try { await saveAISettings(aiSettings); setAiNotice(aiSettings.model ? 'Chave salva. Modelo pronto para usar.' : 'Chave salva. Agora consulte os modelos e escolha um.'); } catch { setAiNotice('Não foi possível salvar a chave.'); } }} disabled={!['groq', 'gemini'].includes(aiSettings.provider) || !(aiSettings.provider === 'gemini' ? aiSettings.geminiApiKey : aiSettings.apiKey)}>
+                    Salvar chave
                   </button>
                   {(aiSettings.provider === 'gemini' ? aiSettings.geminiApiKey : aiSettings.apiKey) && (
-                    <button className="danger" onClick={async () => { const next = { ...aiSettings, [aiSettings.provider === 'gemini' ? 'geminiApiKey' : 'apiKey']: '', model: '' }; await saveAISettings(next); setAiSettings(next); setAiNotice('Chave removida deste navegador.'); }}>
+                    <button className="danger" onClick={async () => { const next = { ...aiSettings, [aiSettings.provider === 'gemini' ? 'geminiApiKey' : 'apiKey']: '' }; try { await saveAISettings(next); setAiSettings(next); setAiNotice('Chave removida deste navegador.'); } catch { setAiNotice('Não foi possível remover a chave.'); } }}>
                       Remover chave
                     </button>
                   )}

@@ -1111,6 +1111,9 @@ header p {
 .create .ai-propose { background: #725024; color: #fff0d0; border: 1px solid #d5a343; }
 .create .ai-propose:hover { background: #96632b; }
 .create .ai-propose:disabled { background: #48372f; color: #b9a594; border-color: #765b43; }
+.ai-create-actions { display: inline-flex; gap: 6px; align-items: stretch; }
+.create .ai-model-switch { min-width: 42px; padding: 6px; border: 1px solid #c79a61; background: #382a2b; color: #ffdfa5; font-size: 1.1rem; }
+.create .ai-model-switch:hover:not(:disabled) { background: #63404a; border-color: #f4c67e; }
 .proposal-header { position: relative; justify-content: center; text-align: center; padding: 0 45px; min-height: 62px; }
 .proposal-header > div { flex: 1; }
 .proposal-header .proposal-spark { position: absolute; left: 0; top: 2px; }
