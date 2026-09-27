@@ -1,6 +1,7 @@
 import type { Data, HistoryEntry, Task } from './main';
 import type { FocusBlocking } from './focusBlocking';
 import type { WeeklyPlan } from './schedule';
+import { normalizeDomain } from './focusBlocking.ts';
 
 export const BACKUP_VERSION = 1;
 export const MAX_BACKUP_BYTES = 16 * 1024 * 1024;
@@ -127,7 +128,7 @@ export function parseBackup(text: string): Backup {
   const mode = str(blocking.mode, 10);
   if (!['off', 'gentle', 'strict', 'custom'].includes(mode)) throw Error('Perfil de bloqueio inválido.');
   if (typeof d.soundEnabled !== 'boolean') throw Error('Preferência de som inválida.');
-  return {
+  const backup: Backup = {
     schemaVersion: 1, appVersion: str(parsed.appVersion, 30), exportedAt: str(parsed.exportedAt, 40), timeZone: str(parsed.timeZone, 80),
     data: {
       tasks: uniqueIds(list(d.tasks).map(readTask)), history: uniqueIds(list(d.history).map(readHistory)),
@@ -135,11 +136,23 @@ export function parseBackup(text: string): Backup {
       breakPreferences: list(d.breakPreferences, 100).map(v => str(v, 80)),
       wipLimits: { doing: num(wip.doing, 1, 50), late: wip.late == null ? null : num(wip.late, 1, 50) },
       breakDurations: { short: num(breaks.short, 1, 120), long: num(breaks.long, 1, 120) },
-      focusBlocking: { mode: mode as FocusBlocking['mode'], exceptions: list(blocking.exceptions, 1000).map(v => str(v, 253)),
-        customDomains: list(blocking.customDomains, 1000).map(v => str(v, 253)) },
+      focusBlocking: { mode: mode as FocusBlocking['mode'], exceptions: list(blocking.exceptions, 1000).map(readDomain),
+        customDomains: list(blocking.customDomains, 1000).map(readDomain) },
       soundEnabled: d.soundEnabled,
     },
   };
+  const taskIds = new Set(backup.data.tasks.map(task => task.id));
+  // Deleted schedules intentionally leave their already generated tasks intact.
+  if (backup.data.history.some(entry => !taskIds.has(entry.taskId))) {
+    throw Error('O backup contém eventos vinculados a tarefas ausentes.');
+  }
+  return backup;
+}
+
+function readDomain(value: unknown): string {
+  const domain = str(value, 253);
+  if (normalizeDomain(domain) !== domain) throw Error('Domínio inválido no backup.');
+  return domain;
 }
 
 // A collision keeps the local record. The weekly occurrence ledger is merged to prevent duplicates.
@@ -153,6 +166,8 @@ export function mergeBackup(current: Backup, incoming: Backup): Backup {
   }
   return { ...current, data: { ...current.data,
     tasks: [...current.data.tasks, ...incoming.data.tasks.filter(task => !localTasks.has(task.id))],
-    history: [...current.data.history, ...incoming.data.history.filter(entry => !localHistory.has(entry.id))],
+    // A reused task ID can name different tasks on independent profiles. Its
+    // imported events must never be attributed to the local task that wins.
+    history: [...current.data.history, ...incoming.data.history.filter(entry => !localHistory.has(entry.id) && !localTasks.has(entry.taskId))],
     weeklyPlans: [...plans.values()] } };
 }

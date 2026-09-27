@@ -18,12 +18,15 @@ let authorizedScopes = ['https://www.googleapis.com/auth/gmail.readonly'];
 let focusBlocking = { mode: 'off', exceptions: [], customDomains: [] };
 let focusRules = [];
 let newTabNavigations = 0;
+let tasks = [];
+let deadlineAlerted = {};
+const scheduledAlarms = {};
 const requests = [];
 const chrome = {
   action: { onClicked: { addListener(fn) { listeners.click = fn; } }, setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {} },
   runtime: { getURL: path => path, sendMessage: async message => { if (message.type === 'PLAY_ALERT') alerts++; }, onInstalled: { addListener() {} }, onStartup: { addListener() {} }, onMessage: { addListener(fn) { listeners.message = fn; } } },
   identity: { getRedirectURL: () => 'https://extension.chromiumapp.org/', launchWebAuthFlow: async ({ url, interactive }) => { launched++; assert(interactive); const query = new URL(url).searchParams; assert.equal(query.get('code_challenge_method'), 'S256'); return `https://extension.chromiumapp.org/?code=code-test&state=${query.get('state')}`; } },
-  storage: { local: { setAccessLevel: async () => {}, get: async () => ({ session, focusBlocking, soundEnabled, kanbandoro_ai_settings: aiSettings, google_connection_session: googleSession }), set: async item => { if ('google_connection_session' in item) googleSession = item.google_connection_session; if ('session' in item) { session = item.session; listeners.storage?.({ session: { newValue: session } }, 'local'); } }, remove: async () => { googleSession = ''; } }, onChanged: { addListener(fn) { listeners.storage = fn; } } },
+  storage: { local: { setAccessLevel: async () => {}, get: async () => ({ session, tasks, deadlineAlerted, focusBlocking, soundEnabled, kanbandoro_ai_settings: aiSettings, google_connection_session: googleSession }), set: async item => { if ('google_connection_session' in item) googleSession = item.google_connection_session; if ('deadlineAlerted' in item) deadlineAlerted = item.deadlineAlerted; if ('session' in item) { session = item.session; listeners.storage?.({ session: { newValue: session } }, 'local'); } }, remove: async () => { googleSession = ''; } }, onChanged: { addListener(fn) { listeners.storage = fn; } } },
   declarativeNetRequest: { updateSessionRules: async ({ removeRuleIds, addRules }) => { assert.deepEqual(Array.from(removeRuleIds), [900001]); focusRules = addRules; } },
   tabs: { query: async () => [{ id: 42 }], update: async (id, props) => { if (props.url === 'chrome://newtab/' && id === 42) newTabNavigations++; }, create: async () => {}, onActivated: { addListener() {} },
     async sendMessage(id, message) {
@@ -38,9 +41,14 @@ const chrome = {
     injected = true;
     injections++;
   } },
-  alarms: { create: async () => {}, clear: async () => {}, onAlarm: { addListener(fn) { listeners.alarm = fn; } } },
+  alarms: { create: async (name, options) => { scheduledAlarms[name] = options.when; }, clear: async name => { delete scheduledAlarms[name]; }, onAlarm: { addListener(fn) { listeners.alarm = fn; } } },
   notifications: { create: async options => { assert.equal(options.silent, true); notifications++; } },
   offscreen: { hasDocument: async () => false, createDocument: async () => {} },
+};
+const localDate = offset => {
+  const day = new Date();
+  day.setDate(day.getDate() + offset);
+  return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
 };
 vm.runInNewContext(readFileSync('dist/background.js', 'utf8'), { chrome, AbortSignal, URL, crypto: webcrypto, TextEncoder, btoa,
   fetch: async (url, options) => {
@@ -143,6 +151,20 @@ await new Promise(resolve => setTimeout(resolve, 0));
 assert.equal(focusRules.length, 0, 'decision mode releases focus blocking');
 session = { phase: 'running', endsAt: Date.now() + 60_000 };
 focusBlocking = { mode: 'off', exceptions: [], customDomains: [] };
+const dueDay = localDate(new Date().getHours() >= 9 ? 0 : -1);
+tasks = [{ id: 'deadline-1', name: 'Revisar atividade', deadline: dueDay, column: 'doing' },
+  { id: 'deadline-2', name: 'Próxima tarefa', deadline: localDate(1), column: 'todo' }];
+listeners.storage({ tasks: { newValue: tasks } }, 'local');
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(deadlineAlerted['deadline-1'], dueDay);
+assert.equal(scheduledAlarms['deadline-check'], new Date(`${localDate(1)}T09:00:00`).getTime());
+const notified = notifications;
+await listeners.alarm({ name: 'deadline-check' });
+assert.equal(notifications, notified, 'deadline notifications are not repeated');
+tasks = tasks.map(task => task.id === 'deadline-1' ? { ...task, column: 'done' } : task);
+listeners.storage({ tasks: { newValue: tasks } }, 'local');
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(notifications, notified, 'completed tasks do not raise deadline alerts');
 requests.length = 0;
 assert.equal(requests.length, 0);
 const catalog = await aiMessage({ type: 'GROQ_MODELS' });

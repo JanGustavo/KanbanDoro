@@ -100,6 +100,8 @@ function App() {
   const [importPreview, setImportPreview] = useState<Backup | null>(null);
   const [backupError, setBackupError] = useState('');
   const [backupBusy, setBackupBusy] = useState(false);
+  const [savedBeforeImport, setSavedBeforeImport] = useState('');
+  const [backupAcknowledged, setBackupAcknowledged] = useState(false);
   const [focusBlocking, setFocusBlocking] = useState<FocusBlocking | null>(null);
   const [aiSettings, setAiSettings] = useState<AISettings>({ provider: '', apiKey: '', geminiApiKey: '', model: '', customEndpoint: '' });
   const [aiKeyVisible, setAiKeyVisible] = useState(false);
@@ -182,6 +184,8 @@ function App() {
   async function chooseBackup(file?: File) {
     setImportPreview(null);
     setBackupError('');
+    setSavedBeforeImport('');
+    setBackupAcknowledged(false);
     if (!file) return;
     if (file.size > MAX_BACKUP_BYTES) return setBackupError('Arquivo acima de 16 MB.');
     try { setImportPreview(parseBackup(await file.text())); }
@@ -190,13 +194,15 @@ function App() {
   async function restoreBackup(mode: 'merge' | 'replace') {
     if (!importPreview || backupBusy) return;
     if (data.session) return setBackupError('Encerre a sessão ou a pausa antes de restaurar um backup.');
+    if (!backupAcknowledged || savedBeforeImport !== JSON.stringify({ data, focusBlocking, soundEnabled })) {
+      return setBackupError('Exporte e confirme uma cópia atual do quadro antes de importar.');
+    }
     if (mode === 'replace' && !window.confirm('Substituir tarefas, histórico, rotinas e preferências locais? Um backup do estado atual será baixado antes.')) return;
     setBackupBusy(true);
     setBackupError('');
     try {
       const current = makeBackup(data, focusBlocking ?? focusBlockingDefault, soundEnabled);
       const target = mode === 'merge' ? mergeBackup(current, importPreview) : importPreview;
-      saveBackup(current, 'kanbandoro-antes-de-importar');
       await chrome.storage.local.set({ ...target.data, session: null });
       window.location.reload();
     } catch (err) {
@@ -638,8 +644,10 @@ function App() {
         {importPreview && <div className="backup-preview"><h4>Prévia · versão {importPreview.schemaVersion}</h4>
           <p>Exportado em {new Date(importPreview.exportedAt).toLocaleString('pt-BR')} ({importPreview.timeZone}).</p>
           <p>{importPreview.data.tasks.length} tarefas · {importPreview.data.history.length} eventos · {importPreview.data.weeklyPlans.length} rotinas.</p>
-          <p>Ao mesclar, IDs repetidos preservam o registro local; datas de ocorrências semanais são reunidas. Substituir troca os dados locais. As credenciais atuais nunca são importadas.</p>
-          <div className="backup-actions"><button disabled={backupBusy || !!data.session} onClick={() => void restoreBackup('merge')}>Mesclar sem duplicar</button><button className="delete-task" disabled={backupBusy || !!data.session} onClick={() => void restoreBackup('replace')}>Substituir dados</button><button onClick={() => setImportPreview(null)}>Cancelar</button></div>
+          <p>Ao mesclar, IDs repetidos preservam a tarefa local e descartam os eventos importados ligados a ela; datas de ocorrências semanais são reunidas. Substituir troca os dados locais. As credenciais atuais nunca são importadas.</p>
+          <button type="button" onClick={() => { try { saveBackup(makeBackup(data, focusBlocking ?? focusBlockingDefault, soundEnabled), 'kanbandoro-antes-de-importar'); setSavedBeforeImport(JSON.stringify({ data, focusBlocking, soundEnabled })); setBackupAcknowledged(false); setBackupError(''); } catch (err) { setBackupError(err instanceof Error ? err.message : 'Não foi possível exportar.'); } }}>Baixar cópia do quadro atual</button>
+          {savedBeforeImport === JSON.stringify({ data, focusBlocking, soundEnabled }) && <label><input type="checkbox" checked={backupAcknowledged} onChange={e => setBackupAcknowledged(e.target.checked)} /> Confirmei que a cópia foi salva no meu computador</label>}
+          <div className="backup-actions"><button disabled={backupBusy || !!data.session || !backupAcknowledged || savedBeforeImport !== JSON.stringify({ data, focusBlocking, soundEnabled })} onClick={() => void restoreBackup('merge')}>Mesclar sem duplicar</button><button className="delete-task" disabled={backupBusy || !!data.session || !backupAcknowledged || savedBeforeImport !== JSON.stringify({ data, focusBlocking, soundEnabled })} onClick={() => void restoreBackup('replace')}>Substituir dados</button><button onClick={() => setImportPreview(null)}>Cancelar</button></div>
           {data.session && <p className="warning">Encerre o ciclo ou a pausa atual antes de importar.</p>}
         </div>}
       </section>}

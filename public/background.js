@@ -73,6 +73,36 @@ function queueFocusRules() {
 }
 queueFocusRules();
 
+// One notification per task and deadline, at 09:00 on the due date in the
+// browser's local timezone. Missed dates do not produce a backlog of alerts.
+let deadlinePending = Promise.resolve();
+function queueDeadlines() {
+  deadlinePending = deadlinePending.catch(() => {}).then(reconcileDeadlines);
+  deadlinePending.catch(error => console.warn('Não foi possível verificar os prazos:', error));
+  return deadlinePending;
+}
+async function reconcileDeadlines() {
+  const { tasks = [], deadlineAlerted = {} } = await chrome.storage.local.get(['tasks', 'deadlineAlerted']);
+  const now = Date.now();
+  let next = Infinity;
+  const alerted = { ...deadlineAlerted };
+  for (const task of tasks) {
+    if (!task?.id || !/^\d{4}-\d{2}-\d{2}$/.test(task.deadline || '') || task.column === 'done' || task.archivedAt) continue;
+    const due = new Date(`${task.deadline}T09:00:00`).getTime();
+    if (!Number.isFinite(due)) continue;
+    if (due > now) { next = Math.min(next, due); continue; }
+    if (now - due >= 24 * 60 * 60 * 1000 || alerted[task.id] === task.deadline) continue;
+    // Store the marker before notifying; a restarted worker cannot duplicate it.
+    alerted[task.id] = task.deadline;
+    await chrome.storage.local.set({ deadlineAlerted: alerted });
+    await chrome.notifications.create({ type: 'basic', iconUrl: chrome.runtime.getURL('icon128.png'),
+      title: 'Prazo de tarefa', message: `${String(task.name || 'Tarefa').slice(0, 100)} chegou ao prazo. Abra o quadro para revisar.`, silent: true });
+  }
+  await chrome.alarms.clear('deadline-check');
+  if (Number.isFinite(next)) await chrome.alarms.create('deadline-check', { when: next });
+}
+queueDeadlines();
+
 const GROQ_URL = 'https://api.groq.com/openai/v1';
 const GOOGLE_SESSION = 'google_connection_session';
 const GOOGLE_SCOPES = [
@@ -405,9 +435,10 @@ async function reconcile() {
   }
 }
 
-chrome.runtime.onInstalled.addListener(() => { reconcile(); queueFocusRules(); });
-chrome.runtime.onStartup.addListener(() => { reconcile(); queueFocusRules(); });
+chrome.runtime.onInstalled.addListener(() => { reconcile(); queueFocusRules(); queueDeadlines(); });
+chrome.runtime.onStartup.addListener(() => { reconcile(); queueFocusRules(); queueDeadlines(); });
 chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === 'deadline-check') return queueDeadlines();
   if (alarm.name !== 'timer-end') return;
   const { session, soundEnabled } = await chrome.storage.local.get(['session', 'soundEnabled']);
   if (!session || !['running', 'break'].includes(session.phase)) return;
@@ -432,4 +463,5 @@ chrome.storage.onChanged.addListener((changes, area) => {
     broadcastTimer(changes.session.newValue || null);
   }
   if (area === 'local' && (changes.session || changes.focusBlocking)) queueFocusRules();
+  if (area === 'local' && changes.tasks) queueDeadlines();
 });

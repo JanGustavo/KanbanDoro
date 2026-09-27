@@ -30,4 +30,15 @@ const merged = mergeBackup(backup, another);
 assert.equal(merged.data.tasks.length, 2);
 assert.equal(merged.data.tasks[0].name, 'Estudar', 'local data wins a collision');
 assert.deepEqual(merged.data.weeklyPlans[0].generatedDates, ['2026-09-27', '2026-09-28']);
+assert.equal(merged.data.history.length, 1, 'events from a colliding task cannot be assigned to the local task');
+const collision = parseBackup(JSON.stringify({ ...backup, data: { ...backup.data,
+  history: [{ ...data.history[0], id: 'foreign-event' }] } }));
+assert.equal(mergeBackup(backup, collision).data.history.length, 1);
+assert.throws(() => parseBackup(JSON.stringify({ ...backup, data: { ...backup.data,
+  history: [{ ...data.history[0], taskId: 'missing' }] } })), /ausentes/);
+assert.throws(() => parseBackup(JSON.stringify({ ...backup, data: { ...backup.data,
+  focusBlocking: { ...blocking, customDomains: ['bad_domain'] } } })), /Domínio inválido/);
+assert.equal(parseBackup(JSON.stringify({ ...backup, data: { ...backup.data,
+  tasks: [{ ...item, planId: 'deleted-plan' }] } })).data.tasks[0].planId, 'deleted-plan',
+  'past occurrences survive removal of a schedule');
 console.log('Backup JSON, limpeza de credenciais e restauração sem duplicatas validados.');
