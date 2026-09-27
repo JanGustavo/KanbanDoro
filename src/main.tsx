@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
 import { getAISettings, saveAISettings, AI_PROVIDERS, type AISettings, type AIProvider } from './aiSettings';
@@ -6,6 +6,7 @@ import { dateFromDay, isVisible, localDay, materializeToday, weekEnd, type ViewM
 import Connections from './Connections';
 import Statistics from './Statistics';
 import NumberStepper from './NumberStepper';
+import { GuidedTour, type TourStep } from './guidedTour';
 import { focusBlockingDefault, type FocusBlocking } from './focusBlocking';
 import FocusBlockingSettings from './FocusBlockingSettings';
 import { completedCycleCount, elapsedCredit, extensionBudget, nextStepTiming, resumeAfterPause, stepDeadline, suggestedBreakMinutes } from './cycleRules';
@@ -74,6 +75,18 @@ const loadingTips = [
   'Cinco tarefas em andamento são o limite sugerido para manter o foco.',
   'O tempo registrado continua disponível quando você reabre o navegador.',
 ];
+const tourSteps: TourStep[] = [
+  { selector: '#tour-create', title: 'Comece por uma tarefa', description: 'Descreva o que quer fazer. Criar tarefa abre um formulário para revisar tempo, área e etapas antes de salvar.' },
+  { selector: '#tour-ai', title: 'Peça uma proposta à IA', description: 'Depois de escrever a tarefa, a IA pode sugerir etapas, tempo e área. Você revisa tudo antes de salvar.' },
+  { selector: '#tour-board', title: 'Veja o trabalho no quadro', description: 'Arraste tarefas entre colunas e abra um card para editar detalhes. Marque tarefas de A fazer ou Em andamento para montar o próximo ciclo.' },
+  { selector: '#tour-views', title: 'Escolha o recorte', description: 'Alterne entre o dia, a semana, todas as tarefas, o arquivo e as estatísticas. O histórico permanece disponível.' },
+  { selector: '#tour-tools', title: 'Organize seu ambiente', description: 'Filtre por área, ajuste o bloqueio de sites no Modo foco e programe tarefas semanais.' },
+  { selector: '#tour-header-tools', title: 'Volte quando precisar', description: 'Abra a bolha do cronômetro, consulte Connections e configure pausas, IA e o quadro em Preferências.' },
+];
+const tourStorage = {
+  get: async () => Boolean((await chrome.storage.local.get('kanbandoroTourSeenV1')).kanbandoroTourSeenV1),
+  set: async (seen: boolean) => { await chrome.storage.local.set({ kanbandoroTourSeenV1: seen }); },
+};
 const weekdays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const displayDate = (time?: number) => time ? new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(time) : 'Data anterior ao registro';
 function newOccurrence(plan: WeeklyPlan, day: string): Task {
@@ -83,6 +96,7 @@ function newOccurrence(plan: WeeklyPlan, day: string): Task {
 }
 
 function App() {
+  const tourRef = useRef<GuidedTour | null>(null);
   const [data, setData] = useState<Data>(initial);
   const [ready, setReady] = useState(false);
   const [now, setNow] = useState(Date.now());
@@ -193,6 +207,23 @@ function App() {
   useEffect(() => {
     if (ready) void chrome.storage.local.set(data);
   }, [data, ready]);
+  useEffect(() => {
+    if (!ready) return;
+    const tour = new GuidedTour({ steps: tourSteps, storage: tourStorage,
+      onStart: () => { setTipsDismissed(true); void chrome.storage.local.set({ tipsDismissed: true }); },
+      onComplete: () => setToast('Tutorial concluído. Você pode revê-lo pelo ícone ? no cabeçalho.'),
+    });
+    tourRef.current = tour;
+    return () => { tour.destroy(); if (tourRef.current === tour) tourRef.current = null; };
+  }, [ready]);
+  function startTutorial() {
+    setShowStatistics(false);
+    setView('today');
+    setShowSettings(false);
+    setShowConnections(false);
+    setShowFocusMode(false);
+    window.requestAnimationFrame(() => { void tourRef.current?.start({ force: true }); });
+  }
   function changeFocusBlocking(next: FocusBlocking) {
     setFocusBlocking(next);
     void chrome.storage.local.set({ focusBlocking: next });
@@ -543,11 +574,12 @@ function App() {
   return <main className="shell">
     <header><div><span className="eyebrow">TRABALHO COM RITMO</span><h1><span className="brand-kanban">Kanban</span><span className="brand-doro">Doro</span></h1><p>Organize a tarefa. Dê tempo ao que importa.</p></div>
       <div className="header-actions">
-        <div className="header-nav slide-tabs" aria-label="Ferramentas" style={{ '--tab-count': 3, '--active-index': headerTab } as React.CSSProperties}>
+        <div className="header-nav slide-tabs" id="tour-header-tools" aria-label="Ferramentas" style={{ '--tab-count': 3, '--active-index': headerTab } as React.CSSProperties}>
           <button onClick={() => { setHeaderTab(0); void chrome.runtime.sendMessage({ type: 'SHOW_TIMER' }); }}>Bolha</button>
           <button onClick={() => { setHeaderTab(1); setShowConnections(true); }}>Connections</button>
           <button onClick={() => { setHeaderTab(2); setSettingsTab('breaks'); setShowSettings(true); }}>Preferências</button>
         </div>
+        <button className="tour-launch" aria-label="Abrir tutorial" title="Rever o tutorial" onClick={startTutorial}>?</button>
         <span className="pomodoro-count" title="Ciclos de foco concluídos hoje">◷ {todayCycles} hoje</span>
         <div className="status">{active ? '● Ciclo ativo' : '○ Pronto para começar'}</div>
       </div>
@@ -559,6 +591,7 @@ function App() {
     {showFocusMode && <div className="backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setShowFocusMode(false); }}><section className="dialog" role="dialog" aria-modal="true" aria-label="Modo foco"><button className="close" onClick={() => setShowFocusMode(false)} aria-label="Fechar modo foco">✕</button><span className="eyebrow">MODO FOCO</span><h2>Sites que atrapalham o ciclo</h2><p className="settings-hint">O bloqueio funciona somente com o cronômetro em foco. Durante as pausas, a navegação fica liberada.</p><FocusBlockingSettings settings={focusBlocking} onChange={changeFocusBlocking} /></section></div>}
     {!tipsDismissed && data.tasks.length === 0 && <aside className="first-use" aria-label="Primeiros passos">
       <span className="eyebrow">PRIMEIROS PASSOS</span><p>Crie uma tarefa, ajuste o tempo e os slices nos detalhes e inicie seu primeiro ciclo de foco.</p>
+      <button className="first-use-tour" onClick={startTutorial}>Ver tutorial</button>
       <button onClick={() => { setTipsDismissed(true); void chrome.storage.local.set({ tipsDismissed: true }); }}>Entendi</button>
     </aside>}
     {active && <section className="focus" aria-label="Ciclo atual">
@@ -588,7 +621,7 @@ function App() {
         {extensionRemaining > 0 && <label>Extensão (min) <NumberStepper label="Minutos da extensão" value={Math.min(Math.max(1, requestedExtension), extensionRemaining)} min={1} max={extensionRemaining} onChange={setRequestedExtension} /><button onClick={() => extend(Math.min(Math.max(1, requestedExtension), extensionRemaining))}>Estender ({active.extensions}/2)</button></label>}
         <button onClick={() => { setSelectedTask(active.taskId); setScope(active.scope); setSelectedSlices(active.selectedSliceIds); }}>Abrir detalhes</button></div>
     </section></div>}
-    <form className="create" onSubmit={addTask}><input aria-label="Nome da tarefa" placeholder="Qual é a próxima tarefa?" value={name} onChange={e => setName(e.target.value)} /><button type="submit">+ Criar tarefa</button><button className="ai-propose" type="button" disabled={aiBusy || !name.trim()} onClick={() => void requestProposal()}>{aiBusy ? 'Consultando…' : '✦ Propor com IA'}</button></form>
+    <form className="create" id="tour-create" onSubmit={addTask}><input aria-label="Nome da tarefa" placeholder="Qual é a próxima tarefa?" value={name} onChange={e => setName(e.target.value)} /><button type="submit">+ Criar tarefa</button><button className="ai-propose" id="tour-ai" type="button" disabled={aiBusy || !name.trim()} onClick={() => void requestProposal()}>{aiBusy ? 'Consultando…' : '✦ Propor com IA'}</button></form>
     {proposal && <div className="backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setProposal(null); }}><section key={proposalRevision} className="dialog proposal-dialog" role="dialog" aria-modal="true" aria-label={proposalSource === 'ai' ? 'Revisar proposta da IA' : 'Criar tarefa'}>
       <header className="proposal-header"><span className="proposal-spark" aria-hidden="true">{proposalSource === 'ai' ? 'ϟ' : '+'}</span><div><span className="eyebrow">{proposalSource === 'manual' ? 'CRIAR TAREFA' : proposalRevision > 1 ? 'PROPOSTA ATUALIZADA' : 'NOVA PROPOSTA'}</span><h2>{proposalSource === 'manual' ? 'Uma tarefa do seu jeito' : proposalRevision > 1 ? 'Uma nova versão para você' : 'Uma ideia para começar'}</h2><p>Defina as etapas e escolha quando ela deve aparecer.</p></div><button className="close" onClick={() => setProposal(null)} aria-label="Fechar proposta">✕</button></header>
       {error && <p className="warning" role="alert">{error}</p>}
@@ -725,12 +758,12 @@ function App() {
       </section>}
     </section></div>}
     <nav className="board-controls" aria-label="Filtrar tarefas">
-      <div className="board-view-scroll"><div className="board-view-slider slide-tabs" style={{ '--tab-count': 5, '--active-index': showStatistics ? 0 : ['today', 'week', 'all', 'archive'].indexOf(view) + 1 } as React.CSSProperties}>
+      <div className="board-view-scroll" id="tour-views"><div className="board-view-slider slide-tabs" style={{ '--tab-count': 5, '--active-index': showStatistics ? 0 : ['today', 'week', 'all', 'archive'].indexOf(view) + 1 } as React.CSSProperties}>
       <button aria-current={showStatistics ? 'page' : undefined} onClick={() => setShowStatistics(true)}>Estatísticas</button>
       {([['today', 'Hoje'], ['week', 'Esta semana'], ['all', 'Todas'], ['archive', 'Arquivo']] as const).map(([key, label]) =>
         <button key={key} aria-current={!showStatistics && view === key ? 'page' : undefined} onClick={() => { setView(key); setShowStatistics(false); }}>{label}</button>)}
       </div></div>
-      <div className="board-tools">{!showStatistics && <label className="skill-filter">Área <select aria-label="Filtrar por habilidade ou área" value={skillFilter} onChange={event => setSkillFilter(event.target.value)}><option value="">Todas as áreas</option>{skills.map(skill => <option value={skill} key={skill}>{skill}</option>)}<option value="__without_skill__">Sem área</option></select></label>}
+      <div className="board-tools" id="tour-tools">{!showStatistics && <label className="skill-filter">Área <select aria-label="Filtrar por habilidade ou área" value={skillFilter} onChange={event => setSkillFilter(event.target.value)}><option value="">Todas as áreas</option>{skills.map(skill => <option value={skill} key={skill}>{skill}</option>)}<option value="__without_skill__">Sem área</option></select></label>}
       <button className="focus-toggle" onClick={() => setShowFocusMode(true)}>◷ Modo foco</button><button className="weekly-toggle" aria-expanded={weeklyOpen} onClick={() => setWeeklyOpen(open => !open)}>↻ Rotinas semanais</button></div>
     </nav>
     {!!cycleSelection.length && !showStatistics && view !== 'archive' && <section className="cycle-builder" aria-label="Montar ciclo com várias tarefas"><div><span className="eyebrow">CICLO DE FOCO</span><h2>Seu ciclo, suas tarefas</h2><p>{cycleSelection.length} {cycleSelection.length === 1 ? 'tarefa' : 'tarefas'} · {cycleSelection.reduce((sum, key) => sum + (cycleMinutes[key] ?? data.tasks.find(item => item.id === key)?.estimate ?? 0), 0)} min no total. A ordem abaixo define a sequência; avance manualmente quando mudar de tarefa.</p></div>
@@ -745,7 +778,7 @@ function App() {
     {showStatistics ? <Statistics tasks={data.tasks} history={data.history} now={now} wipLimit={data.wipLimits.doing} onClose={() => setShowStatistics(false)} /> : view === 'archive' ? <section className="archive-panel"><div className="archive-heading"><div><span className="eyebrow">HISTÓRICO</span><h2>Tarefas arquivadas</h2></div><label>Dia da conclusão <input type="date" value={archiveDay} onChange={e => setArchiveDay(e.target.value)} /></label></div>
       {shownTasks.length === 0 ? <p>Nenhuma tarefa arquivada para este dia.</p> : shownTasks.slice().sort((a, b) => (b.completedAt ?? b.archivedAt ?? 0) - (a.completedAt ?? a.archivedAt ?? 0)).map(item => <article className="archive-entry" key={item.id}><div><strong>{item.name}</strong><span>{item.completedAt ? `Concluída em ${displayDate(item.completedAt)}` : `Conclusão sem data · arquivada em ${displayDate(item.archivedAt)}`} · {minutes(item.focusSeconds)} de foco</span></div><button onClick={() => setSelectedTask(item.id)}>Detalhes</button></article>)}
     </section> : <div className="board">{columns.map(column => <section className={`lane ${column.id === 'doing' && doingCount > data.wipLimits.doing || column.id === 'late' && data.wipLimits.late && lateCount > data.wipLimits.late ? 'lane-over-wip' : ''}`} key={column.id} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); const key = event.dataTransfer.getData('text/plain'); if (key && !active?.steps?.some(step => step.taskId === key) && key !== active?.taskId) changeTask(key, item => ({ ...item, column: column.id, completedAt: column.id === 'done' ? Date.now() : undefined })); }}>
-      <h2>{column.label} <span>{shownTasks.filter(t => t.column === column.id).length}{(column.id === 'doing' && doingCount > data.wipLimits.doing || column.id === 'late' && data.wipLimits.late && lateCount > data.wipLimits.late) ? ' ⚠' : ''}</span></h2>
+      <h2 id={column.id === 'todo' ? 'tour-board' : undefined}>{column.label} <span>{shownTasks.filter(t => t.column === column.id).length}{(column.id === 'doing' && doingCount > data.wipLimits.doing || column.id === 'late' && data.wipLimits.late && lateCount > data.wipLimits.late) ? ' ⚠' : ''}</span></h2>
       {column.id === 'doing' && doingCount > data.wipLimits.doing && <p className="warning">⚠ {doingCount}/{data.wipLimits.doing} em andamento. Considere concluir antes de assumir mais.</p>}
       {column.id === 'late' && data.wipLimits.late && lateCount > data.wipLimits.late && <p className="warning">⚠ {lateCount}/{data.wipLimits.late} em atraso. Vale revisar sua capacidade.</p>}
       {shownTasks.filter(t => t.column === column.id).map((item, index) => { const overdue = item.column !== 'done' && !!item.deadline && item.deadline < today;

@@ -26,6 +26,8 @@ Em **Modo foco**, acima do quadro, o modo sem distrações fica desligado por pa
 
 ## Produto
 
+Ao abrir um quadro novo, **Ver tutorial** apresenta os controles principais sem criar dados de exemplo. O botão `?` no cabeçalho repete o percurso quando quiser. A lógica reutilizável e o contrato de armazenamento/eventos estão em [docs/TOUR.md](docs/TOUR.md).
+
 O quadro tem filtro por área e contraste próprio nas quatro colunas. **Preferências → Quadro** oferece metas orientativas de WIP (2, 5 ou 8 tarefas) e permite cadastrar áreas livres. A IA recebe apenas os nomes das áreas existentes, pode sugerir uma área nova na proposta e só a salva após você confirmar a criação da tarefa. Selecione tarefas de **A fazer** ou **Em andamento** para montar o próximo ciclo. No alto do quadro ficam filtro por área, **Modo foco** e rotinas; bolha, Connections e Preferências ficam agrupados no cabeçalho.
 
 - Quadro: **A fazer**, **Em andamento**, **Em atraso** e **Concluído**. Prazo é opcional. Uma tarefa pode conter slices concluíveis.
