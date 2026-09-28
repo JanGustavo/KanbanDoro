@@ -452,7 +452,8 @@ function App() {
     if (!originalUrl) return;
     setCheckingLink(index);
     try {
-      const result = await chrome.runtime.sendMessage({ type: 'CHECK_ATTACHMENT', url: originalUrl }) as { check?: Omit<Attachment, 'title'>; error?: string };
+      const result = await chrome.runtime.sendMessage({ type: 'CHECK_ATTACHMENT', url: originalUrl }) as { check?: Omit<Attachment, 'title'>; error?: string } | undefined;
+      if (!result) throw Error('A extensão não respondeu. Recarregue-a e abra o painel novamente.');
       if (result.error || !result.check) throw Error(result.error || 'Não foi possível verificar o link.');
       setProposal(old => old && ({ ...old, attachments: old.attachments.map((item, i) => i === index && item.url === originalUrl ? { ...item, pageTitle: undefined, description: undefined, source: undefined, summary: undefined, ...result.check } : item) }));
     } catch { changeAttachment(index, { verifiedAt: null, reason: 'Não foi possível verificar o link agora.' }); }
@@ -464,8 +465,9 @@ function App() {
     setSummarizingLink(url); setAttachmentError(null);
     try {
       await waitForAISettingsSave();
-      const response = await chrome.runtime.sendMessage({ type: 'AI_ATTACHMENT_SUMMARY', url, verifiedAt: link.verifiedAt, taskName }) as { summary?: string; pageTitle?: string; description?: string; source?: string; error?: string };
-      if (response.error || !response.summary) throw Error(response.error || 'Não foi possível resumir esta página.');
+      const response = await chrome.runtime.sendMessage({ type: 'AI_ATTACHMENT_SUMMARY', url, verifiedAt: link.verifiedAt, taskName }) as { summary?: string; pageTitle?: string; description?: string; source?: string; error?: string } | undefined;
+      if (!response) throw Error('A extensão não respondeu. Recarregue-a em brave://extensions ou chrome://extensions e abra o painel novamente.');
+      if (response.error || !response.summary) throw Error(response.error || 'Não foi possível ler ou resumir esta página.');
       const details = { summary: response.summary, pageTitle: response.pageTitle, description: response.description, source: response.source };
       if (taskId) changeTask(taskId, task => ({ ...task, attachments: task.attachments?.map(item => item.url === url ? { ...item, ...details } : item) }));
       else setProposal(old => old && ({ ...old, attachments: old.attachments.map(item => item.url === url ? { ...item, ...details } : item) }));

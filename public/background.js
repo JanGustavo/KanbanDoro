@@ -224,12 +224,14 @@ async function checkAttachment(value) {
       const preview = await getAttachmentPreview(finalUrl).catch(() => null);
       return { url: finalUrl, verifiedAt: Date.now(), reason: '', ...(preview ? { pageTitle: preview.pageTitle, description: preview.description, source: preview.source } : {}) };
     }
-    return { url, verifiedAt: null, reason: `Não foi possível confirmar o endereço (${response.status}).` };
+    return { url, verifiedAt: null, reason: response.status === 0 ? 'O site redirecionou sem permitir verificar o destino.' : `Não foi possível confirmar o endereço (${response.status}).` };
   } catch {
     return { url, verifiedAt: null, reason: 'O site não permitiu confirmar o link agora.' };
   }
 }
-const ATTACHMENT_HTML_LIMIT = 192 * 1024;
+// Read only the beginning of HTML, including pages larger than this limit.
+// HEAD often reports a very large Content-Length even though title/summary are near the start.
+const ATTACHMENT_HTML_LIMIT = 512 * 1024;
 function readableText(value, limit = 400) {
   return String(value || '').replace(/&#(x[0-9a-f]+|\d+);?/gi, (_, number) => {
     const code = number[0].toLowerCase() === 'x' ? parseInt(number.slice(1), 16) : parseInt(number, 10);
@@ -256,20 +258,20 @@ async function getAttachmentPreview(value, withText = false) {
   if (!response.ok || !finalUrl) throw Error('A página não está disponível para leitura.');
   const type = response.headers.get('content-type') || '';
   if (!/^text\/html\b/i.test(type)) throw Error('A fonte não devolveu uma página HTML.');
-  const size = Number(response.headers.get('content-length'));
-  if (Number.isFinite(size) && size > ATTACHMENT_HTML_LIMIT) throw Error('A página excede o limite de leitura.');
   if (!response.body) throw Error('O site não permitiu ler a página.');
   const reader = response.body.getReader();
-  const chunks = []; let total = 0;
+  const chunks = []; let total = 0; let finished = false;
   try {
     while (true) {
       const { done, value: chunk } = await reader.read();
-      if (done) break;
-      total += chunk.byteLength;
-      if (total > ATTACHMENT_HTML_LIMIT) throw Error('A página excede o limite de leitura.');
-      chunks.push(chunk);
+      if (done) { finished = true; break; }
+      const remaining = ATTACHMENT_HTML_LIMIT - total;
+      if (remaining <= 0) break;
+      chunks.push(chunk.subarray(0, remaining));
+      total += Math.min(chunk.byteLength, remaining);
+      if (total >= ATTACHMENT_HTML_LIMIT) break;
     }
-  } finally { await reader.cancel().catch(() => {}); }
+  } finally { if (!finished) void reader.cancel().catch(() => {}); }
   const decoder = new TextDecoder();
   const html = chunks.map((chunk, index) => decoder.decode(chunk, { stream: index < chunks.length - 1 })).join('');
   const title = htmlMeta(html, 'og:title') || readableText(html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1], 180);
