@@ -49,6 +49,14 @@ const uniqueIds = <T extends { id: string }>(items: T[]) => {
   if (new Set(items.map(item => item.id)).size !== items.length) throw Error('O backup contém identificadores duplicados.');
   return items;
 };
+function readAttachment(value: unknown) {
+  const link = obj(value);
+  const url = str(link.url, 2000);
+  if (!url.startsWith('https://')) throw Error('URL de anexo inválida no backup.');
+  return { title: str(link.title, 200), url, reason: str(link.reason, 500), verifiedAt: link.verifiedAt == null ? null : num(link.verifiedAt),
+    pageTitle: optional(link.pageTitle, v => str(v, 180)), description: optional(link.description, v => str(v, 360)),
+    source: optional(link.source, v => str(v, 100)), summary: optional(link.summary, v => str(v, 600)) };
+}
 
 function readTask(value: unknown): Task {
   const t = obj(value);
@@ -62,12 +70,7 @@ function readTask(value: unknown): Task {
     return { id: identifier(slice.id), name: str(slice.name, 140), done: slice.done,
       estimateMinutes: optional(slice.estimateMinutes, v => num(v, 1, 480)) };
   }));
-  const attachments = optional(t.attachments, v => list(v, 100).map(value => {
-    const link = obj(value);
-    const url = str(link.url, 2000);
-    if (!url.startsWith('https://')) throw Error('URL de anexo inválida no backup.');
-    return { title: str(link.title, 200), url, reason: str(link.reason, 500), verifiedAt: link.verifiedAt == null ? null : num(link.verifiedAt) };
-  }));
+  const attachments = optional(t.attachments, v => list(v, 100).map(readAttachment));
   return {
     id: identifier(t.id), name: str(t.name, 300), description: str(t.description, 20_000),
     difficulty: difficulty as Task['difficulty'], skill: optional(t.skill, v => str(v, 50)),
@@ -98,10 +101,7 @@ function readPlan(value: unknown): WeeklyPlan {
     endsOn: optional(plan.endsOn, date), description: optional(plan.description, v => str(v, 20_000)),
     difficulty: difficulty as WeeklyPlan['difficulty'], skill: optional(plan.skill, v => str(v, 50)),
     sliceNames: optional(plan.sliceNames, v => list(v, 1000).map(x => str(x, 140))),
-    attachments: optional(plan.attachments, v => list(v, 100).map(value => {
-      const a = obj(value);
-      return { title: str(a.title, 200), url: str(a.url, 2000), reason: str(a.reason, 500), verifiedAt: a.verifiedAt == null ? null : num(a.verifiedAt) };
-    })) };
+    attachments: optional(plan.attachments, v => list(v, 100).map(readAttachment)) };
 }
 
 export function makeBackup(data: Data, focusBlocking: FocusBlocking, soundEnabled: boolean): Backup {

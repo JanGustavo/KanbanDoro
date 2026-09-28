@@ -19,6 +19,11 @@ assert.deepEqual(backup.data.areas, ['Programação']);
 
 const imported = parseBackup(serialized);
 assert.equal(imported.data.tasks[0].slices[0].name, 'Ler');
+const withPreview = parseBackup(JSON.stringify({ ...backup, data: { ...backup.data, tasks: [{ ...item, attachments: [
+  { title: 'Pesquisa', url: 'https://example.org/article', verifiedAt: 100, reason: '', pageTitle: 'Hábitos de estudo', description: 'Texto da página', source: 'example.org', summary: 'Revisões curtas são úteis.' },
+] }] } }));
+assert.equal(withPreview.data.tasks[0].attachments[0].summary, 'Revisões curtas são úteis.');
+assert.equal(withPreview.data.tasks[0].attachments[0].pageTitle, 'Hábitos de estudo');
 assert.equal(imported.data.weeklyPlans[0].generatedDates.length, 1);
 assert.throws(() => parseBackup(serialized.replace('"schemaVersion":1', '"schemaVersion":2')), /Versão/);
 assert.throws(() => parseBackup(JSON.stringify({ ...backup, data: { ...backup.data, tasks: [{ ...item, deadline: '2026-02-30' }] } })), /Data inválida/);

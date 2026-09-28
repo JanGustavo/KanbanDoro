@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import './style.css';
 import { getAISettings, saveAISettings, waitForAISettingsSave, selectAIProvider, selectAIModel, nextAIChoice, savedAIChoices, emptyAISettings, AI_PROVIDERS, type AISettings, type AIProvider } from './aiSettings';
 import { verifiedAIModels, type ListedAIModel } from './aiModelCatalog';
+import AttachmentPreview, { type AttachmentInfo } from './AttachmentPreview';
 import { dateFromDay, isVisible, localDay, materializeToday, weekEnd, type ViewMode, type WeeklyPlan } from './schedule';
 import Connections from './Connections';
 import Statistics from './Statistics';
@@ -15,7 +16,7 @@ import { makeBackup, mergeBackup, parseBackup, MAX_BACKUP_BYTES, type Backup } f
 
 type Column = 'todo' | 'doing' | 'late' | 'done';
 type Slice = { id: string; name: string; done: boolean; estimateMinutes?: number };
-type Attachment = { title: string; url: string; verifiedAt: number | null; reason: string };
+type Attachment = AttachmentInfo;
 export type Task = {
   id: string;
   name: string;
@@ -139,6 +140,8 @@ function App() {
   const [proposalTab, setProposalTab] = useState<'details' | 'attachments'>('details');
   const [proposalRevision, setProposalRevision] = useState(0);
   const [checkingLink, setCheckingLink] = useState<number | null>(null);
+  const [summarizingLink, setSummarizingLink] = useState<string | null>(null);
+  const [attachmentError, setAttachmentError] = useState<{ url: string; message: string } | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [tipsDismissed, setTipsDismissed] = useState(true);
   const [tipIndex, setTipIndex] = useState(0);
@@ -451,9 +454,23 @@ function App() {
     try {
       const result = await chrome.runtime.sendMessage({ type: 'CHECK_ATTACHMENT', url: originalUrl }) as { check?: Omit<Attachment, 'title'>; error?: string };
       if (result.error || !result.check) throw Error(result.error || 'Não foi possível verificar o link.');
-      setProposal(old => old && ({ ...old, attachments: old.attachments.map((item, i) => i === index && item.url === originalUrl ? { ...item, ...result.check } : item) }));
+      setProposal(old => old && ({ ...old, attachments: old.attachments.map((item, i) => i === index && item.url === originalUrl ? { ...item, pageTitle: undefined, description: undefined, source: undefined, summary: undefined, ...result.check } : item) }));
     } catch { changeAttachment(index, { verifiedAt: null, reason: 'Não foi possível verificar o link agora.' }); }
     finally { setCheckingLink(null); }
+  }
+  async function summarizeAttachment(link: Attachment, taskName: string, taskId?: string) {
+    if (!link.verifiedAt || summarizingLink) return;
+    const url = link.url;
+    setSummarizingLink(url); setAttachmentError(null);
+    try {
+      await waitForAISettingsSave();
+      const response = await chrome.runtime.sendMessage({ type: 'AI_ATTACHMENT_SUMMARY', url, verifiedAt: link.verifiedAt, taskName }) as { summary?: string; pageTitle?: string; description?: string; source?: string; error?: string };
+      if (response.error || !response.summary) throw Error(response.error || 'Não foi possível resumir esta página.');
+      const details = { summary: response.summary, pageTitle: response.pageTitle, description: response.description, source: response.source };
+      if (taskId) changeTask(taskId, task => ({ ...task, attachments: task.attachments?.map(item => item.url === url ? { ...item, ...details } : item) }));
+      else setProposal(old => old && ({ ...old, attachments: old.attachments.map(item => item.url === url ? { ...item, ...details } : item) }));
+    } catch (reason) { setAttachmentError({ url, message: reason instanceof Error ? reason.message : 'Não foi possível resumir esta página.' }); }
+    finally { setSummarizingLink(null); }
   }
   function acceptProposal() {
     if (!proposal?.name.trim() || !Number.isFinite(proposal.estimate) || proposal.estimate < 1 || proposal.estimate > 480) return setError('Revise o nome e o tempo estimado (1 a 480 minutos).');
@@ -663,9 +680,9 @@ function App() {
         {proposal.attachments.length === 0 && <p className="attachment-empty">Nenhum link sugerido. Você pode adicionar um endereço e verificá-lo.</p>}
         {proposal.attachments.map((link, index) => <div className="attachment-card" key={index}>
           <label>Título <input value={link.title} onChange={e => changeAttachment(index, { title: e.target.value })} /></label>
-          <label>Endereço HTTPS <input type="url" value={link.url} onChange={e => changeAttachment(index, { url: e.target.value, verifiedAt: null, reason: 'Verifique o endereço após editar.' })} /></label>
+          <label>Endereço HTTPS <input type="url" value={link.url} onChange={e => changeAttachment(index, { url: e.target.value, verifiedAt: null, reason: 'Verifique o endereço após editar.', pageTitle: undefined, description: undefined, source: undefined, summary: undefined })} /></label>
           <div className="attachment-meta"><span className={link.verifiedAt ? 'link-ok' : 'link-pending'}>{link.verifiedAt ? '✓ Link respondeu' : link.reason || 'Link ainda não verificado'}</span><button disabled={checkingLink !== null} onClick={() => void verifyAttachment(index)}>{checkingLink === index ? 'Verificando…' : 'Verificar link'}</button><button aria-label={`Remover anexo ${index + 1}`} onClick={() => setProposal({ ...proposal, attachments: proposal.attachments.filter((_, i) => i !== index) })}>Remover</button></div>
-          {link.verifiedAt && <a href={link.url} target="_blank" rel="noopener noreferrer">Abrir página ↗</a>}
+          <AttachmentPreview link={link} busy={summarizingLink === link.url} error={attachmentError?.url === link.url ? attachmentError.message : undefined} onSummarize={() => void summarizeAttachment(link, proposal.name)} />
         </div>)}
         <button onClick={() => setProposal({ ...proposal, attachments: [...proposal.attachments, { title: '', url: '', verifiedAt: null, reason: 'Informe um endereço para verificar.' }] })}>+ Adicionar link</button>
       </div>}
@@ -836,7 +853,7 @@ function App() {
       {task.deadline && task.deadline < today && task.column !== 'done' && <p className="warning">O prazo venceu. A coluna só muda quando você decidir o próximo passo.</p>}
       {active?.taskId === task.id && (phase === 'running' || phase === 'decision') && <button className="delete-task" onClick={() => nextCycleTask('failed')}>Não consegui terminar · registrar tentativa e avançar</button>}
       {task.column === 'done' && <p className="summary">Concluída em {displayDate(task.completedAt)}{task.archivedAt ? ` · arquivada em ${displayDate(task.archivedAt)}` : ''}</p>}
-      {!!task.attachments?.length && <><h3>Anexos</h3><div className="task-attachments">{task.attachments.map((link, index) => <a key={index} href={link.url} target="_blank" rel="noopener noreferrer">{link.title} ↗</a>)}</div></>}
+      {!!task.attachments?.length && <><h3>Anexos</h3><div className="task-attachments">{task.attachments.map((link, index) => <AttachmentPreview key={index} link={link} busy={summarizingLink === link.url} error={attachmentError?.url === link.url ? attachmentError.message : undefined} onSummarize={() => void summarizeAttachment(link, task.name, task.id)} />)}</div></>}
       <div className="task-actions"><button className="primary" disabled={!!active || !!task.archivedAt} onClick={() => { startFocus(task); if (!active) setSelectedTask(null); }}>Iniciar ciclo de {task.estimate} min</button>
         {task.column === 'done' && !task.archivedAt && <button className="archive-task" onClick={() => archiveTask(task)}>Arquivar concluída</button>}
         {task.archivedAt && <button className="archive-task" onClick={() => { changeTask(task.id, current => ({ ...current, archivedAt: undefined })); setSelectedTask(null); setToast('Tarefa restaurada para o quadro.'); }}>Restaurar</button>}

@@ -10,7 +10,7 @@ export type WeeklyPlan = {
   difficulty?: 1 | 2 | 3;
   skill?: string;
   sliceNames?: string[];
-  attachments?: Array<{ title: string; url: string; verifiedAt: number | null; reason: string }>;
+  attachments?: Array<{ title: string; url: string; verifiedAt: number | null; reason: string; pageTitle?: string; description?: string; source?: string; summary?: string }>;
 };
 
 export type ViewMode = 'today' | 'week' | 'all' | 'archive';
