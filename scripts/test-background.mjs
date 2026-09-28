@@ -57,6 +57,7 @@ vm.runInNewContext(readFileSync('dist/background.js', 'utf8'), { chrome, AbortSi
     if (url.startsWith('https://generativelanguage.googleapis.com/')) {
       assert.equal(options.headers['x-goog-api-key'], 'gemini-test-key');
       if (url.includes('/models?pageSize=')) return { ok: true, json: async () => ({ models: [{ name: 'models/gemini-2.5-flash-lite', displayName: 'Flash Lite', supportedGenerationMethods: ['generateContent'] }] }) };
+      if (url.includes('/models/gemini-missing:')) return { ok: false, status: 404, json: async () => ({ error: { message: 'Model gemini-missing not found for this key gemini-test-key' } }) };
       const body = JSON.parse(options.body);
       assert.equal(body.generationConfig.responseMimeType, 'application/json');
       assert(!JSON.stringify(body).includes('gemini-test-key'));
@@ -228,6 +229,12 @@ assert(!requests.at(-1).options.body.includes('private-server-session'));
 aiSettings = { provider: 'gemini', apiKey: 'test-only', geminiApiKey: 'gemini-test-key', model: 'gemini-2.5-flash-lite' };
 assert.match((await aiMessage({ type: 'AI_ATTACHMENT_SUMMARY', url: video.check.url, verifiedAt: video.check.verifiedAt, taskName: 'Estudar' })).summary, /vídeo explica/);
 assert.equal(JSON.parse(requests.at(-1).options.body).contents[0].parts[1].file_data.file_uri, video.check.url);
+aiSettings.model = 'gemini-missing';
+const missingModel = await aiMessage({ type: 'AI_SLICE_INSIGHT', task: { name: 'Estudar', estimate: 25, slices: [{ name: 'Ler', estimateMinutes: 25 }] } });
+assert.match(missingModel.error, /gemini-missing not found/);
+assert.match(missingModel.error, /Atualize a lista de modelos/);
+assert(!missingModel.error.includes('gemini-test-key'), 'Gemini errors must not expose the API key');
+aiSettings.model = 'gemini-2.5-flash-lite';
 assert.equal((await aiMessage({ type: 'GROQ_MODELS' })).models[0].id, 'gemini-2.5-flash-lite');
 assert.equal((await aiMessage({ type: 'GROQ_MODELS' })).models[0].freeTier, true, 'known Gemini free-tier models should be labeled');
 assert.equal((await aiMessage({ type: 'AI_SLICE_INSIGHT', task: { name: 'Estudar', estimate: 100, slices: [{ name: 'Módulo', estimateMinutes: 90 }] } })).insight, 'Divida o slice mais longo em dois.');

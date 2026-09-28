@@ -399,7 +399,9 @@ function App() {
       if (response.error) throw Error(response.error);
       const eligible = verifiedAIModels(provider, response.models);
       setModels(eligible);
-      setAiNotice(eligible.length ? `${eligible.length} modelos encontrados. Selecione um abaixo.` : 'Nenhum modelo compatível com propostas estruturadas foi encontrado.');
+      setAiNotice(eligible.length && aiSettings.model && !eligible.some(model => model.id === aiSettings.model)
+        ? `O modelo salvo (${aiSettings.model}) não apareceu nesta conta. Selecione outro na lista.`
+        : eligible.length ? `${eligible.length} modelos encontrados. Selecione um abaixo.` : 'Nenhum modelo compatível com propostas estruturadas foi encontrado.');
     } catch (reason) { if (requestId === modelsRequestId.current) setAiNotice(reason instanceof Error ? reason.message : 'Não foi possível consultar os modelos.'); }
     finally { if (requestId === modelsRequestId.current) setAiBusy(false); }
   }
@@ -766,7 +768,7 @@ function App() {
                       type={aiKeyVisible ? 'text' : 'password'}
                       placeholder={aiSettings.provider === 'gemini' ? 'Chave do Google AI Studio' : 'Chave da Groq'}
                       value={aiSettings.provider === 'gemini' ? aiSettings.geminiApiKey : aiSettings.apiKey}
-                      onChange={e => setAiSettings((s: AISettings) => ({ ...s, [s.provider === 'gemini' ? 'geminiApiKey' : 'apiKey']: e.target.value }))}
+                      onChange={e => { setModels([]); setAiNotice('Chave alterada. Salve e atualize modelos para confirmar o acesso.'); setAiSettings((s: AISettings) => ({ ...s, [s.provider === 'gemini' ? 'geminiApiKey' : 'apiKey']: e.target.value })); }}
                       autoComplete="off"
                     />
                     <button type="button" onClick={() => setAiKeyVisible(v => !v)} aria-label={aiKeyVisible ? 'Ocultar chave' : 'Mostrar chave'}>
@@ -775,7 +777,7 @@ function App() {
                   </div>
                 </label>
                 <div className="ai-actions">
-                  <button className="primary" onClick={async () => { try { await saveAISettings(aiSettings); setAiNotice(aiSettings.model ? 'Chave salva. Modelo pronto para usar.' : 'Chave salva. Agora consulte os modelos e escolha um.'); } catch { setAiNotice('Não foi possível salvar a chave.'); } }} disabled={!['groq', 'gemini'].includes(aiSettings.provider) || !(aiSettings.provider === 'gemini' ? aiSettings.geminiApiKey : aiSettings.apiKey)}>
+                  <button className="primary" onClick={async () => { try { await saveAISettings(aiSettings); setAiNotice('Chave salva. Atualize a lista e confirme um modelo disponível nesta conta.'); } catch { setAiNotice('Não foi possível salvar a chave.'); } }} disabled={!['groq', 'gemini'].includes(aiSettings.provider) || !(aiSettings.provider === 'gemini' ? aiSettings.geminiApiKey : aiSettings.apiKey)}>
                     Salvar chave
                   </button>
                   {(aiSettings.provider === 'gemini' ? aiSettings.geminiApiKey : aiSettings.apiKey) && (

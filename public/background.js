@@ -339,6 +339,14 @@ async function geminiRequest(path, apiKey, body, timeout = 25000) {
   if (!response.ok) {
     if ([401, 403].includes(response.status)) throw Error('Chave do Gemini inválida ou sem acesso a este modelo.');
     if (response.status === 429) throw Error('Cota do Gemini atingida. Tente novamente mais tarde.');
+    if (response.status === 404) {
+      const detail = await response.json().catch(() => null);
+      const reason = typeof detail?.error?.message === 'string' ? detail.error.message.replaceAll(apiKey, '[chave oculta]').slice(0, 350) : '';
+      const hint = body?.contents?.some(item => item.parts?.some(part => part.file_data))
+        ? 'Confira também se o vídeo é público e se a URL ainda funciona.'
+        : 'Atualize a lista de modelos em Preferências → IA e escolha um disponível.';
+      throw Error(`Gemini retornou 404${reason ? `: ${reason}` : '. Modelo ou recurso não encontrado para esta chave.'} ${hint}`);
+    }
     throw Error(`Gemini não respondeu à solicitação (${response.status}).`);
   }
   return response.json();
