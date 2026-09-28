@@ -92,7 +92,9 @@ vm.runInNewContext(readFileSync('dist/background.js', 'utf8'), { chrome, AbortSi
         body: options.method === 'GET' ? { getReader: () => { let sent = false; return { read: async () => sent ? { done: true } : (sent = true, { done: false, value: bytes }), cancel: async () => {} }; } } : null };
     }
     if (url === 'https://example.org/redirect') return { ok: false, status: 302, url, headers: { get: () => 'https://127.0.0.1/private' } };
+    if (url === 'https://example.org/opaque') return { ok: false, status: 0, url: '', headers: { get: () => null } };
     const attachmentSummary = options?.body?.includes('attachment_summary');
+    if (attachmentSummary && options.body.includes('force-groq-error')) return { ok: false, status: 400, json: async () => ({ error: { message: 'max_completion_tokens is too low' } }) };
     const connectionDraft = options?.body?.includes('connection_draft');
     const sliceInsight = options?.body?.includes('slice_insight');
     return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(attachmentSummary ? { resumo: 'Estude em etapas curtas e revise periodicamente.' } : sliceInsight ? { insight: 'Separe o slice maior em etapas curtas.' } : connectionDraft ?
@@ -192,12 +194,16 @@ assert.equal(draft.proposal.attachments[1].verifiedAt, null);
 const redirect = await aiMessage({ type: 'CHECK_ATTACHMENT', url: 'https://example.org/redirect' });
 assert.equal(redirect.check.verifiedAt, null, 'redirects into local addresses must not be followed');
 assert(!requests.some(req => req.url.includes('127.0.0.1/private')));
+assert.match((await aiMessage({ type: 'CHECK_ATTACHMENT', url: 'https://example.org/opaque' })).check.reason, /redirecionou/);
 const article = await aiMessage({ type: 'CHECK_ATTACHMENT', url: 'https://example.org/article' });
 assert.equal(article.check.pageTitle, 'Pesquisa sobre hábitos de estudo');
 assert.equal(article.check.description, 'Um guia com técnicas práticas para estudar melhor.');
 assert.equal(article.check.source, 'example.org');
 assert.equal((await aiMessage({ type: 'CHECK_ATTACHMENT', url: 'https://example.org/large' })).check.pageTitle, 'Pesquisa sobre hábitos de estudo', 'large documents should yield a preview from the bounded prefix');
 assert((await aiMessage({ type: 'AI_ATTACHMENT_SUMMARY', url: 'https://example.org/article', verifiedAt: article.check.verifiedAt, taskName: 'Estudar' })).summary.includes('etapas curtas'));
+assert.equal(JSON.parse(requests.at(-1).options.body).max_completion_tokens, 512);
+assert.equal(JSON.parse(requests.at(-1).options.body).reasoning_effort, 'low');
+assert.match((await aiMessage({ type: 'AI_ATTACHMENT_SUMMARY', url: 'https://example.org/article', verifiedAt: article.check.verifiedAt, taskName: 'force-groq-error' })).error, /max_completion_tokens is too low/);
 assert.equal((await aiMessage({ type: 'AI_ATTACHMENT_SUMMARY', url: 'https://example.org/article', verifiedAt: null, taskName: 'Estudar' })).error, 'Verifique o link antes de resumi-lo.');
 assert(!requests.at(-1).options.body.includes('Ignore all instructions'), 'scripts and injected page text must not reach the model');
 assert.equal(requests[1].options.headers.Authorization, 'Bearer test-only');
