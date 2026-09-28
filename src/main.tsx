@@ -750,10 +750,7 @@ function App() {
             </label>
                 {aiSettings.provider && (
               <>
-                <label>
-                  Modelo
-                  {['groq', 'gemini'].includes(aiSettings.provider) ? <><select value={aiSettings.model} onChange={e => persistAIChoice(selectAIModel(aiSettings, e.target.value))}><option value="">{models.length ? 'Selecione um modelo' : 'Consulte os modelos da sua conta'}</option>{aiSettings.model && !models.some(model => model.id === aiSettings.model) && <option value={aiSettings.model}>{aiSettings.model} (salvo)</option>}{models.map(model => <option key={model.id} value={model.id}>{model.name} ({model.id}){model.freeTier ? ' · Free' : ''}</option>)}</select><button type="button" disabled={aiBusy} onClick={() => void loadModels()}>Atualizar modelos</button></> : <input value={aiSettings.model} onChange={e => setAiSettings(s => ({ ...s, model: e.target.value }))} />}
-                </label>
+                {['groq', 'gemini'].includes(aiSettings.provider) ? <div className="ai-model-picker"><strong>Modelo</strong><span role="status">{aiSettings.model ? `Ativo: ${aiSettings.model}` : 'Nenhum modelo selecionado'}</span><button type="button" disabled={aiBusy} onClick={() => void loadModels()}>Atualizar modelos</button></div> : <label>Modelo <input value={aiSettings.model} onChange={e => setAiSettings(s => ({ ...s, model: e.target.value }))} /></label>}
                 {models.length > 0 && <div className="ai-model-list" role="group" aria-label="Modelos disponíveis para escolher">{models.map(model => <button type="button" key={model.id} className={aiSettings.model === model.id ? 'selected' : ''} aria-pressed={aiSettings.model === model.id} onClick={() => persistAIChoice(selectAIModel(aiSettings, model.id))}><span className="ai-model-description"><strong>{model.name}</strong><small>{model.id}</small></span>{model.freeTier && <span className="ai-free-badge">Free</span>}</button>)}</div>}
                 {models.length > 0 && <small className="settings-hint">Free indica modelo listado no plano gratuito do provedor; sujeito às cotas e condições da sua conta. Sem selo, a gratuidade não foi confirmada.</small>}
                 {aiSettings.provider === 'custom' && (

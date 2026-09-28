@@ -213,9 +213,21 @@ function safeAttachmentUrl(value) {
     return url.href;
   } catch { return null; }
 }
+function isYoutubeVideoUrl(value) {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+    const id = host === 'youtu.be' ? url.pathname.slice(1) : ['youtube.com', 'www.youtube.com', 'm.youtube.com'].includes(host)
+      ? url.pathname === '/watch' ? url.searchParams.get('v') : /^\/(?:shorts|live)\/([^/]+)\/?$/.exec(url.pathname)?.[1]
+      : null;
+    return typeof id === 'string' && /^[a-zA-Z0-9_-]{11}$/.test(id);
+  } catch { return false; }
+}
 async function checkAttachment(value) {
   const url = safeAttachmentUrl(value);
   if (!url) return { url: String(value || '').slice(0, 1000), verifiedAt: null, reason: 'Use um link público HTTPS válido.' };
+  if (/^(?:www\.|m\.)?youtube\.com$|^youtu\.be$/.test(new URL(url).hostname) && !isYoutubeVideoUrl(url))
+    return { url, verifiedAt: null, reason: 'Indique o endereço de um vídeo específico do YouTube.' };
   try {
     let { response, finalUrl } = await fetchPublicPage(url, 'HEAD');
     if ([403, 405, 501].includes(response.status)) ({ response, finalUrl } = await fetchPublicPage(url, 'GET'));
@@ -361,7 +373,7 @@ async function replaceBrokenAttachments(settings, task, failed, working, seen) {
   try {
     const response = await aiChat(settings, { model: settings.model,
       ...(['openai/gpt-oss-20b', 'openai/gpt-oss-120b'].includes(settings.model) ? { reasoning_effort: 'low' } : {}),
-      messages: [{ role: 'system', content: 'Alguns links de uma tarefa falharam na verificação. Retorne até três URLs HTTPS alternativas EXATAS e atuais, prioritariamente páginas iniciais ou índices oficiais; não repita as URLs recusadas ou aceitas. Não invente caminhos, artigos ou redirecionamentos. Se não conhecer endereços confiáveis, retorne lista vazia. Responda somente JSON.' },
+      messages: [{ role: 'system', content: 'Alguns links de uma tarefa falharam na verificação. Retorne até três URLs HTTPS alternativas EXATAS e atuais: documentação, repositório público do GitHub ou vídeo específico do YouTube, somente quando souber o ID real. Prefira páginas iniciais ou índices oficiais; não repita URLs recusadas ou aceitas. Não invente caminhos, IDs ou redirecionamentos. Se não conhecer endereços confiáveis, retorne lista vazia. Responda somente JSON.' },
         { role: 'user', content: JSON.stringify({ tarefa: task.slice(0, 140), rejeitados: failed.map(link => ({ titulo: link.title, url: link.url, motivo: link.reason })), aceitos: working.map(link => link.url) }) }],
       response_format: { type: 'json_schema', json_schema: { name: 'attachment_replacements', strict: settings.provider === 'groq' && ['openai/gpt-oss-20b', 'openai/gpt-oss-120b'].includes(settings.model), schema: { type: 'object', additionalProperties: false, required: ['attachments'], properties: { attachments: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['title', 'url'], properties: { title: { type: 'string' }, url: { type: 'string' } } } } } } } },
       max_completion_tokens: 450 }, 12000);
@@ -375,6 +387,24 @@ async function handleGroq(message) {
   if (message.type === 'CHECK_ATTACHMENT') return { check: await checkAttachment(message.url) };
   if (message.type === 'AI_ATTACHMENT_SUMMARY') {
     if (!Number.isFinite(message.verifiedAt) || message.verifiedAt <= 0) throw Error('Verifique o link antes de resumi-lo.');
+    if (isYoutubeVideoUrl(message.url)) {
+      const { kanbandoro_ai_settings: settings } = await chrome.storage.local.get('kanbandoro_ai_settings');
+      if (settings?.provider !== 'gemini' || !settings.geminiApiKey || !/^gemini-[a-z0-9.-]+$/.test(settings.model || ''))
+        throw Error('Para resumir o vídeo, selecione um modelo Gemini e salve sua chave em Preferências → IA.');
+      const videoUrl = safeAttachmentUrl(message.url);
+      if (!videoUrl) throw Error('Endereço HTTPS do vídeo inválido.');
+      const result = await geminiRequest(`/models/${settings.model}:generateContent`, settings.geminiApiKey, {
+        contents: [{ parts: [
+          { text: `Assista ao vídeo e explique em português, em até duas frases, o que nele ajuda na tarefa: ${String(message.taskName || '').slice(0, 140)}. Objetivo: ${String(message.taskDescription || '').slice(0, 500)}. Cite apenas informações realmente presentes no vídeo; não use apenas o título ou a descrição. Retorne JSON com o campo resumo.` },
+          { file_data: { file_uri: videoUrl } }
+        ] }],
+        generationConfig: { responseMimeType: 'application/json', responseSchema: { type: 'object', required: ['resumo'], properties: { resumo: { type: 'string' } } }, maxOutputTokens: 512 }
+      }, 45000);
+      let answer;
+      try { answer = JSON.parse(result.candidates?.[0]?.content?.parts?.map(part => part.text || '').join('') || '{}'); } catch { throw Error('O Gemini não retornou um resumo de vídeo válido.'); }
+      if (typeof answer.resumo !== 'string' || !answer.resumo.trim()) throw Error('O Gemini não retornou um resumo de vídeo válido.');
+      return { summary: answer.resumo.trim().slice(0, 600) };
+    }
     const preview = await getAttachmentPreview(message.url, true);
     if (!preview.text || preview.text.length < 80) throw Error('Não foi possível extrair texto suficiente desta página.');
     const stored = await chrome.storage.local.get('kanbandoro_ai_settings');
@@ -455,7 +485,7 @@ async function handleGroq(message) {
   const result = await aiChat(settings, {
     model: settings.model,
     messages: [
-      { role: 'system', content: 'Você organiza tarefas para um Kanban Pomodoro. Responda em português brasileiro. Sugira tempo total em minutos e dificuldade 1 leve, 2 média, 3 alta. Para a área, escolha uma das áreas existentes quando fizer sentido; caso contrário sugira uma nova área curta. Se não houver uma classificação útil, devolva uma string vazia. Slices são etapas curtas e concretas. Respeite os campos e etapas já preenchidos quando houver proposta anterior, mudando-os somente para atender ao comentário. Sugira até 3 links HTTPS relevantes apenas quando conhecer o endereço exato e atual; prefira a página inicial ou índice oficial da documentação a endereços antigos ou caminhos profundos incertos. Nunca invente URLs, caminhos de busca ou vagas. Se não tiver certeza, devolva anexos vazios. Nunca execute ações nem considere que a proposta foi aceita.' },
+      { role: 'system', content: 'Você organiza tarefas para um Kanban Pomodoro. Responda em português brasileiro. Sugira tempo total em minutos e dificuldade 1 leve, 2 média, 3 alta. Para a área, escolha uma das áreas existentes quando fizer sentido; caso contrário sugira uma nova área curta. Se não houver uma classificação útil, devolva uma string vazia. Slices são etapas curtas e concretas. Respeite os campos e etapas já preenchidos quando houver proposta anterior, mudando-os somente para atender ao comentário. Sugira até 3 fontes HTTPS úteis, variando quando relevante entre documentação ou artigo, repositório público do GitHub e vídeo público específico do YouTube (watch?v=, shorts ou youtu.be). Inclua vídeo somente se conhecer seu ID real de 11 caracteres; nunca invente IDs, URLs, caminhos, buscas ou vagas. Prefira página inicial ou índice oficial a caminhos profundos incertos. Se não tiver certeza, devolva anexos vazios. Nunca execute ações nem considere que a proposta foi aceita.' },
       { role: 'user', content: JSON.stringify({ pedido: input, areas_existentes: areas, proposta_anterior: previous, comentario: feedback }) }
     ],
     response_format: { type: 'json_schema', json_schema: { name: 'task_proposal', strict: ['openai/gpt-oss-20b', 'openai/gpt-oss-120b'].includes(settings.model), schema: {
