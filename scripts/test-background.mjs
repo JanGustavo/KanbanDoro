@@ -50,7 +50,8 @@ const localDate = offset => {
   day.setDate(day.getDate() + offset);
   return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
 };
-vm.runInNewContext(readFileSync('dist/background.js', 'utf8'), { chrome, AbortSignal, URL, crypto: webcrypto, TextEncoder, TextDecoder, btoa,
+let transientGeminiErrors = 0;
+vm.runInNewContext(readFileSync('dist/background.js', 'utf8'), { chrome, AbortSignal, URL, crypto: webcrypto, TextEncoder, TextDecoder, btoa, setTimeout,
   fetch: async (url, options) => {
     requests.push({ url, options });
     if (url === 'connections-config.json') return { json: async () => ({ clientId: 'test.apps.googleusercontent.com', apiUrl: 'http://localhost:8000' }) };
@@ -59,6 +60,8 @@ vm.runInNewContext(readFileSync('dist/background.js', 'utf8'), { chrome, AbortSi
       if (url.includes('/models?pageSize=')) return { ok: true, json: async () => ({ models: [{ name: 'models/gemini-2.5-flash-lite', displayName: 'Flash Lite', supportedGenerationMethods: ['generateContent'] }, { name: 'models/gemini-3.8-flash', displayName: 'Flash 3.8', supportedGenerationMethods: [] }] }) };
       if (url.includes('/models/gemini-missing:')) return { ok: false, status: 404, json: async () => ({ error: { message: 'Model gemini-missing not found for this key gemini-test-key' } }) };
       const body = JSON.parse(options.body);
+      if (JSON.stringify(body).includes('temporary-503') && transientGeminiErrors++ === 0) return { ok: false, status: 503 };
+      if (JSON.stringify(body).includes('persistent-503')) return { ok: false, status: 503 };
       if (url.endsWith('/interactions')) {
         assert.equal(body.store, false, 'Interactions should not store task prompts remotely');
         assert.equal(body.response_format.mime_type, 'application/json');
@@ -253,6 +256,11 @@ assert.equal((await aiMessage({ type: 'AI_SLICE_INSIGHT', task: { name: 'Estudar
 assert.equal((await aiMessage({ type: 'GROQ_TASK_PROPOSAL', input: 'Estudar' })).proposal.name, 'Estudar');
 assert.equal((await aiMessage({ type: 'GROQ_CONNECTION_PROPOSAL', kind: 'calendar', prompt: 'Planejar reunião', now: '2026-09-26T12:00:00Z', timeZone: 'America/Sao_Paulo' })).draft.title, 'Reunião');
 aiSettings.model = 'gemini-3.8-flash';
+const temporary = await aiMessage({ type: 'AI_SLICE_INSIGHT', task: { name: 'temporary-503', estimate: 25, slices: [{ name: 'Ler', estimateMinutes: 25 }] } });
+assert.match(temporary.insight, /slice mais longo/);
+assert.equal(transientGeminiErrors, 2, 'Gemini 503 should retry once');
+const persistent = await aiMessage({ type: 'AI_SLICE_INSIGHT', task: { name: 'persistent-503', estimate: 25, slices: [{ name: 'Ler', estimateMinutes: 25 }] } });
+assert.match(persistent.error, /indisponível temporariamente \(503\).*nova tentativa/);
 assert.equal((await aiMessage({ type: 'GROQ_TASK_PROPOSAL', input: 'Estudar' })).proposal.name, 'Estudar');
 assert.equal((await aiMessage({ type: 'AI_SLICE_INSIGHT', task: { name: 'Estudar', estimate: 25, slices: [{ name: 'Ler', estimateMinutes: 25 }] } })).insight, 'Divida o slice mais longo em dois.');
 assert.match((await aiMessage({ type: 'AI_ATTACHMENT_SUMMARY', url: video.check.url, verifiedAt: video.check.verifiedAt, taskName: 'Estudar' })).summary, /vídeo explica/);

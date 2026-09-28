@@ -42,6 +42,18 @@ export function selectAIModel(settings: AISettings, model: string): AISettings {
   return { ...settings, model };
 }
 
+export function toggleAIModel(settings: AISettings, model: string): AISettings {
+  if (settings.provider !== 'groq' && settings.provider !== 'gemini') return settings;
+  const groq = settings.provider === 'groq';
+  const list = groq ? settings.groqSavedModels : settings.geminiSavedModels;
+  const enabled = list.includes(model);
+  const next = enabled ? list.filter(item => item !== model) : remembered(list, model);
+  const current = groq ? settings.groqModel : settings.geminiModel;
+  const selected = enabled && current === model ? next[0] ?? '' : current || (!enabled ? model : '');
+  return normalizeAISettings({ ...settings, model: selected,
+    ...(groq ? { groqModel: selected, groqSavedModels: next } : { geminiModel: selected, geminiSavedModels: next }) });
+}
+
 export function savedAIChoices(settings: AISettings): { provider: 'groq' | 'gemini'; model: string }[] {
   return ([['groq', settings.apiKey, settings.groqSavedModels], ['gemini', settings.geminiApiKey, settings.geminiSavedModels]] as const)
     .flatMap(([provider, key, models]) => key ? models.map(model => ({ provider, model })) : []);

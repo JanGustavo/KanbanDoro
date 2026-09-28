@@ -331,12 +331,18 @@ async function groqRequest(path, apiKey, body, timeout = 25000) {
 }
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta';
 async function geminiRequest(path, apiKey, body, timeout = 25000) {
-  const response = await fetch(GEMINI_URL + path, {
+  const request = () => fetch(GEMINI_URL + path, {
     method: body ? 'POST' : 'GET',
     headers: { 'x-goog-api-key': apiKey, ...(body ? { 'Content-Type': 'application/json' } : {}) },
     ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(timeout)
   });
+  let response = await request();
+  if (response.status === 503) {
+    await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 400));
+    response = await request();
+  }
   if (!response.ok) {
+    if (response.status === 503) throw Error('Gemini indisponível temporariamente (503), mesmo após nova tentativa. Aguarde um pouco ou alterne para Groq.');
     if ([401, 403].includes(response.status)) throw Error('Chave do Gemini inválida ou sem acesso a este modelo.');
     if (response.status === 429) throw Error('Cota do Gemini atingida. Tente novamente mais tarde.');
     if (response.status === 404) {

@@ -1208,13 +1208,20 @@ header p {
 .ai-model-picker { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; margin: 8px 0; }
 .ai-model-picker > span { flex: 1; min-width: 165px; color: #e8c896; font-size: .82rem; overflow-wrap: anywhere; }
 .source-preview-note { display: block; margin: 4px 0 8px; color: #d3bcab; font-size: .76rem; line-height: 1.45; }
-.ai-model-list button { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-width: 0; padding: 9px 10px; text-align: left; background: #302a2e; border: 1px solid #574b50; }
-.ai-model-list button:hover,.ai-model-list button.selected { background: #493239; border-color: #d5a343; }
+.ai-active-label { align-self: center; max-width: 240px; padding: 5px 9px; border: 1px solid #9b7453; border-radius: 8px; color: #f5d6a0; background: #392c30; font-size: .75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-model-row { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 9px 10px; background: #302a2e; border: 1px solid #574b50; border-radius: 8px; }
+.ai-model-row.selected { background: #493239; border-color: #d5a343; }
+.ai-model-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; margin-left: auto; }
+.ai-model-actions button { width: auto; padding: 5px 8px; background: #383238; border: 1px solid #766168; color: #f6e9db; font-size: .72rem; white-space: nowrap; }
+.ai-model-actions button.enabled { border-color: #7baa79; color: #b9e5af; }
+.ai-model-actions button.active { border-color: #e2ba68; color: #ffe1a3; }
+.ai-model-actions button:hover:not(:disabled) { background: #62414a; }
 .ai-model-list button:focus-visible { outline: 2px solid #f1c47c; outline-offset: 1px; }
-.ai-model-description { display: grid; gap: 3px; min-width: 0; }
+.ai-model-description { display: grid; gap: 3px; min-width: 0; flex: 1 1 150px; }
 .ai-model-description strong,.ai-model-description small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ai-model-description small { color: #c5b4af; font-size: .7rem; }
 .ai-free-badge { flex: none; color: #183021; background: #add69b; border-radius: 5px; padding: 2px 5px; font-size: .68rem; font-weight: 800; }
+@media (max-width: 600px) { .ai-model-row { flex-wrap: wrap; } .ai-model-actions { width: 100%; } .ai-active-label { max-width: min(100%, 230px); } }
 @media (max-width: 600px) {
   .blocking-profiles { grid-template-columns: 1fr; }
   .focus-top { padding: 13px 15px; }
