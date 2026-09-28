@@ -433,6 +433,11 @@ function App() {
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'A IA não respondeu.'); }
     finally { setAiBusy(false); }
   }
+  function proposeFromDraft() {
+    if (!proposal || aiBusy) return;
+    const input = [proposal.name, proposal.description].filter(Boolean).join('\n').trim();
+    void requestProposal('Organize esta tarefa usando o que já foi preenchido; preserve os dados úteis e sugira etapas e fontes somente se forem relevantes.', input);
+  }
   async function requestSliceInsight(item: Task) {
     if (!item.slices.length) return setSliceInsight('Adicione pelo menos um slice para receber uma análise.');
     setInsightBusy(true); setSliceInsight('');
@@ -460,13 +465,13 @@ function App() {
     } catch { changeAttachment(index, { verifiedAt: null, reason: 'Não foi possível verificar o link agora.' }); }
     finally { setCheckingLink(null); }
   }
-  async function summarizeAttachment(link: Attachment, taskName: string, taskId?: string) {
+  async function summarizeAttachment(link: Attachment, task: { name: string; description: string; slices: Task['slices'] | Proposal['slices'] }, taskId?: string) {
     if (!link.verifiedAt || summarizingLink) return;
     const url = link.url;
     setSummarizingLink(url); setAttachmentError(null);
     try {
       await waitForAISettingsSave();
-      const response = await chrome.runtime.sendMessage({ type: 'AI_ATTACHMENT_SUMMARY', url, verifiedAt: link.verifiedAt, taskName }) as { summary?: string; pageTitle?: string; description?: string; source?: string; error?: string } | undefined;
+      const response = await chrome.runtime.sendMessage({ type: 'AI_ATTACHMENT_SUMMARY', url, verifiedAt: link.verifiedAt, taskName: task.name, taskDescription: task.description, taskSlices: task.slices.map(slice => typeof slice === 'string' ? slice : slice.name) }) as { summary?: string; pageTitle?: string; description?: string; source?: string; error?: string } | undefined;
       if (!response) throw Error('A extensão não respondeu. Recarregue-a em brave://extensions ou chrome://extensions e abra o painel novamente.');
       if (response.error || !response.summary) throw Error(response.error || 'Não foi possível ler ou resumir esta página.');
       const details = { summary: response.summary, pageTitle: response.pageTitle, description: response.description, source: response.source };
@@ -672,7 +677,7 @@ function App() {
       {error && <p className="warning" role="alert">{error}</p>}
       <div className="proposal-tabs slide-tabs" role="tablist" aria-label="Conteúdo da proposta" style={{ '--tab-count': 2, '--active-index': proposalTab === 'details' ? 0 : 1 } as React.CSSProperties}><button role="tab" aria-selected={proposalTab === 'details'} onClick={() => setProposalTab('details')}>Tarefa e etapas</button><button role="tab" aria-selected={proposalTab === 'attachments'} onClick={() => setProposalTab('attachments')}>Anexos <span>{proposal.attachments.length}</span></button></div>
       {proposalTab === 'details' ? <div className="proposal-pane">
-      <label>Nome <input autoFocus className="task-name" value={proposal.name} onChange={e => { setName(e.target.value); setProposal({ ...proposal, name: e.target.value }); }} onKeyDown={e => { if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); if (!aiBusy) void requestProposal('', proposal.name); } }} /></label>
+      <label>Nome <input autoFocus className="task-name" value={proposal.name} onChange={e => { setName(e.target.value); setProposal({ ...proposal, name: e.target.value }); }} onKeyDown={e => { if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); proposeFromDraft(); } }} /></label>
       <label>Descrição <textarea value={proposal.description} onChange={e => setProposal({ ...proposal, description: e.target.value })} /></label>
       <div className="fields"><label className="highlight-time">Tempo sugerido (min) <NumberStepper label="Tempo estimado da tarefa" value={proposal.estimate} min={1} max={480} onChange={estimate => setProposal({ ...proposal, estimate })} /></label>
       <label>Dificuldade <select value={proposal.difficulty} onChange={e => setProposal({ ...proposal, difficulty: +e.target.value as 1 | 2 | 3 })}><option value="1">1 · leve</option><option value="2">2 · média</option><option value="3">3 · alta</option></select></label></div>
@@ -685,7 +690,7 @@ function App() {
           <label>Título <input value={link.title} onChange={e => changeAttachment(index, { title: e.target.value })} /></label>
           <label>Endereço HTTPS <input type="url" value={link.url} onChange={e => changeAttachment(index, { url: e.target.value, verifiedAt: null, reason: 'Verifique o endereço após editar.', pageTitle: undefined, description: undefined, source: undefined, summary: undefined })} /></label>
           <div className="attachment-meta"><span className={link.verifiedAt ? 'link-ok' : 'link-pending'}>{link.verifiedAt ? '✓ Link respondeu' : link.reason || 'Link ainda não verificado'}</span><button disabled={checkingLink !== null} onClick={() => void verifyAttachment(index)}>{checkingLink === index ? 'Verificando…' : 'Verificar link'}</button><button aria-label={`Remover anexo ${index + 1}`} onClick={() => setProposal({ ...proposal, attachments: proposal.attachments.filter((_, i) => i !== index) })}>Remover</button></div>
-          <AttachmentPreview link={link} busy={summarizingLink === link.url} error={attachmentError?.url === link.url ? attachmentError.message : undefined} onSummarize={() => void summarizeAttachment(link, proposal.name)} />
+          <AttachmentPreview link={link} busy={summarizingLink === link.url} error={attachmentError?.url === link.url ? attachmentError.message : undefined} onSummarize={() => void summarizeAttachment(link, proposal)} />
         </div>)}
         <button onClick={() => setProposal({ ...proposal, attachments: [...proposal.attachments, { title: '', url: '', verifiedAt: null, reason: 'Informe um endereço para verificar.' }] })}>+ Adicionar link</button>
       </div>}
@@ -698,7 +703,7 @@ function App() {
         <small>{schedule.mode === 'selected-days' ? `Termina no domingo ${schedule.startDate ? weekEnd(dateFromDay(schedule.startDate)).split('-').reverse().join('/') : ''}. Depois não se repete.` : 'Uma nova tarefa aparece nos dias escolhidos, a cada semana.'}</small>
       </div>}</fieldset>
       {proposalSource === 'ai' && <label className="revision-label">Quer mudar algo? <textarea placeholder="Ex.: reduza o tempo e separe o backend em duas etapas" value={feedback} onChange={e => setFeedback(e.target.value)} /></label>}
-      <div className="proposal-actions"><button className="reject" onClick={() => { setProposal(null); setFeedback(''); }}>{proposalSource === 'ai' ? 'Rejeitar' : 'Cancelar'}</button>{proposalSource === 'ai' && <button disabled={aiBusy || !feedback.trim()} onClick={() => void requestProposal(feedback)}>Reescrever com IA</button>}<button className="accept" disabled={aiBusy} onClick={acceptProposal}>{schedule.mode === 'once' ? 'Criar tarefa' : 'Criar programação'}</button></div>
+      <div className="proposal-actions"><button className="reject" onClick={() => { setProposal(null); setFeedback(''); }}>{proposalSource === 'ai' ? 'Rejeitar' : 'Cancelar'}</button>{proposalSource === 'manual' && <button className="propose-draft" disabled={aiBusy || !proposal.name.trim()} onClick={proposeFromDraft}>{aiBusy ? 'Consultando…' : '✦ Propor com IA'}</button>}{proposalSource === 'ai' && <button disabled={aiBusy || !feedback.trim()} onClick={() => void requestProposal(feedback, proposal.name)}>Reescrever com IA</button>}<button className="accept" disabled={aiBusy} onClick={acceptProposal}>{schedule.mode === 'once' ? 'Criar tarefa' : 'Criar programação'}</button></div>
     </section></div>}
     {showSettings && <div className="backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setShowSettings(false); }}><section className="dialog preferences-dialog" role="dialog" aria-modal="true" aria-label="Preferências">
       <button className="close" type="button" onClick={() => setShowSettings(false)} aria-label="Fechar preferências">✕</button><span className="eyebrow">PREFERÊNCIAS</span>
@@ -856,7 +861,7 @@ function App() {
       {task.deadline && task.deadline < today && task.column !== 'done' && <p className="warning">O prazo venceu. A coluna só muda quando você decidir o próximo passo.</p>}
       {active?.taskId === task.id && (phase === 'running' || phase === 'decision') && <button className="delete-task" onClick={() => nextCycleTask('failed')}>Não consegui terminar · registrar tentativa e avançar</button>}
       {task.column === 'done' && <p className="summary">Concluída em {displayDate(task.completedAt)}{task.archivedAt ? ` · arquivada em ${displayDate(task.archivedAt)}` : ''}</p>}
-      {!!task.attachments?.length && <><h3>Anexos</h3><div className="task-attachments">{task.attachments.map((link, index) => <AttachmentPreview key={index} link={link} busy={summarizingLink === link.url} error={attachmentError?.url === link.url ? attachmentError.message : undefined} onSummarize={() => void summarizeAttachment(link, task.name, task.id)} />)}</div></>}
+      {!!task.attachments?.length && <><h3>Anexos</h3><div className="task-attachments">{task.attachments.map((link, index) => <AttachmentPreview key={index} link={link} busy={summarizingLink === link.url} error={attachmentError?.url === link.url ? attachmentError.message : undefined} onSummarize={() => void summarizeAttachment(link, task, task.id)} />)}</div></>}
       <div className="task-actions"><button className="primary" disabled={!!active || !!task.archivedAt} onClick={() => { startFocus(task); if (!active) setSelectedTask(null); }}>Iniciar ciclo de {task.estimate} min</button>
         {task.column === 'done' && !task.archivedAt && <button className="archive-task" onClick={() => archiveTask(task)}>Arquivar concluída</button>}
         {task.archivedAt && <button className="archive-task" onClick={() => { changeTask(task.id, current => ({ ...current, archivedAt: undefined })); setSelectedTask(null); setToast('Tarefa restaurada para o quadro.'); }}>Restaurar</button>}

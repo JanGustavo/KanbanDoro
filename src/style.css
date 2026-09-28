@@ -682,6 +682,8 @@ header p {
 .proposal-actions { position: sticky; bottom: -26px; z-index: 1; align-items: center; margin: 20px -26px -26px; padding: 14px 26px; background: #262326f5; border-top: 1px solid #5d454e; }
 .proposal-actions .reject { color: #ffc4c4; background: #662b38; border: 1px solid #ab5060; }
 .proposal-actions .reject:hover { background: #86384a; }
+.proposal-actions .propose-draft { color: #fff0d0; background: #725024; border: 1px solid #d5a343; font-weight: 700; }
+.proposal-actions .propose-draft:hover:not(:disabled) { background: #96632b; }
 .proposal-actions .accept { flex: 1; color: #19221a; font-weight: 800; background: #d9b86b; border: 1px solid #f2d590; }
 .proposal-actions .accept:hover { background: #f0cf80; }
 .proposal-actions button { white-space: nowrap; }
