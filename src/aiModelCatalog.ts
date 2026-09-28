@@ -3,7 +3,7 @@ export type ListedAIModel = { id: string; name: string; freeTier?: boolean };
 // Older extension service workers may still return a catalog without freeTier.
 // Only exact IDs verified in the providers' public free-tier tables are tagged.
 const FREE_GROQ = new Set(['openai/gpt-oss-20b', 'openai/gpt-oss-120b', 'qwen/qwen3.8-27b']);
-const FREE_GEMINI = new Set(['gemini-2.5-flash', 'gemini-2.5-flash-lite']);
+const FREE_GEMINI = new Set(['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.8-flash', 'gemini-3.5-flash-lite']);
 
 export function verifiedAIModels(provider: string, catalog: unknown): ListedAIModel[] {
   if (!Array.isArray(catalog)) return [];

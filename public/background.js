@@ -356,10 +356,27 @@ function geminiSchema(value) {
   if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'additionalProperties').map(([key, item]) => [key, geminiSchema(item)]));
   return value;
 }
+function interactionText(result) {
+  if (result.status && result.status !== 'completed') throw Error('O Gemini não concluiu a solicitação. Tente novamente.');
+  const content = result.steps?.filter(step => step.type === 'model_output').flatMap(step => step.content || []) || [];
+  const output = content.filter(part => part.type === 'text' && typeof part.text === 'string').map(part => part.text).join('');
+  if (!output) throw Error('O Gemini não devolveu texto nesta solicitação.');
+  return output;
+}
+function isGeminiInteractionsModel(model) { return /^gemini-3\.[1-9]\d*-/.test(model); }
 async function aiChat(settings, payload, timeout = 25000) {
   if (settings.provider === 'groq') return groqRequest('/chat/completions', settings.apiKey, payload, timeout);
   // Gemini shares the same schema and validation below; only the transport differs.
   if (!/^gemini-[a-z0-9.-]+$/.test(settings.model)) throw Error('Selecione um modelo Gemini válido.');
+  if (isGeminiInteractionsModel(settings.model)) {
+    const result = await geminiRequest('/interactions', settings.geminiApiKey, {
+      model: settings.model, store: false,
+      system_instruction: payload.messages.find(message => message.role === 'system')?.content ?? '',
+      input: payload.messages.find(message => message.role === 'user')?.content ?? '',
+      response_format: { type: 'text', mime_type: 'application/json', schema: geminiSchema(payload.response_format.json_schema.schema) }
+    }, timeout);
+    return { choices: [{ message: { content: interactionText(result) } }] };
+  }
   const result = await geminiRequest(`/models/${settings.model}:generateContent`, settings.geminiApiKey, {
     systemInstruction: { parts: [{ text: payload.messages.find(message => message.role === 'system')?.content ?? '' }] },
     contents: [{ role: 'user', parts: [{ text: payload.messages.find(message => message.role === 'user')?.content ?? '' }] }],
@@ -401,15 +418,22 @@ async function handleGroq(message) {
         throw Error('Para resumir o vídeo, selecione um modelo Gemini e salve sua chave em Preferências → IA.');
       const videoUrl = safeAttachmentUrl(message.url);
       if (!videoUrl) throw Error('Endereço HTTPS do vídeo inválido.');
-      const result = await geminiRequest(`/models/${settings.model}:generateContent`, settings.geminiApiKey, {
+      const videoPrompt = `Assista ao vídeo e explique em português, em até duas frases, o que nele ajuda na tarefa: ${String(message.taskName || '').slice(0, 140)}. Objetivo: ${String(message.taskDescription || '').slice(0, 500)}. Cite apenas informações realmente presentes no vídeo; não use apenas o título ou a descrição. Retorne JSON com o campo resumo.`;
+      const summarySchema = { type: 'object', required: ['resumo'], properties: { resumo: { type: 'string' } } };
+      const result = isGeminiInteractionsModel(settings.model)
+        ? await geminiRequest('/interactions', settings.geminiApiKey, { model: settings.model, store: false,
+          input: [{ type: 'text', text: videoPrompt }, { type: 'video', uri: videoUrl }],
+          response_format: { type: 'text', mime_type: 'application/json', schema: summarySchema }
+        }, 45000)
+        : await geminiRequest(`/models/${settings.model}:generateContent`, settings.geminiApiKey, {
         contents: [{ parts: [
-          { text: `Assista ao vídeo e explique em português, em até duas frases, o que nele ajuda na tarefa: ${String(message.taskName || '').slice(0, 140)}. Objetivo: ${String(message.taskDescription || '').slice(0, 500)}. Cite apenas informações realmente presentes no vídeo; não use apenas o título ou a descrição. Retorne JSON com o campo resumo.` },
+          { text: videoPrompt },
           { file_data: { file_uri: videoUrl } }
         ] }],
-        generationConfig: { responseMimeType: 'application/json', responseSchema: { type: 'object', required: ['resumo'], properties: { resumo: { type: 'string' } } }, maxOutputTokens: 512 }
+        generationConfig: { responseMimeType: 'application/json', responseSchema: summarySchema, maxOutputTokens: 512 }
       }, 45000);
       let answer;
-      try { answer = JSON.parse(result.candidates?.[0]?.content?.parts?.map(part => part.text || '').join('') || '{}'); } catch { throw Error('O Gemini não retornou um resumo de vídeo válido.'); }
+      try { answer = JSON.parse(isGeminiInteractionsModel(settings.model) ? interactionText(result) : result.candidates?.[0]?.content?.parts?.map(part => part.text || '').join('') || '{}'); } catch { throw Error('O Gemini não retornou um resumo de vídeo válido.'); }
       if (typeof answer.resumo !== 'string' || !answer.resumo.trim()) throw Error('O Gemini não retornou um resumo de vídeo válido.');
       return { summary: answer.resumo.trim().slice(0, 600) };
     }
@@ -437,8 +461,8 @@ async function handleGroq(message) {
       const result = await geminiRequest('/models?pageSize=1000', settings.geminiApiKey);
       // models.list does not include pricing or free-tier eligibility. Keep this allowlist
       // limited to exact text models confirmed in Google's public pricing table.
-      const freeTier = new Set(['gemini-2.5-flash', 'gemini-2.5-flash-lite']);
-      return { models: (result.models || []).filter(model => model.name?.startsWith('models/gemini-') && model.name.includes('flash') && !model.name.includes('preview') && model.supportedGenerationMethods?.includes('generateContent'))
+      const freeTier = new Set(['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.8-flash', 'gemini-3.5-flash-lite']);
+      return { models: (result.models || []).filter(model => model.name?.startsWith('models/gemini-') && model.name.includes('flash') && !model.name.includes('preview') && (model.supportedGenerationMethods?.includes('generateContent') || isGeminiInteractionsModel(model.name.replace('models/', ''))))
         .map(model => ({ id: model.name.replace('models/', ''), name: model.displayName || model.name, freeTier: freeTier.has(model.name.replace('models/', '')) })) };
     }
     const result = await groqRequest('/models', settings.apiKey);

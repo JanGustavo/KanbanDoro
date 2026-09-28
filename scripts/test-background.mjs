@@ -56,9 +56,19 @@ vm.runInNewContext(readFileSync('dist/background.js', 'utf8'), { chrome, AbortSi
     if (url === 'connections-config.json') return { json: async () => ({ clientId: 'test.apps.googleusercontent.com', apiUrl: 'http://localhost:8000' }) };
     if (url.startsWith('https://generativelanguage.googleapis.com/')) {
       assert.equal(options.headers['x-goog-api-key'], 'gemini-test-key');
-      if (url.includes('/models?pageSize=')) return { ok: true, json: async () => ({ models: [{ name: 'models/gemini-2.5-flash-lite', displayName: 'Flash Lite', supportedGenerationMethods: ['generateContent'] }] }) };
+      if (url.includes('/models?pageSize=')) return { ok: true, json: async () => ({ models: [{ name: 'models/gemini-2.5-flash-lite', displayName: 'Flash Lite', supportedGenerationMethods: ['generateContent'] }, { name: 'models/gemini-3.8-flash', displayName: 'Flash 3.8', supportedGenerationMethods: [] }] }) };
       if (url.includes('/models/gemini-missing:')) return { ok: false, status: 404, json: async () => ({ error: { message: 'Model gemini-missing not found for this key gemini-test-key' } }) };
       const body = JSON.parse(options.body);
+      if (url.endsWith('/interactions')) {
+        assert.equal(body.store, false, 'Interactions should not store task prompts remotely');
+        assert.equal(body.response_format.mime_type, 'application/json');
+        const schema = body.response_format.schema.properties;
+        const output = schema.resumo ? { resumo: 'O vídeo explica conceitos para esta tarefa.' }
+          : schema.insight ? { insight: 'Divida o slice mais longo em dois.' }
+            : schema.title ? { title: 'Reunião', description: 'Planejar', start: '', end: '', to: '', subject: '', body: '' }
+              : { name: 'Estudar', description: 'Revisar', difficulty: 1, estimate: 25, skill: 'Estudo', slices: ['Ler'], attachments: [] };
+        return { ok: true, json: async () => ({ status: 'completed', steps: [{ type: 'model_output', content: [{ type: 'text', text: JSON.stringify(output) }] }] }) };
+      }
       assert.equal(body.generationConfig.responseMimeType, 'application/json');
       assert(!JSON.stringify(body).includes('gemini-test-key'));
       const response = body.generationConfig.responseSchema.properties.resumo ? { resumo: 'O vídeo explica conceitos para esta tarefa.' }
@@ -237,9 +247,16 @@ assert(!missingModel.error.includes('gemini-test-key'), 'Gemini errors must not 
 aiSettings.model = 'gemini-2.5-flash-lite';
 assert.equal((await aiMessage({ type: 'GROQ_MODELS' })).models[0].id, 'gemini-2.5-flash-lite');
 assert.equal((await aiMessage({ type: 'GROQ_MODELS' })).models[0].freeTier, true, 'known Gemini free-tier models should be labeled');
+assert.equal((await aiMessage({ type: 'GROQ_MODELS' })).models[1].id, 'gemini-3.8-flash');
+assert.equal((await aiMessage({ type: 'GROQ_MODELS' })).models[1].freeTier, true);
 assert.equal((await aiMessage({ type: 'AI_SLICE_INSIGHT', task: { name: 'Estudar', estimate: 100, slices: [{ name: 'Módulo', estimateMinutes: 90 }] } })).insight, 'Divida o slice mais longo em dois.');
 assert.equal((await aiMessage({ type: 'GROQ_TASK_PROPOSAL', input: 'Estudar' })).proposal.name, 'Estudar');
 assert.equal((await aiMessage({ type: 'GROQ_CONNECTION_PROPOSAL', kind: 'calendar', prompt: 'Planejar reunião', now: '2026-09-26T12:00:00Z', timeZone: 'America/Sao_Paulo' })).draft.title, 'Reunião');
+aiSettings.model = 'gemini-3.8-flash';
+assert.equal((await aiMessage({ type: 'GROQ_TASK_PROPOSAL', input: 'Estudar' })).proposal.name, 'Estudar');
+assert.equal((await aiMessage({ type: 'AI_SLICE_INSIGHT', task: { name: 'Estudar', estimate: 25, slices: [{ name: 'Ler', estimateMinutes: 25 }] } })).insight, 'Divida o slice mais longo em dois.');
+assert.match((await aiMessage({ type: 'AI_ATTACHMENT_SUMMARY', url: video.check.url, verifiedAt: video.check.verifiedAt, taskName: 'Estudar' })).summary, /vídeo explica/);
+assert.equal(JSON.parse(requests.at(-1).options.body).input[1].uri, video.check.url);
 assert(!requests.some(request => request.options?.method === 'POST' && request.url.includes('localhost:8000')), 'an AI draft must not write to Google');
 listeners.message({ type: 'SHOW_TIMER' }, {}, () => {});
 await new Promise(resolve => setTimeout(resolve, 0));

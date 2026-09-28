@@ -399,7 +399,9 @@ function App() {
       if (response.error) throw Error(response.error);
       const eligible = verifiedAIModels(provider, response.models);
       setModels(eligible);
-      setAiNotice(eligible.length && aiSettings.model && !eligible.some(model => model.id === aiSettings.model)
+      setAiNotice(provider === 'gemini' && aiSettings.model.startsWith('gemini-2.5-')
+        ? 'O Gemini 2.5 pode estar indisponível para chaves novas. Escolha Gemini 3.8 Flash ou outro modelo ativo.'
+        : eligible.length && aiSettings.model && !eligible.some(model => model.id === aiSettings.model)
         ? `O modelo salvo (${aiSettings.model}) não apareceu nesta conta. Selecione outro na lista.`
         : eligible.length ? `${eligible.length} modelos encontrados. Selecione um abaixo.` : 'Nenhum modelo compatível com propostas estruturadas foi encontrado.');
     } catch (reason) { if (requestId === modelsRequestId.current) setAiNotice(reason instanceof Error ? reason.message : 'Não foi possível consultar os modelos.'); }
