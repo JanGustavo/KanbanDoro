@@ -96,10 +96,11 @@ vm.runInNewContext(readFileSync('dist/background.js', 'utf8'), { chrome, AbortSi
     if (url === 'https://example.org/missing') return { ok: false, status: 404, url, headers: { get: () => null } };
     if (url === 'https://example.org/forbidden') return { ok: false, status: 403, url, headers: { get: () => null } };
     const attachmentSummary = options?.body?.includes('attachment_summary');
+    const replacement = options?.body?.includes('attachment_replacements');
     if (attachmentSummary && options.body.includes('force-groq-error')) return { ok: false, status: 400, json: async () => ({ error: { message: 'max_completion_tokens is too low' } }) };
     const connectionDraft = options?.body?.includes('connection_draft');
     const sliceInsight = options?.body?.includes('slice_insight');
-    return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(attachmentSummary ? { resumo: 'Estude em etapas curtas e revise periodicamente.' } : sliceInsight ? { insight: 'Separe o slice maior em etapas curtas.' } : connectionDraft ?
+    return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(attachmentSummary ? { resumo: 'Estude em etapas curtas e revise periodicamente.' } : replacement ? { attachments: [{ title: 'Artigo', url: 'https://example.org/article' }, { title: 'Falso', url: 'https://example.org/missing' }] } : sliceInsight ? { insight: 'Separe o slice maior em etapas curtas.' } : connectionDraft ?
       { title: 'Estudar', description: 'Linux', start: '', end: '', to: '', subject: '', body: '' } :
       { name: 'Criar API', description: 'Implementar rotas', difficulty: 2, estimate: 35, skill: 'Programação', slices: ['Rotas', 'Testes'], attachments: [{ title: 'Documentação', url: 'https://example.org/info' }, { title: 'Interno', url: 'http://localhost/private' }] }) } }] }) };
   } });
@@ -192,7 +193,10 @@ assert.equal(draft.proposal.estimate, 35);
 assert.equal(draft.proposal.skill, 'Programação');
 assert(requests.some(request => request.url.includes('api.groq.com') && request.options?.body?.includes('areas_existentes')), 'AI proposals receive the known areas');
 assert.equal(draft.proposal.attachments[0].verifiedAt > 0, true);
-assert.equal(draft.proposal.attachments[1].verifiedAt, null);
+assert.equal(draft.proposal.attachments.length, 2, 'failed suggestions must not be shown');
+assert.equal(draft.proposal.attachments[1].url, 'https://example.org/article');
+assert(draft.proposal.attachments.every(item => item.verifiedAt > 0));
+assert(requests.some(request => request.options?.body?.includes('attachment_replacements')), 'one replacement request should only run when a suggestion fails');
 const redirect = await aiMessage({ type: 'CHECK_ATTACHMENT', url: 'https://example.org/redirect' });
 assert.equal(redirect.check.verifiedAt, null, 'redirects into local addresses must not be followed');
 assert(!requests.some(req => req.url.includes('127.0.0.1/private')));

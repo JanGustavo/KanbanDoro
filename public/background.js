@@ -298,12 +298,12 @@ async function fetchPublicPage(start, method) {
   }
   throw Error('Redirecionamentos em excesso');
 }
-async function groqRequest(path, apiKey, body) {
+async function groqRequest(path, apiKey, body, timeout = 25000) {
   const response = await fetch(GROQ_URL + path, {
     method: body ? 'POST' : 'GET',
     headers: { Authorization: `Bearer ${apiKey}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
     ...(body ? { body: JSON.stringify(body) } : {}),
-    signal: AbortSignal.timeout(25000)
+    signal: AbortSignal.timeout(timeout)
   });
   if (!response.ok) {
     if (response.status === 401) throw Error('Chave da Groq inválida. Revise a configuração.');
@@ -318,11 +318,11 @@ async function groqRequest(path, apiKey, body) {
   return response.json();
 }
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta';
-async function geminiRequest(path, apiKey, body) {
+async function geminiRequest(path, apiKey, body, timeout = 25000) {
   const response = await fetch(GEMINI_URL + path, {
     method: body ? 'POST' : 'GET',
     headers: { 'x-goog-api-key': apiKey, ...(body ? { 'Content-Type': 'application/json' } : {}) },
-    ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(25000)
+    ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(timeout)
   });
   if (!response.ok) {
     if ([401, 403].includes(response.status)) throw Error('Chave do Gemini inválida ou sem acesso a este modelo.');
@@ -336,16 +336,40 @@ function geminiSchema(value) {
   if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'additionalProperties').map(([key, item]) => [key, geminiSchema(item)]));
   return value;
 }
-async function aiChat(settings, payload) {
-  if (settings.provider === 'groq') return groqRequest('/chat/completions', settings.apiKey, payload);
+async function aiChat(settings, payload, timeout = 25000) {
+  if (settings.provider === 'groq') return groqRequest('/chat/completions', settings.apiKey, payload, timeout);
   // Gemini shares the same schema and validation below; only the transport differs.
   if (!/^gemini-[a-z0-9.-]+$/.test(settings.model)) throw Error('Selecione um modelo Gemini válido.');
   const result = await geminiRequest(`/models/${settings.model}:generateContent`, settings.geminiApiKey, {
     systemInstruction: { parts: [{ text: payload.messages.find(message => message.role === 'system')?.content ?? '' }] },
     contents: [{ role: 'user', parts: [{ text: payload.messages.find(message => message.role === 'user')?.content ?? '' }] }],
     generationConfig: { responseMimeType: 'application/json', responseSchema: geminiSchema(payload.response_format.json_schema.schema), maxOutputTokens: payload.max_completion_tokens }
-  });
+  }, timeout);
   return { choices: [{ message: { content: result.candidates?.[0]?.content?.parts?.map(part => part.text ?? '').join('') ?? '' } }] };
+}
+async function verifiedAttachments(candidates, seen) {
+  const checks = await Promise.all(candidates.slice(0, 3).filter(item => typeof item?.title === 'string' && typeof item?.url === 'string')
+    .map(async item => ({ title: item.title.trim().slice(0, 120), ...await checkAttachment(item.url) })));
+  return checks.filter(link => {
+    if (!link.title || !link.verifiedAt || seen.has(link.url)) return false;
+    seen.add(link.url);
+    return true;
+  });
+}
+async function replaceBrokenAttachments(settings, task, failed, working, seen) {
+  if (!failed.length || working.length >= 3) return [];
+  try {
+    const response = await aiChat(settings, { model: settings.model,
+      ...(['openai/gpt-oss-20b', 'openai/gpt-oss-120b'].includes(settings.model) ? { reasoning_effort: 'low' } : {}),
+      messages: [{ role: 'system', content: 'Alguns links de uma tarefa falharam na verificação. Retorne até três URLs HTTPS alternativas EXATAS e atuais, prioritariamente páginas iniciais ou índices oficiais; não repita as URLs recusadas ou aceitas. Não invente caminhos, artigos ou redirecionamentos. Se não conhecer endereços confiáveis, retorne lista vazia. Responda somente JSON.' },
+        { role: 'user', content: JSON.stringify({ tarefa: task.slice(0, 140), rejeitados: failed.map(link => ({ titulo: link.title, url: link.url, motivo: link.reason })), aceitos: working.map(link => link.url) }) }],
+      response_format: { type: 'json_schema', json_schema: { name: 'attachment_replacements', strict: settings.provider === 'groq' && ['openai/gpt-oss-20b', 'openai/gpt-oss-120b'].includes(settings.model), schema: { type: 'object', additionalProperties: false, required: ['attachments'], properties: { attachments: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['title', 'url'], properties: { title: { type: 'string' }, url: { type: 'string' } } } } } } } },
+      max_completion_tokens: 450 }, 12000);
+    const draft = JSON.parse(response.choices?.[0]?.message?.content || '{}');
+    if (!Array.isArray(draft.attachments)) return [];
+    const replacements = draft.attachments.filter(item => !seen.has(safeAttachmentUrl(item?.url))).slice(0, 3 - working.length);
+    return verifiedAttachments(replacements, seen);
+  } catch { return []; } // Sources are optional; a failed retry never invalidates the task proposal.
 }
 async function handleGroq(message) {
   if (message.type === 'CHECK_ATTACHMENT') return { check: await checkAttachment(message.url) };
@@ -446,8 +470,12 @@ async function handleGroq(message) {
   try { draft = JSON.parse(text); } catch { throw Error('O modelo retornou uma proposta incompleta. Tente novamente.'); }
   if (typeof draft.name !== 'string' || !draft.name.trim() || typeof draft.description !== 'string' || typeof draft.skill !== 'string' || !Number.isInteger(draft.estimate) || draft.estimate < 1 || draft.estimate > 480 || ![1, 2, 3].includes(draft.difficulty)
     || !Array.isArray(draft.slices) || draft.slices.some(s => typeof s !== 'string') || !Array.isArray(draft.attachments)) throw Error('A proposta precisa de revisão. Tente novamente.');
-  const attachments = await Promise.all(draft.attachments.slice(0, 3).filter(a => typeof a?.title === 'string' && typeof a?.url === 'string')
-    .map(async a => ({ title: a.title.trim().slice(0, 120), ...await checkAttachment(a.url) })));
+  const candidates = draft.attachments.slice(0, 3).filter(item => typeof item?.title === 'string' && typeof item?.url === 'string');
+  const checked = await Promise.all(candidates.map(async item => ({ title: item.title.trim().slice(0, 120), ...await checkAttachment(item.url) })));
+  const failed = checked.filter(link => !link.verifiedAt);
+  const seen = new Set(checked.map(link => link.url));
+  const attachments = checked.filter(link => link.title && link.verifiedAt);
+  attachments.push(...await replaceBrokenAttachments(settings, draft.name, failed, attachments, seen));
   return { proposal: { name: draft.name.trim().slice(0, 140), description: draft.description.slice(0, 3000), difficulty: draft.difficulty, estimate: draft.estimate, skill: draft.skill.trim().slice(0, 50), slices: draft.slices.filter(s => s.trim()).slice(0, 8).map(s => s.trim().slice(0, 140)), attachments } };
 }
 
