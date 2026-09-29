@@ -60,8 +60,18 @@ export default function GmailConnection({ onDraft }: { onDraft: (message: GmailM
             <small>
               {message.from} · {message.date}
             </small>
-            <p>{message.snippet}</p>
-            <button onClick={() => onDraft(message)}>Criar tarefa deste e-mail</button>
+            <div className="connection-message-actions">
+              <button onClick={() => onDraft(message)}>Criar tarefa deste e-mail</button>
+              <button
+                className="button-link-secondary"
+                title="Abrir este e-mail em uma nova aba do navegador"
+                onClick={() =>
+                  chrome.tabs.create({ url: `https://mail.google.com/mail/u/0/#inbox/${message.id}` })
+                }
+              >
+                Abrir no Gmail ↗
+              </button>
+            </div>
           </article>
         ))}
       </div>
