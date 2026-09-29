@@ -1438,7 +1438,31 @@ header p {
   border-radius: 12px;
   background: #29272a;
   display: grid;
-  gap: 5px;
+  gap: 8px;
+}
+.connection-message-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.button-link-secondary {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #393237;
+  border: 1px solid #6b555e;
+  color: #f3d4be;
+  text-decoration: none;
+  font-size: 0.82rem;
+  transition: all 0.15s ease;
+}
+.button-link-secondary:hover {
+  background: #4a3e47;
+  border-color: #8c6e7b;
+  color: #ffffff;
 }
 .connection-messages small {
   color: #d2ac82;
