@@ -147,9 +147,11 @@ export default function Connections({ onClose, onDraft }: { onClose: () => void;
               {idCopied ? 'ID copiado ✓' : 'Copiar ID da extensão'}
             </button>
             <a
-              href={`mailto:jeeh2200@gmail.com?subject=${encodeURIComponent('KanbanDoro - acesso Connections')}&body=${encodeURIComponent(`Olá! Gostaria de testar as Connections.\n\nMinha conta Google: [preencher]\nID da extensão: ${chrome.runtime.id}\nRedirect URI: ${chrome.identity.getRedirectURL()}\n`)}`}
+              href={`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent('jeeh2200@gmail.com')}&su=${encodeURIComponent('KanbanDoro - acesso Connections')}&body=${encodeURIComponent(`Olá! Gostaria de testar as Connections.\n\nMinha conta Google: [preencher]\nID da extensão: ${chrome.runtime.id}\nRedirect URI: ${chrome.identity.getRedirectURL()}\n`)}`}
+              target="_blank"
+              rel="noopener noreferrer"
             >
-              Pedir acesso por e-mail ↗
+              Pedir acesso pelo Gmail ↗
             </a>
           </div>
         </div>
