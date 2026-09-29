@@ -57,6 +57,16 @@ export default function SupportPix({ onClose, soundEnabled }: { onClose: () => v
 
   return (
     <div className="backdrop support-backdrop" onMouseDown={event => event.target === event.currentTarget && onClose()}>
+      {thanks && (
+        <div className="cycle-confetti" aria-hidden="true">
+          {Array.from({ length: 28 }, (_, index) => (
+            <span
+              key={index}
+              style={{ left: `${(index * 37) % 97}%`, animationDelay: `${((index * 7) % 13) * 0.07}s` }}
+            />
+          ))}
+        </div>
+      )}
       <section className="dialog support-pix" role="dialog" aria-modal="true" aria-label="Apoie o KanbanDoro">
         <button className="close" onClick={onClose} aria-label="Fechar apoio">
           ✕
