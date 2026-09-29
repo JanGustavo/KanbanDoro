@@ -85,6 +85,18 @@ input[type=checkbox]:focus-visible,input[type=radio]:focus-visible {
   padding: 34px 28px;
 }
 
+.layout-divider {
+  border: 0;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.12);
+  margin: 0 calc(-50vw + 50%) 28px calc(-50vw + 50%);
+  width: 100vw;
+}
+
+.shell > .layout-divider:last-child {
+  margin: 32px calc(-50vw + 50%) 0 calc(-50vw + 50%);
+}
+
 header {
   display: flex;
   align-items: center;
@@ -1031,7 +1043,7 @@ header p {
 .focus-task p { max-width: 75ch; color: #d2bdb5; line-height: 1.6; font-size: .85rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 .focus-slices,.slice-strip { display: flex; flex-wrap: wrap; gap: 6px; overflow: visible; }
 .focus-slices { margin-top: 18px; }
-.focus-slices span,.card .slice {
+.focus-slices span,.card .slice,.slice-toggle-btn {
   max-width: 100%;
   border: 1px solid #99746d;
   border-radius: 6px;
@@ -1041,6 +1053,12 @@ header p {
   font-size: .69rem;
   overflow-wrap: anywhere;
   white-space: normal;
+  cursor: pointer;
+  transition: all .15s ease;
+}
+.slice-toggle-btn:hover {
+  border-color: #e2ac68;
+  background: #ffffff12;
 }
 .focus-slices .finished,.card .slice.done { color: #e2ac68; text-decoration: line-through; opacity: .72; }
 .focus-progress { display: flex; align-items: center; gap: 28px; padding: 24px 4px 2px; }
@@ -1056,7 +1074,11 @@ header p {
 }
 .focus-ring > div { display: flex; align-items: center; justify-content: center; flex-direction: column; width: 120px; height: 120px; border-radius: 50%; background: #262125; }
 .focus-ring small,.focus-ring span { color: #cba989; font-size: .6rem; letter-spacing: .12em; }
-.focus-ring .clock { color: #fff3e9; font-size: 2rem; letter-spacing: -.05em; }
+.focus-ring .clock { color: #fff3e9; font-size: 2rem; letter-spacing: -.05em; transition: color .3s ease, text-shadow .3s ease; }
+.focus-ring .clock.clock-green { color: #4ade80; text-shadow: 0 0 12px rgba(74, 222, 128, 0.4); }
+.focus-ring .clock.clock-white { color: #ffffff; text-shadow: 0 0 8px rgba(255, 255, 255, 0.3); }
+.focus-ring .clock.clock-yellow { color: #facc15; text-shadow: 0 0 12px rgba(250, 204, 21, 0.4); }
+.focus-ring .clock.clock-red { color: #f87171; text-shadow: 0 0 14px rgba(248, 113, 113, 0.5); }
 .focus-next { flex: 1; min-width: 0; }
 .focus-next > strong { display: block; margin: 10px 0 5px; font-size: 1rem; }
 .focus-next p { color: #bdaba4; font-size: .8rem; line-height: 1.5; margin: 0 0 14px; }

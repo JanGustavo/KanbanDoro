@@ -627,6 +627,7 @@ function App() {
   if (!ready) return <main className="loading" role="status"><h1>KanbanDoro</h1><p>Preparando seu quadro…</p><small>{loadingTips[tipIndex]}</small></main>;
 
   return <main className="shell">
+    <hr className="layout-divider" />
     <header><div><span className="eyebrow">TRABALHO COM RITMO</span><h1><span className="brand-kanban">Kanban</span><span className="brand-doro">Doro</span></h1><p>Organize a tarefa. Dê tempo ao que importa.</p></div>
       <div className="header-actions">
         <div className="header-nav slide-tabs" id="tour-header-tools" aria-label="Ferramentas" style={{ '--tab-count': 3, '--active-index': headerTab } as React.CSSProperties}>
@@ -653,11 +654,18 @@ function App() {
       <div className="focus-top"><span className="focus-lights" aria-hidden="true"><i /><i /><i /></span><span>KANBANDORO / CICLO ATUAL</span><span className="focus-state">● {phase?.startsWith('intermission') ? 'PAUSA RÁPIDA' : phase === 'break' || phase === 'break-done' ? 'EM PAUSA' : phase === 'running' ? 'EM FOCO' : 'AGUARDANDO VOCÊ'}</span></div>
       <div className="focus-content"><div className="focus-task"><div className="focus-task-heading"><span>{phase === 'break' || phase === 'break-done' ? active.breakType : 'SEU PRÓXIMO PASSO'}</span><span>{active.originalMinutes + active.extensionMinutes} MIN</span></div>
         <h2>{activeTask?.name ?? 'Tarefa removida'}</h2><p>{activeTask?.description || (active.scope === 'whole' ? 'Tarefa inteira' : `${active.selectedSliceIds.length} slices · tempo compartilhado`)}</p>
-        {!!active.steps && <p className="cycle-step-summary">Tarefa {(active.stepIndex ?? 0) + 1} de {active.steps.length} · {active.steps[active.stepIndex ?? 0].minutes} min reservados inicialmente · tempo restante nesta tarefa: {minutes(Math.ceil(Math.max(0, stepRemaining) / 1000))}</p>}
+        {!!active.steps && <p className="cycle-step-summary">Tarefa {(active.stepIndex ?? 0) + 1} de {active.steps.length} · {active.steps[active.stepIndex ?? 0].minutes} min reservados inicialmente · tempo restante nesta tarefa: {minutes(Math.floor(Math.max(0, stepRemaining) / 1000))}</p>}
         {stepNotice && phase === 'running' && <p className="step-notice" role="status">{stepNotice}</p>}
-        {!!activeTask?.slices.length && <div className="focus-slices" aria-label="Etapas da tarefa">{activeTask.slices.map(slice => <span className={slice.done ? 'finished' : ''} key={slice.id}>{slice.name}{slice.done ? ' ✓' : ''}</span>)}</div>}</div>
-      <div className="focus-progress"><div className="focus-ring" style={{ '--ring-progress': `${Math.min(100, Math.max(0, (((phase?.startsWith('intermission') ? active.pauseStartedAt ?? now : now) - active.startedAt) / Math.max(1, active.endsAt - active.startedAt)) * 100))}%` } as React.CSSProperties}><div><small>{phase?.startsWith('intermission') ? 'PAUSA RÁPIDA' : phase === 'break' || phase === 'break-done' ? 'PAUSA' : 'FOCO'}</small><strong className="clock">{phase === 'decision' || phase === 'break-done' || phase === 'intermission-done' ? '00:00' : minutes(Math.ceil((((phase === 'intermission' ? active.pauseEndsAt : active.endsAt) ?? now) - now) / 1000))}</strong><span>{phase?.startsWith('intermission') ? 'restantes da pausa' : 'do ciclo atual'}</span></div></div>
-        <div className="focus-next"><span className="eyebrow">EM SEGUIDA</span><strong>{phase === 'running' ? 'Continue do ponto em que parou.' : phase === 'break' ? 'Aproveite sua pausa.' : 'Escolha o próximo passo.'}</strong><p>{active.scope === 'whole' ? 'Tempo associado à tarefa inteira.' : `Tempo compartilhado entre ${active.selectedSliceIds.length} slices.`}</p><div className="focus-progress-line"><span style={{ width: `${activeTask?.slices.length ? (activeTask.slices.filter(slice => slice.done).length / activeTask.slices.length) * 100 : 0}%` }} /></div><small>{activeTask?.slices.filter(slice => slice.done).length ?? 0} DE {activeTask?.slices.length ?? 0} ETAPAS CONCLUÍDAS</small></div></div></div>
+        {!!activeTask?.slices.length && <div className="focus-slices" aria-label="Etapas da tarefa">{activeTask.slices.map(slice => <button type="button" className={`slice-toggle-btn ${slice.done ? 'finished' : ''}`} key={slice.id} onClick={() => changeTask(activeTask.id, task => ({ ...task, slices: task.slices.map(s => s.id === slice.id ? { ...s, done: !s.done } : s) }))} title="Clique para alternar o status deste slice">{slice.name}{slice.done ? ' ✓' : ''}</button>)}</div>}</div>
+      {(() => {
+        const totalMs = Math.max(1, (active?.stepEndsAt ?? active?.endsAt ?? now) - (active?.stepStartedAt ?? active?.startedAt ?? now));
+        const remMs = (active?.phase === 'intermission' ? active.pauseEndsAt : (active?.stepEndsAt ?? active?.endsAt)) ?? now;
+        const currentRemMs = Math.max(0, remMs - now);
+        const remPercent = (currentRemMs / totalMs) * 100;
+        const clockColorClass = remPercent > 75 ? 'clock-green' : remPercent > 50 ? 'clock-white' : remPercent > 25 ? 'clock-yellow' : 'clock-red';
+        return <div className="focus-progress"><div className="focus-ring" style={{ '--ring-progress': `${Math.min(100, Math.max(0, (((phase?.startsWith('intermission') ? active?.pauseStartedAt ?? now : now) - (active?.startedAt ?? now)) / Math.max(1, (active?.endsAt ?? now) - (active?.startedAt ?? now))) * 100))}%` } as React.CSSProperties}><div><small>{phase?.startsWith('intermission') ? 'PAUSA RÁPIDA' : phase === 'break' || phase === 'break-done' ? 'PAUSA' : 'FOCO'}</small><strong className={`clock ${clockColorClass}`}>{['decision', 'break-done', 'intermission-done', 'post-focus'].includes(phase ?? '') ? '00:00' : minutes(Math.floor(currentRemMs / 1000))}</strong><span>{phase?.startsWith('intermission') ? 'restantes da pausa' : 'do ciclo atual'}</span></div></div>
+        <div className="focus-next"><span className="eyebrow">EM SEGUIDA</span><strong>{phase === 'running' ? 'Continue do ponto em que parou.' : phase === 'break' ? 'Aproveite sua pausa.' : 'Escolha o próximo passo.'}</strong><p>{active?.scope === 'whole' ? 'Tempo associado à tarefa inteira.' : `Tempo compartilhado entre ${active?.selectedSliceIds.length ?? 0} slices.`}</p><div className="focus-progress-line"><span style={{ width: `${activeTask?.slices.length ? (activeTask.slices.filter(slice => slice.done).length / activeTask.slices.length) * 100 : 0}%` }} /></div><small>{activeTask?.slices.filter(slice => slice.done).length ?? 0} DE {activeTask?.slices.length ?? 0} ETAPAS CONCLUÍDAS</small></div></div>;
+      })()}</div>
       <div className="focus-actions">
         {phase === 'running' && <><button onClick={() => (active.stepIndex ?? 0) < (active.steps?.length ?? 1) - 1 ? nextCycleTask() : stopFocus('completed')}>{(active.stepIndex ?? 0) < (active.steps?.length ?? 1) - 1 ? 'Concluir tarefa e avançar ↗' : 'Concluir tarefa e ciclo'}</button><label>Pausa rápida (min) <NumberStepper label="Minutos da pausa rápida" value={quickBreakMinutes} min={1} max={30} onChange={setQuickBreakMinutes} /></label><button onClick={pauseFocus}>Pausar foco</button><button onClick={() => stopFocus('interrupted')}>Interromper e deixar para depois</button><button onClick={() => { stopFocus('interrupted'); if (activeTask) setRestart(activeTask); }}>Interromper e recomeçar</button></>}
         {phase?.startsWith('intermission') && <><span role="status">{phase === 'intermission-done' ? 'A pausa rápida terminou. Seu foco continua parado.' : 'Tempo da tarefa congelado; retome quando voltar.'}</span><button className="primary" onClick={resumeFocus}>Retomar foco</button></>}
@@ -872,7 +880,9 @@ function App() {
         <button className="delete-task" onClick={() => deleteTask(task)}>Apagar tarefa</button></div>
     </section></div>}
     <datalist id="skill-suggestions"><option value="Programação" /><option value="Estudo" /><option value="Escrita" /><option value="Organização" /></datalist>
+    <hr className="layout-divider" />
   </main>;
 }
+
 
 createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>);
