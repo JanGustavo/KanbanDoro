@@ -2,12 +2,15 @@ export interface AISettings {
   provider: AIProvider;
   apiKey: string;
   geminiApiKey: string;
+  openaiApiKey: string;
   model: string;
   customEndpoint: string;
   groqModel: string;
   geminiModel: string;
+  openaiModel: string;
   groqSavedModels: string[];
   geminiSavedModels: string[];
+  openaiSavedModels: string[];
 }
 
 export type AIProvider = 'xai' | 'gemini' | 'groq' | 'openai' | 'custom' | '';
@@ -16,12 +19,15 @@ export const emptyAISettings: AISettings = {
   provider: '',
   apiKey: '',
   geminiApiKey: '',
+  openaiApiKey: '',
   model: '',
   customEndpoint: '',
   groqModel: '',
   geminiModel: '',
+  openaiModel: '',
   groqSavedModels: [],
   geminiSavedModels: [],
+  openaiSavedModels: [],
 };
 
 function remembered(models: unknown, selected: string): string[] {
@@ -33,15 +39,25 @@ export function normalizeAISettings(value: Partial<AISettings> = {}): AISettings
   const provider = value.provider ?? '';
   const groqModel = value.groqModel ?? (provider === 'groq' ? (value.model ?? '') : '');
   const geminiModel = value.geminiModel ?? (provider === 'gemini' ? (value.model ?? '') : '');
+  const openaiModel = value.openaiModel ?? (provider === 'openai' ? (value.model ?? '') : '');
   return {
     ...emptyAISettings,
     ...value,
     provider,
     groqModel,
     geminiModel,
+    openaiModel,
     groqSavedModels: remembered(value.groqSavedModels, groqModel),
     geminiSavedModels: remembered(value.geminiSavedModels, geminiModel),
-    model: provider === 'groq' ? groqModel : provider === 'gemini' ? geminiModel : (value.model ?? ''),
+    openaiSavedModels: remembered(value.openaiSavedModels, openaiModel),
+    model:
+      provider === 'groq'
+        ? groqModel
+        : provider === 'gemini'
+          ? geminiModel
+          : provider === 'openai'
+            ? openaiModel
+            : (value.model ?? ''),
   };
 }
 
@@ -49,7 +65,14 @@ export function selectAIProvider(settings: AISettings, provider: AIProvider): AI
   return normalizeAISettings({
     ...settings,
     provider,
-    model: provider === 'groq' ? settings.groqModel : provider === 'gemini' ? settings.geminiModel : '',
+    model:
+      provider === 'groq'
+        ? settings.groqModel
+        : provider === 'gemini'
+          ? settings.geminiModel
+          : provider === 'openai'
+            ? settings.openaiModel
+            : '',
   });
 }
 
@@ -68,29 +91,42 @@ export function selectAIModel(settings: AISettings, model: string): AISettings {
       geminiModel: model,
       geminiSavedModels: remembered(settings.geminiSavedModels, model),
     });
+  if (settings.provider === 'openai')
+    return normalizeAISettings({
+      ...settings,
+      model,
+      openaiModel: model,
+      openaiSavedModels: remembered(settings.openaiSavedModels, model),
+    });
   return { ...settings, model };
 }
 
 export function toggleAIModel(settings: AISettings, model: string): AISettings {
-  if (settings.provider !== 'groq' && settings.provider !== 'gemini') return settings;
+  if (settings.provider !== 'groq' && settings.provider !== 'gemini' && settings.provider !== 'openai') return settings;
   const groq = settings.provider === 'groq';
-  const list = groq ? settings.groqSavedModels : settings.geminiSavedModels;
+  const openai = settings.provider === 'openai';
+  const list = groq ? settings.groqSavedModels : openai ? settings.openaiSavedModels : settings.geminiSavedModels;
   const enabled = list.includes(model);
   const next = enabled ? list.filter(item => item !== model) : remembered(list, model);
-  const current = groq ? settings.groqModel : settings.geminiModel;
+  const current = groq ? settings.groqModel : openai ? settings.openaiModel : settings.geminiModel;
   const selected = enabled && current === model ? (next[0] ?? '') : current || (!enabled ? model : '');
   return normalizeAISettings({
     ...settings,
     model: selected,
-    ...(groq ? { groqModel: selected, groqSavedModels: next } : { geminiModel: selected, geminiSavedModels: next }),
+    ...(groq
+      ? { groqModel: selected, groqSavedModels: next }
+      : openai
+        ? { openaiModel: selected, openaiSavedModels: next }
+        : { geminiModel: selected, geminiSavedModels: next }),
   });
 }
 
-export function savedAIChoices(settings: AISettings): { provider: 'groq' | 'gemini'; model: string }[] {
+export function savedAIChoices(settings: AISettings): { provider: 'groq' | 'gemini' | 'openai'; model: string }[] {
   return (
     [
       ['groq', settings.apiKey, settings.groqSavedModels],
       ['gemini', settings.geminiApiKey, settings.geminiSavedModels],
+      ['openai', settings.openaiApiKey, settings.openaiSavedModels],
     ] as const
   ).flatMap(([provider, key, models]) => (key ? models.map(model => ({ provider, model })) : []));
 }

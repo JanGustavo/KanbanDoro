@@ -66,10 +66,20 @@ settings = toggleAIModel(settings, 'openai/gpt-oss-20b');
 assert.equal(settings.model, 'openai/gpt-oss-20b');
 await saveAISettings(settings);
 assert.equal((await getAISettings()).geminiModel, 'gemini-2.5-flash');
+settings = { ...settings, openaiApiKey: 'openai-test-key' };
+settings = selectAIProvider(settings, 'openai');
+settings = selectAIModel(settings, 'gpt-6-luna');
+assert.equal(settings.openaiModel, 'gpt-6-luna');
+assert.equal(settings.apiKey, 'groq-test-key');
+assert.equal(settings.geminiApiKey, 'gemini-test-key');
+assert.deepEqual(settings.openaiSavedModels, ['gpt-6-luna']);
+settings = selectAIProvider(settings, 'groq');
+assert.equal(settings.openaiApiKey, 'openai-test-key');
+assert.equal(settings.openaiModel, 'gpt-6-luna');
 settings = { ...settings, geminiApiKey: '' };
 assert.deepEqual(
   savedAIChoices(settings).map(choice => choice.model),
-  ['openai/gpt-oss-20b'],
+  ['openai/gpt-oss-20b', 'gpt-6-luna'],
 );
 assert.equal(nextAIChoice(emptyAISettings), null);
 console.log('Configurações de IA: chaves isoladas, migração e alternância verificadas.');

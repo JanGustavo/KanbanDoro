@@ -568,6 +568,29 @@ async function groqRequest(path, apiKey, body, timeout = 25000) {
   return response.json();
 }
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta';
+const OPENAI_URL = 'https://api.openai.com/v1';
+async function openaiRequest(path, apiKey, body, timeout = 25000) {
+  const response = await fetch(OPENAI_URL + path, {
+    method: body ? 'POST' : 'GET',
+    headers: { Authorization: `Bearer ${apiKey}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+    signal: AbortSignal.timeout(timeout),
+  });
+  if (!response.ok) {
+    if ([401, 403].includes(response.status)) throw Error('Chave da OpenAI inválida ou sem acesso ao modelo.');
+    if (response.status === 429) throw Error('Cota ou saldo da OpenAI atingido. Confira sua conta.');
+    if (response.status === 400 || response.status === 404) {
+      const detail = await response.json().catch(() => null);
+      const reason =
+        typeof detail?.error?.message === 'string'
+          ? detail.error.message.replaceAll(apiKey, '[chave oculta]').slice(0, 260)
+          : '';
+      throw Error(`OpenAI rejeitou a solicitação (${response.status})${reason ? `: ${reason}` : '.'}`);
+    }
+    throw Error(`OpenAI não respondeu à solicitação (${response.status}).`);
+  }
+  return response.json();
+}
 async function geminiRequest(path, apiKey, body, timeout = 25000) {
   const request = () =>
     fetch(GEMINI_URL + path, {
@@ -631,6 +654,33 @@ function isGeminiInteractionsModel(model) {
 }
 async function aiChat(settings, payload, timeout = 25000) {
   if (settings.provider === 'groq') return groqRequest('/chat/completions', settings.apiKey, payload, timeout);
+  if (settings.provider === 'openai') {
+    if (!/^gpt-6-(luna|sol|astra)(?:-[a-z0-9-]+)?$/.test(settings.model))
+      throw Error('Selecione um modelo GPT-6 disponível em sua conta.');
+    const schema = payload.response_format?.json_schema;
+    const result = await openaiRequest(
+      '/responses',
+      settings.openaiApiKey,
+      {
+        model: settings.model,
+        store: false,
+        reasoning: { effort: 'low' },
+        input: payload.messages.map(message => ({ role: message.role, content: message.content })),
+        text: { format: { type: 'json_schema', name: schema.name, strict: true, schema: schema.schema } },
+        max_output_tokens: Math.max(400, (payload.max_completion_tokens || 600) + 256),
+      },
+      timeout,
+    );
+    if (result.status !== 'completed') throw Error('A OpenAI não concluiu a resposta. Tente novamente.');
+    const parts = result.output?.flatMap(item => (item.type === 'message' ? item.content || [] : [])) || [];
+    if (parts.some(part => part.type === 'refusal')) throw Error('A OpenAI recusou esta solicitação.');
+    const content = parts
+      .filter(part => part.type === 'output_text' && typeof part.text === 'string')
+      .map(part => part.text)
+      .join('');
+    if (!content) throw Error('A OpenAI não retornou texto estruturado.');
+    return { choices: [{ message: { content } }] };
+  }
   // Gemini shares the same schema and validation below; only the transport differs.
   if (!/^gemini-[a-z0-9.-]+$/.test(settings.model)) throw Error('Selecione um modelo Gemini válido.');
   if (isGeminiInteractionsModel(settings.model)) {
@@ -834,8 +884,12 @@ async function handleGroq(message) {
     const stored = await chrome.storage.local.get('kanbandoro_ai_settings');
     const settings = stored.kanbandoro_ai_settings;
     if (
-      !['groq', 'gemini'].includes(settings?.provider) ||
-      !(settings.provider === 'gemini' ? settings.geminiApiKey : settings.apiKey) ||
+      !['groq', 'gemini', 'openai'].includes(settings?.provider) ||
+      !(settings.provider === 'gemini'
+        ? settings.geminiApiKey
+        : settings.provider === 'openai'
+          ? settings.openaiApiKey
+          : settings.apiKey) ||
       !settings.model
     )
       throw Error('Configure uma chave e um modelo em Preferências → IA.');
@@ -898,11 +952,23 @@ async function handleGroq(message) {
   const stored = await chrome.storage.local.get('kanbandoro_ai_settings');
   const settings = stored.kanbandoro_ai_settings;
   if (
-    !['groq', 'gemini'].includes(settings?.provider) ||
-    !(settings.provider === 'gemini' ? settings.geminiApiKey : settings.apiKey)
+    !['groq', 'gemini', 'openai'].includes(settings?.provider) ||
+    !(settings.provider === 'gemini'
+      ? settings.geminiApiKey
+      : settings.provider === 'openai'
+        ? settings.openaiApiKey
+        : settings.apiKey)
   )
     throw Error('Salve a chave do provedor escolhido em Preferências → IA.');
   if (message.type === 'GROQ_MODELS') {
+    if (settings.provider === 'openai') {
+      const result = await openaiRequest('/models', settings.openaiApiKey);
+      return {
+        models: (result.data || [])
+          .filter(model => /^gpt-6-(luna|sol|astra)(?:-[a-z0-9-]+)?$/.test(model.id))
+          .map(model => ({ id: model.id, name: model.id, freeTier: false })),
+      };
+    }
     if (settings.provider === 'gemini') {
       const result = await geminiRequest('/models?pageSize=1000', settings.geminiApiKey);
       // models.list does not include pricing or free-tier eligibility. Keep this allowlist
@@ -1073,7 +1139,7 @@ async function handleGroq(message) {
   const input = String(message.input || '')
     .trim()
     .slice(0, 2500);
-  if (!input || !settings.model) throw Error('Informe a tarefa e escolha um modelo da Groq.');
+  if (!input || !settings.model) throw Error('Informe a tarefa e escolha um modelo de IA.');
   const previous =
     message.previous && typeof message.previous === 'object' ? JSON.stringify(message.previous).slice(0, 3000) : '';
   const feedback = String(message.feedback || '')

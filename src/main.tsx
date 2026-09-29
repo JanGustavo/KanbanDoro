@@ -2285,8 +2285,8 @@ function App() {
               <>
                 <h3>Assistência de IA</h3>
                 <p className="settings-hint">
-                  Escolha Groq ou Gemini, salve a chave específica do provedor e consulte os modelos disponíveis na sua
-                  conta. As chaves ficam separadas neste navegador.
+                  Escolha Groq, Gemini ou OpenAI, salve a chave específica do provedor e consulte os modelos disponíveis
+                  na sua conta. As chaves ficam separadas neste navegador. A API da OpenAI pode gerar cobrança.
                 </p>
                 <div className="ai-settings-form">
                   <label>
@@ -2302,16 +2302,16 @@ function App() {
                     >
                       <option value="">Selecionar provedor</option>
                       {Object.entries(AI_PROVIDERS).map(([key, provider]) => (
-                        <option key={key} value={key} disabled={!['groq', 'gemini'].includes(key)}>
+                        <option key={key} value={key} disabled={!['groq', 'gemini', 'openai'].includes(key)}>
                           {provider}
-                          {!['groq', 'gemini'].includes(key) ? ' · em breve' : ''}
+                          {!['groq', 'gemini', 'openai'].includes(key) ? ' · em breve' : ''}
                         </option>
                       ))}
                     </select>
                   </label>
                   {aiSettings.provider && (
                     <>
-                      {['groq', 'gemini'].includes(aiSettings.provider) ? (
+                      {['groq', 'gemini', 'openai'].includes(aiSettings.provider) ? (
                         <div className="ai-model-picker">
                           <strong>Modelo</strong>
                           <span role="status">
@@ -2334,7 +2334,11 @@ function App() {
                         <div className="ai-model-list" role="group" aria-label="Modelos disponíveis para escolher">
                           {models.map(model => {
                             const enabled = (
-                              aiSettings.provider === 'groq' ? aiSettings.groqSavedModels : aiSettings.geminiSavedModels
+                              aiSettings.provider === 'groq'
+                                ? aiSettings.groqSavedModels
+                                : aiSettings.provider === 'openai'
+                                  ? aiSettings.openaiSavedModels
+                                  : aiSettings.geminiSavedModels
                             ).includes(model.id);
                             const active = aiSettings.model === model.id;
                             return (
@@ -2391,15 +2395,29 @@ function App() {
                           <input
                             type={aiKeyVisible ? 'text' : 'password'}
                             placeholder={
-                              aiSettings.provider === 'gemini' ? 'Chave do Google AI Studio' : 'Chave da Groq'
+                              aiSettings.provider === 'gemini'
+                                ? 'Chave do Google AI Studio'
+                                : aiSettings.provider === 'openai'
+                                  ? 'Chave da OpenAI'
+                                  : 'Chave da Groq'
                             }
-                            value={aiSettings.provider === 'gemini' ? aiSettings.geminiApiKey : aiSettings.apiKey}
+                            value={
+                              aiSettings.provider === 'gemini'
+                                ? aiSettings.geminiApiKey
+                                : aiSettings.provider === 'openai'
+                                  ? aiSettings.openaiApiKey
+                                  : aiSettings.apiKey
+                            }
                             onChange={e => {
                               setModels([]);
                               setAiNotice('Chave alterada. Salve e atualize modelos para confirmar o acesso.');
                               setAiSettings((s: AISettings) => ({
                                 ...s,
-                                [s.provider === 'gemini' ? 'geminiApiKey' : 'apiKey']: e.target.value,
+                                [s.provider === 'gemini'
+                                  ? 'geminiApiKey'
+                                  : s.provider === 'openai'
+                                    ? 'openaiApiKey'
+                                    : 'apiKey']: e.target.value,
                               }));
                             }}
                             autoComplete="off"
@@ -2425,19 +2443,31 @@ function App() {
                             }
                           }}
                           disabled={
-                            !['groq', 'gemini'].includes(aiSettings.provider) ||
-                            !(aiSettings.provider === 'gemini' ? aiSettings.geminiApiKey : aiSettings.apiKey)
+                            !['groq', 'gemini', 'openai'].includes(aiSettings.provider) ||
+                            !(aiSettings.provider === 'gemini'
+                              ? aiSettings.geminiApiKey
+                              : aiSettings.provider === 'openai'
+                                ? aiSettings.openaiApiKey
+                                : aiSettings.apiKey)
                           }
                         >
                           Salvar chave
                         </button>
-                        {(aiSettings.provider === 'gemini' ? aiSettings.geminiApiKey : aiSettings.apiKey) && (
+                        {(aiSettings.provider === 'gemini'
+                          ? aiSettings.geminiApiKey
+                          : aiSettings.provider === 'openai'
+                            ? aiSettings.openaiApiKey
+                            : aiSettings.apiKey) && (
                           <button
                             className="danger"
                             onClick={async () => {
                               const next = {
                                 ...aiSettings,
-                                [aiSettings.provider === 'gemini' ? 'geminiApiKey' : 'apiKey']: '',
+                                [aiSettings.provider === 'gemini'
+                                  ? 'geminiApiKey'
+                                  : aiSettings.provider === 'openai'
+                                    ? 'openaiApiKey'
+                                    : 'apiKey']: '',
                               };
                               try {
                                 await saveAISettings(next);
