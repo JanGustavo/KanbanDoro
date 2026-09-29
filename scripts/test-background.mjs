@@ -153,6 +153,45 @@ vm.runInNewContext(readFileSync('dist/background.js', 'utf8'), {
     requests.push({ url, options });
     if (url === 'connections-config.json')
       return { json: async () => ({ clientId: 'test.apps.googleusercontent.com', apiUrl: 'http://localhost:8000' }) };
+    if (url.startsWith('https://api.openai.com/v1/')) {
+      assert.equal(options.headers.Authorization, 'Bearer openai-test-key');
+      if (url.endsWith('/models'))
+        return { ok: true, json: async () => ({ data: [{ id: 'gpt-6-luna' }, { id: 'whisper-1' }] }) };
+      assert.equal(url, 'https://api.openai.com/v1/responses');
+      const body = JSON.parse(options.body);
+      assert.equal(body.store, false);
+      assert.equal(body.model, 'gpt-6-luna');
+      assert.equal(body.text.format.type, 'json_schema');
+      assert.equal(body.text.format.strict, true);
+      assert(!options.body.includes('openai-test-key'));
+      const fields = body.text.format.schema.properties;
+      const output = fields.insight
+        ? { insight: 'Separe o slice maior em dois.' }
+        : fields.title
+          ? { title: 'Reunião', description: 'Planejar', start: '', end: '', to: '', subject: '', body: '' }
+          : {
+              name: 'Criar API',
+              description: 'Implementar rotas',
+              difficulty: 2,
+              estimate: 35,
+              skill: 'Programação',
+              slices: ['Rotas', 'Testes'],
+              attachments: [],
+              searches: [],
+            };
+      return {
+        ok: true,
+        json: async () => ({
+          status: 'completed',
+          output: [
+            {
+              type: 'message',
+              content: [{ type: 'output_text', text: JSON.stringify(output) }],
+            },
+          ],
+        }),
+      };
+    }
     if (url.startsWith('https://generativelanguage.googleapis.com/')) {
       assert.equal(options.headers['x-goog-api-key'], 'gemini-test-key');
       if (url.includes('/models?pageSize='))
@@ -754,6 +793,26 @@ assert(
   !requests.some(request => request.options?.method === 'POST' && request.url.includes('localhost:8000')),
   'an AI draft must not write to Google',
 );
+aiSettings = { provider: 'openai', openaiApiKey: 'openai-test-key', model: 'gpt-6-luna' };
+const openaiCatalog = await aiMessage({ type: 'GROQ_MODELS' });
+assert.equal(openaiCatalog.models.length, 1);
+assert.equal(openaiCatalog.models[0].id, 'gpt-6-luna');
+assert.equal(openaiCatalog.models[0].freeTier, false);
+const openaiInsight = await aiMessage({
+  type: 'AI_SLICE_INSIGHT',
+  task: {
+    name: 'Estudar',
+    estimate: 25,
+    slices: [{ name: 'Ler', estimateMinutes: 25 }],
+  },
+});
+assert.match(openaiInsight.insight, /slice maior/);
+assert.equal((await aiMessage({ type: 'GROQ_TASK_PROPOSAL', input: 'Criar API' })).proposal.name, 'Criar API');
+assert.equal(
+  (await aiMessage({ type: 'GROQ_CONNECTION_PROPOSAL', kind: 'calendar', prompt: 'Reunião' })).draft.title,
+  'Reunião',
+);
+assert(requests.some(request => request.url === 'https://api.openai.com/v1/responses'));
 listeners.message({ type: 'SHOW_TIMER' }, {}, () => {});
 await new Promise(resolve => setTimeout(resolve, 0));
 assert.equal(injections, 1);

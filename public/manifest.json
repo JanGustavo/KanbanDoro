@@ -1,10 +1,15 @@
 {
   "manifest_version": 3,
   "name": "KanbanDoro",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Tarefas e ciclos de foco em um só lugar.",
   "permissions": ["storage", "alarms", "notifications", "scripting", "offscreen", "identity", "declarativeNetRequest"],
-  "host_permissions": ["<all_urls>", "https://api.groq.com/*", "https://generativelanguage.googleapis.com/*"],
+  "host_permissions": [
+    "<all_urls>",
+    "https://api.groq.com/*",
+    "https://generativelanguage.googleapis.com/*",
+    "https://api.openai.com/*"
+  ],
   "background": { "service_worker": "background.js" },
   "action": {
     "default_title": "Abrir KanbanDoro",

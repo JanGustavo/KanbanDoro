@@ -28,7 +28,7 @@ for (const path of ['package.json', 'package-lock.json', 'public/manifest.json']
 }
 NODE
 npm ci
-npm run build
+npm run build:remote
 npm test
 git tag -a "v$version" -m "KanbanDoro $version"
 git push origin "v$version"
