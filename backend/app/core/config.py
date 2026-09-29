@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     google_extension_id: str = ""
     google_extension_ids: list[str] = []
     google_token_encryption_key: str = ""
+    pix_key: str = ""
+    pix_receiver_name: str = ""
+    pix_receiver_city: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
 

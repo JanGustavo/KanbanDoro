@@ -26,6 +26,12 @@ async function playAlert(variant) {
 // Content scripts display the floating timer and must not access saved API keys.
 chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === 'CELEBRATE_SOUND' && _sender.url === chrome.runtime.getURL('index.html')) {
+    void chrome.storage.local.get('soundEnabled').then(({ soundEnabled }) => {
+      if (soundEnabled !== false) return playAlert('success');
+    });
+    return;
+  }
   if (
     [
       'GROQ_MODELS',

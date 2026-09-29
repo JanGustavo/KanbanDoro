@@ -18,6 +18,7 @@ export default function Connections({ onClose, onDraft }: { onClose: () => void;
   const [prompt, setPrompt] = useState('');
   const [aiBusy, setAiBusy] = useState(false);
   const [listId, setListId] = useState('');
+  const [idCopied, setIdCopied] = useState(false);
   const [proposal, setProposal] = useState<{ kind: Destination; draft: ConnectionDraft } | null>(null);
   const emptyDraft = (): ConnectionDraft => ({
     title: '',
@@ -127,6 +128,31 @@ export default function Connections({ onClose, onDraft }: { onClose: () => void;
             {loading ? 'Conectando…' : 'Conectar conta Google'}
           </button>
         )}
+        <div className="connection-test-access">
+          <strong>Quer testar Gmail, Agenda e Tasks?</strong>
+          <p>
+            Solicite acesso com o e-mail da sua conta Google. Inclua o ID desta instalação para cadastrarmos o retorno
+            OAuth.
+          </p>
+          <code>{chrome.runtime.id}</code>
+          <div className="connection-test-actions">
+            <button
+              onClick={() =>
+                void navigator.clipboard
+                  .writeText(chrome.runtime.id)
+                  .then(() => setIdCopied(true))
+                  .catch(() => setNotice('Não foi possível copiar o ID.'))
+              }
+            >
+              {idCopied ? 'ID copiado ✓' : 'Copiar ID da extensão'}
+            </button>
+            <a
+              href={`mailto:jeeh2200@gmail.com?subject=${encodeURIComponent('KanbanDoro - acesso Connections')}&body=${encodeURIComponent(`Olá! Gostaria de testar as Connections.\n\nMinha conta Google: [preencher]\nID da extensão: ${chrome.runtime.id}\nRedirect URI: ${chrome.identity.getRedirectURL()}\n`)}`}
+            >
+              Pedir acesso por e-mail ↗
+            </a>
+          </div>
+        </div>
         {(notice || status?.error) && (
           <p role="status" className="connection-notice">
             {notice || status?.error}

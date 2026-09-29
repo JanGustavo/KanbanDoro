@@ -27,6 +27,7 @@ import {
   type WeeklyPlan,
 } from './schedule';
 import Connections from './Connections';
+import SupportPix from './SupportPix';
 import Statistics from './Statistics';
 import NumberStepper from './NumberStepper';
 import { GuidedTour, type TourStep } from './guidedTour';
@@ -243,6 +244,7 @@ function App() {
   const [restart, setRestart] = useState<Task | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showConnections, setShowConnections] = useState(false);
+  const [showSupport, setShowSupport] = useState(false);
   const [settingsTab, setSettingsTab] = useState<'breaks' | 'board' | 'ai' | 'data'>('breaks');
   const [showFocusMode, setShowFocusMode] = useState(false);
   const [headerTab, setHeaderTab] = useState(0);
@@ -1126,6 +1128,8 @@ function App() {
   }
   function stopFocus(kind: 'completed' | 'failed' | 'interrupted') {
     if (!active) return;
+    if (kind === 'completed' && soundEnabled)
+      void chrome.runtime.sendMessage({ type: 'CELEBRATE_SOUND' }).catch(() => {});
     setToast(
       kind === 'completed'
         ? 'Escopo concluído. Registre uma pausa ou finalize o ciclo.'
@@ -1250,6 +1254,9 @@ function App() {
           <button className="tour-launch" aria-label="Abrir tutorial" title="Rever o tutorial" onClick={startTutorial}>
             ?
           </button>
+          <button className="support-launch" onClick={() => setShowSupport(true)}>
+            ♥ Apoiar
+          </button>
           <span className="pomodoro-count" title="Ciclos de foco concluídos hoje">
             ◷ {todayCycles} hoje
           </span>
@@ -1290,6 +1297,7 @@ function App() {
         </div>
       )}
       {showConnections && <Connections onClose={() => setShowConnections(false)} onDraft={draftFromConnection} />}
+      {showSupport && <SupportPix onClose={() => setShowSupport(false)} soundEnabled={soundEnabled} />}
       {showFocusMode && (
         <div
           className="backdrop"
@@ -1558,6 +1566,14 @@ function App() {
       )}
       {active?.phase === 'post-focus' && active.postFocusCompleted && (
         <div className="backdrop cycle-success-backdrop">
+          <div className="cycle-confetti" aria-hidden="true">
+            {Array.from({ length: 28 }, (_, index) => (
+              <span
+                key={index}
+                style={{ left: `${(index * 37) % 97}%`, animationDelay: `${((index * 7) % 13) * 0.07}s` }}
+              />
+            ))}
+          </div>
           <section className="dialog cycle-success" role="dialog" aria-modal="true" aria-label="Ciclo concluído">
             <div className="cycle-success-sparks" aria-hidden="true">
               <span>✦</span>

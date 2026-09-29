@@ -4,6 +4,10 @@ API FastAPI e SQLite. O quadro e as estatísticas da extensão continuam no arma
 
 Calendar e Tasks aceitam criação, edição parcial (`PATCH`) e exclusão (`DELETE`) de itens mediante sessão Google válida e escopo de escrita já autorizado (`calendar.events` e `tasks`). A interface pede revisão e confirma a exclusão, depois refaz a consulta; nenhuma alteração ocorre em segundo plano. O endpoint de edição recebe apenas os campos alterados para preservar outros dados no Google.
 
+## Apoio Pix
+
+Opcional: configure `PIX_KEY`, `PIX_RECEIVER_NAME` e `PIX_RECEIVER_CITY` em `backend/.env` na VPS e execute novamente o deploy. O endpoint público `GET /support/pix?amount=5.00` gera um QR estático BR Code com o valor escolhido (R$ 1 a R$ 99.999,99). Confira o nome e a cidade do recebedor e teste o código no seu banco antes de divulgar. A chave estará no código Pix, que é público. A tela “Já contribuí” é apenas um agradecimento acionado pelo visitante: não há confirmação bancária de pagamento.
+
 ## Desenvolvimento
 
 Na pasta `backend`, copie `.env.example` para `.env`, instale `pip install -e '.[dev]'` e rode `uvicorn app.main:app --reload`. Em desenvolvimento, as tabelas são criadas automaticamente. Para testar o mesmo caminho da VPS: `alembic -c alembic.ini upgrade head` e `pytest -q`.
