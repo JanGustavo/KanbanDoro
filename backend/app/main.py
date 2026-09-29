@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.api import auth, connections, sessions, tasks
+from app.api import auth, connections, sessions, tasks, support
 from app.core.config import get_settings
 from app.core.database import async_session_maker, init_db
 
@@ -40,6 +40,7 @@ app.include_router(auth.router)
 app.include_router(tasks.router)
 app.include_router(sessions.router)
 app.include_router(connections.router)
+app.include_router(support.router)
 
 
 @app.get("/health")

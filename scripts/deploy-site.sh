@@ -44,6 +44,30 @@ sudo -n cp -a "$HOME/kanbandoro-site/." /var/www/kanbandoro/
 sudo -n find /var/www/kanbandoro -type f -exec chmod 644 {} +
 sudo -n find /var/www/kanbandoro -type d -exec chmod 755 {} +
 if sudo -n test -f /etc/nginx/sites-available/kanbandoro && sudo -n grep -q 'managed by Certbot' /etc/nginx/sites-available/kanbandoro; then
+  # Certbot owns the HTTPS blocks; add only this exact route to the existing API server.
+  if ! sudo -n grep -Fq 'location = /support/pix' /etc/nginx/sites-available/kanbandoro; then
+    sudo -n cp /etc/nginx/sites-available/kanbandoro /etc/nginx/sites-available/kanbandoro.before-support
+    sudo -n python3 - <<'PY'
+from pathlib import Path
+path = Path('/etc/nginx/sites-available/kanbandoro')
+config = path.read_text()
+anchor = '    location ^~ /connections/google/ {'
+if config.count(anchor) != 1 or 'server_name api.' not in config:
+    raise SystemExit('Bloco da API inesperado: atualize a rota Pix manualmente.')
+route = '''    location = /support/pix {
+        proxy_pass http://127.0.0.1:18080/support/pix;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+'''
+path.write_text(config.replace(anchor, route + anchor, 1))
+PY
+    if ! sudo -n nginx -t; then
+      sudo -n cp /etc/nginx/sites-available/kanbandoro.before-support /etc/nginx/sites-available/kanbandoro
+      echo 'Nginx inválido; rota Pix revertida.' >&2
+      exit 1
+    fi
+  fi
   sudo -n nginx -t && sudo -n systemctl reload nginx
   echo 'HTTPS_EXISTENTE'
   exit 0

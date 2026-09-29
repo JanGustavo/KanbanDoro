@@ -69,6 +69,10 @@ Ao começar a digitar no campo de criação, o formulário da tarefa abre para c
 
 ## Connections: Gmail, Calendar e Tasks
 
+Em **Connections**, o botão de solicitar acesso prepara um e-mail com o ID desta instalação e o redirect OAuth; o visitante ainda precisa preencher a conta Google para ser adicionado como usuário de teste. O ID muda conforme a instalação, especialmente entre navegadores. O titular do projeto deve cadastrar o e-mail na tela de consentimento e o redirect no cliente OAuth Web, além de permitir a origem correspondente no backend.
+
+O botão **Apoiar** abre um Pix opcional com R$ 5, R$ 10, R$ 20 ou valor personalizado. O QR só aparece se `PIX_KEY`, `PIX_RECEIVER_NAME` e `PIX_RECEIVER_CITY` estiverem configurados no `.env` do backend e a extensão tiver sido compilada com a URL da API. Depois de atualizar a API, execute novamente `scripts/deploy-site.sh` para liberar `/support/pix` no Nginx já protegido por HTTPS. A confirmação “Já contribuí” é uma mensagem de agradecimento do usuário, sem validação de pagamento. Confira os dados no banco antes de divulgar o QR.
+
 A extensão consulta mensagens do Gmail (até 10), eventos do Google Calendar (até 50, intervalo de até 31 dias) e listas/tarefas pendentes do Google Tasks (até 100 por página consultada). Cada item escolhido abre **uma proposta editável** no KanbanDoro. O painel Connections também recebe um pedido escrito, pede à IA configurada uma proposta de evento, tarefa do Google Tasks ou e-mail, e abre campos editáveis para revisão antes de gravar. E-mails exigem uma confirmação adicional antes do envio. É possível preencher tudo manualmente. Não existe sincronização nos dois sentidos nem execução em segundo plano; nenhuma mensagem consultada é enviada à IA automaticamente.
 
 Nos resultados de Calendar e Tasks, **Editar ou excluir no Google** abre uma revisão. Só os campos modificados são enviados, e a exclusão exige confirmação. Os eventos de dia inteiro podem ser excluídos, mas ainda não são editados nesta interface. Alterações feitas aqui afetam o item na conta Google; trazer o item ao quadro continua sendo uma ação separada.

@@ -2292,6 +2292,38 @@ header p {
 .cycle-success-backdrop {
   z-index: 14;
 }
+.cycle-confetti {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.cycle-confetti span {
+  position: absolute;
+  top: -20px;
+  width: 7px;
+  height: 13px;
+  border-radius: 3px;
+  background: #d5a343;
+  animation: kanban-confetti 2.5s linear both;
+}
+.cycle-confetti span:nth-child(3n) {
+  background: #a33855;
+  border-radius: 50%;
+}
+.cycle-confetti span:nth-child(5n) {
+  background: #f5d18e;
+}
+@keyframes kanban-confetti {
+  from {
+    transform: translateY(-20px) rotate(0deg);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(105vh) rotate(650deg);
+    opacity: 0;
+  }
+}
 .cycle-success {
   position: relative;
   display: grid;
@@ -2379,9 +2411,142 @@ header p {
 }
 @media (prefers-reduced-motion: reduce) {
   .cycle-success,
-  .cycle-success-sparks span {
+  .cycle-success-sparks span,
+  .cycle-confetti span,
+  .support-heart,
+  .support-thanks {
     animation: none;
   }
+  .cycle-confetti {
+    display: none;
+  }
+}
+.support-launch {
+  border: 1px solid #a6556c;
+  background: #4b2937;
+  color: #ffdbdd;
+}
+.support-launch:hover {
+  background: #70334a;
+}
+.support-backdrop {
+  z-index: 25;
+}
+.support-pix {
+  position: relative;
+  width: min(440px, 95vw);
+  max-height: 90vh;
+  overflow-y: auto;
+  display: grid;
+  justify-items: center;
+  gap: 13px;
+  text-align: center;
+  border: 1px solid #b47862;
+  box-shadow:
+    0 20px 80px #000b,
+    0 0 40px #a7465633;
+  animation: cycle-success-arrive 0.3s ease-out;
+}
+.support-pix h2 {
+  color: #f5ce83;
+  margin: 0;
+}
+.support-pix p {
+  margin: 0;
+  line-height: 1.5;
+}
+.support-heart {
+  color: #db7084;
+  font-size: 2.4rem;
+  animation: cycle-success-glow 1.8s ease-in-out infinite alternate;
+}
+.support-values {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.support-values button {
+  border: 1px solid #755866;
+  background: #2d262b;
+}
+.support-values button.selected {
+  border-color: #f5ce83;
+  background: #663344;
+  color: #fff1ce;
+  box-shadow: 0 0 16px #bd7a4650;
+}
+.support-custom {
+  display: grid;
+  gap: 7px;
+  width: 100%;
+  text-align: left;
+}
+.support-qr {
+  min-height: 175px;
+  display: grid;
+  place-items: center;
+  width: 100%;
+}
+.support-qr img {
+  width: 170px;
+  height: 170px;
+  padding: 7px;
+  border-radius: 12px;
+  background: white;
+  animation: cycle-success-arrive 0.35s ease-out;
+}
+.support-qr p {
+  color: #efb1ad;
+}
+.support-copy {
+  border: 1px solid #d7a552;
+  background: #4d3434;
+  color: #ffdda2;
+}
+.support-ack {
+  color: #edc9ca;
+  background: transparent;
+  text-decoration: underline;
+}
+.support-pix small,
+.support-caption {
+  color: #ceb9b2;
+}
+.support-thanks {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  animation: cycle-success-arrive 0.45s ease-out;
+}
+.connection-test-access {
+  margin: 14px 0;
+  padding: 14px;
+  border: 1px solid #76505b;
+  border-radius: 12px;
+  background: #33282e;
+}
+.connection-test-access p {
+  margin: 8px 0;
+}
+.connection-test-access code {
+  display: block;
+  overflow-wrap: anywhere;
+  color: #f5ce83;
+}
+.connection-test-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+  align-items: center;
+}
+.connection-test-actions a {
+  color: #ffe0a4;
+  border: 1px solid #b47862;
+  border-radius: 9px;
+  padding: 9px 12px;
+  text-decoration: none;
 }
 .board-tools {
   display: flex;
