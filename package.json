@@ -9,6 +9,9 @@
     "build:local": "node scripts/build-local.mjs",
     "build:remote": "node scripts/build-local.mjs --remote",
     "test": "node scripts/test-background.mjs && node --experimental-strip-types scripts/test-schedule.mjs && node --experimental-strip-types scripts/test-focus-blocking.mjs && node --experimental-strip-types scripts/test-cycle-rules.mjs && node --experimental-strip-types scripts/test-backup.mjs && node --experimental-strip-types scripts/test-guided-tour.mjs && node --experimental-strip-types scripts/test-ai-settings.mjs && node --experimental-strip-types scripts/test-ai-model-catalog.mjs",
+    "lint": "eslint src/",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"public/**/*.{json,js,html,css}\" \"scripts/**/*.mjs\" \"*.json\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"public/**/*.{json,js,html,css}\" \"scripts/**/*.mjs\" \"*.json\"",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -19,7 +22,13 @@
     "@types/chrome": "^0.3.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
+    "@typescript-eslint/eslint-plugin": "^8.71.0",
+    "@typescript-eslint/parser": "^8.71.0",
     "@vitejs/plugin-react": "^4.7.0",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "prettier": "^3.9.9",
     "typescript": "~5.9.0",
     "vite": "^6.3.0"
   }

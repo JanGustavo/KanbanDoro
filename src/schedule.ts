@@ -10,7 +10,16 @@ export type WeeklyPlan = {
   difficulty?: 1 | 2 | 3;
   skill?: string;
   sliceNames?: string[];
-  attachments?: Array<{ title: string; url: string; verifiedAt: number | null; reason: string; pageTitle?: string; description?: string; source?: string; summary?: string }>;
+  attachments?: Array<{
+    title: string;
+    url: string;
+    verifiedAt: number | null;
+    reason: string;
+    pageTitle?: string;
+    description?: string;
+    source?: string;
+    summary?: string;
+  }>;
 };
 
 export type ViewMode = 'today' | 'week' | 'all' | 'archive';
@@ -23,12 +32,12 @@ export function localDay(date: Date): string {
 }
 
 export function weekStart(date: Date): string {
-  const monday = new Date(date.getFullYear(), date.getMonth(), date.getDate() - (date.getDay() + 6) % 7);
+  const monday = new Date(date.getFullYear(), date.getMonth(), date.getDate() - ((date.getDay() + 6) % 7));
   return localDay(monday);
 }
 
 export function weekEnd(date: Date): string {
-  const sunday = new Date(date.getFullYear(), date.getMonth(), date.getDate() + (7 - date.getDay()) % 7);
+  const sunday = new Date(date.getFullYear(), date.getMonth(), date.getDate() + ((7 - date.getDay()) % 7));
   return localDay(sunday);
 }
 
@@ -38,12 +47,21 @@ export function dateFromDay(day: string): Date {
 }
 
 export function materializeToday<T extends { planId?: string; occurrenceDate?: string }>(
-  tasks: T[], plans: WeeklyPlan[], date: Date, create: (plan: WeeklyPlan, day: string) => T
+  tasks: T[],
+  plans: WeeklyPlan[],
+  date: Date,
+  create: (plan: WeeklyPlan, day: string) => T,
 ): { tasks: T[]; plans: WeeklyPlan[] } {
   const day = localDay(date);
   let nextTasks = tasks;
   const nextPlans = plans.map(plan => {
-    if (day < plan.startsOn || (plan.endsOn && day > plan.endsOn) || !plan.weekdays.includes(date.getDay()) || plan.generatedDates?.includes(day)) return plan;
+    if (
+      day < plan.startsOn ||
+      (plan.endsOn && day > plan.endsOn) ||
+      !plan.weekdays.includes(date.getDay()) ||
+      plan.generatedDates?.includes(day)
+    )
+      return plan;
     if (!nextTasks.some(task => task.planId === plan.id && task.occurrenceDate === day)) {
       nextTasks = [...nextTasks, create(plan, day)];
     }
@@ -53,7 +71,10 @@ export function materializeToday<T extends { planId?: string; occurrenceDate?: s
 }
 
 export function isVisible<T extends { column: string; archivedAt?: number; completedAt?: number }>(
-  task: T, view: ViewMode, date: Date, archiveDay = ''
+  task: T,
+  view: ViewMode,
+  date: Date,
+  archiveDay = '',
 ): boolean {
   if (view === 'archive') {
     return !!task.archivedAt && (!archiveDay || localDay(new Date(task.completedAt ?? task.archivedAt)) === archiveDay);

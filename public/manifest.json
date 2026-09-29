@@ -6,7 +6,10 @@
   "permissions": ["storage", "alarms", "notifications", "scripting", "offscreen", "identity", "declarativeNetRequest"],
   "host_permissions": ["<all_urls>", "https://api.groq.com/*", "https://generativelanguage.googleapis.com/*"],
   "background": { "service_worker": "background.js" },
-  "action": { "default_title": "Abrir KanbanDoro", "default_icon": { "16": "icon16.png", "48": "icon48.png", "128": "icon128.png" } },
+  "action": {
+    "default_title": "Abrir KanbanDoro",
+    "default_icon": { "16": "icon16.png", "48": "icon48.png", "128": "icon128.png" }
+  },
   "icons": {
     "16": "icon16.png",
     "48": "icon48.png",
@@ -18,5 +21,10 @@
       "js": ["content.js"]
     }
   ],
-  "web_accessible_resources": [{ "resources": ["icon.svg", "focus-blocked.html", "focus-blocked.js", "focus-blocked.css"], "matches": ["<all_urls>"] }]
+  "web_accessible_resources": [
+    {
+      "resources": ["icon.svg", "focus-blocked.html", "focus-blocked.js", "focus-blocked.css"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }

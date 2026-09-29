@@ -11,14 +11,18 @@ export type Backup = {
   appVersion: string;
   exportedAt: string;
   timeZone: string;
-  data: Pick<Data, 'tasks' | 'history' | 'weeklyPlans' | 'breakPreferences' | 'wipLimits' | 'breakDurations' | 'areas'> & {
+  data: Pick<
+    Data,
+    'tasks' | 'history' | 'weeklyPlans' | 'breakPreferences' | 'wipLimits' | 'breakDurations' | 'areas'
+  > & {
     focusBlocking: FocusBlocking;
     soundEnabled: boolean;
   };
 };
 
 const obj = (value: unknown): Record<string, unknown> => {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('Registro inválido no arquivo de backup.');
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw Error('Registro inválido no arquivo de backup.');
   return value as Record<string, unknown>;
 };
 const str = (value: unknown, max = 4000): string => {
@@ -26,18 +30,26 @@ const str = (value: unknown, max = 4000): string => {
   return value;
 };
 const num = (value: unknown, min = 0, max = Number.MAX_SAFE_INTEGER): number => {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) throw Error('Número inválido no arquivo de backup.');
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max)
+    throw Error('Número inválido no arquivo de backup.');
   return value;
 };
 const list = (value: unknown, limit = 50_000): unknown[] => {
   if (!Array.isArray(value) || value.length > limit) throw Error('Lista inválida ou grande demais no backup.');
   return value;
 };
-const optional = <T>(value: unknown, read: (v: unknown) => T) => value === undefined || value === null ? undefined : read(value);
+const optional = <T>(value: unknown, read: (v: unknown) => T) =>
+  value === undefined || value === null ? undefined : read(value);
 const date = (value: unknown) => {
   const day = str(value, 10);
   const parsed = Date.parse(`${day}T12:00:00Z`);
-  if (day && (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !Number.isFinite(parsed) || new Date(parsed).toISOString().slice(0, 10) !== day)) throw Error('Data inválida no backup.');
+  if (
+    day &&
+    (!/^\d{4}-\d{2}-\d{2}$/.test(day) ||
+      !Number.isFinite(parsed) ||
+      new Date(parsed).toISOString().slice(0, 10) !== day)
+  )
+    throw Error('Data inválida no backup.');
   return day;
 };
 const identifier = (value: unknown) => {
@@ -46,16 +58,24 @@ const identifier = (value: unknown) => {
   return key;
 };
 const uniqueIds = <T extends { id: string }>(items: T[]) => {
-  if (new Set(items.map(item => item.id)).size !== items.length) throw Error('O backup contém identificadores duplicados.');
+  if (new Set(items.map(item => item.id)).size !== items.length)
+    throw Error('O backup contém identificadores duplicados.');
   return items;
 };
 function readAttachment(value: unknown) {
   const link = obj(value);
   const url = str(link.url, 2000);
   if (!url.startsWith('https://')) throw Error('URL de anexo inválida no backup.');
-  return { title: str(link.title, 200), url, reason: str(link.reason, 500), verifiedAt: link.verifiedAt == null ? null : num(link.verifiedAt),
-    pageTitle: optional(link.pageTitle, v => str(v, 180)), description: optional(link.description, v => str(v, 360)),
-    source: optional(link.source, v => str(v, 100)), summary: optional(link.summary, v => str(v, 600)) };
+  return {
+    title: str(link.title, 200),
+    url,
+    reason: str(link.reason, 500),
+    verifiedAt: link.verifiedAt == null ? null : num(link.verifiedAt),
+    pageTitle: optional(link.pageTitle, v => str(v, 180)),
+    description: optional(link.description, v => str(v, 360)),
+    source: optional(link.source, v => str(v, 100)),
+    summary: optional(link.summary, v => str(v, 600)),
+  };
 }
 
 function readTask(value: unknown): Task {
@@ -64,29 +84,51 @@ function readTask(value: unknown): Task {
   if (!['todo', 'doing', 'late', 'done'].includes(column)) throw Error('Coluna inválida no backup.');
   const difficulty = num(t.difficulty, 1, 3);
   if (!Number.isInteger(difficulty)) throw Error('Dificuldade inválida no backup.');
-  const slices = uniqueIds(list(t.slices, 1000).map(value => {
-    const slice = obj(value);
-    if (typeof slice.done !== 'boolean') throw Error('Slice inválido no backup.');
-    return { id: identifier(slice.id), name: str(slice.name, 140), done: slice.done,
-      estimateMinutes: optional(slice.estimateMinutes, v => num(v, 1, 480)) };
-  }));
+  const slices = uniqueIds(
+    list(t.slices, 1000).map(value => {
+      const slice = obj(value);
+      if (typeof slice.done !== 'boolean') throw Error('Slice inválido no backup.');
+      return {
+        id: identifier(slice.id),
+        name: str(slice.name, 140),
+        done: slice.done,
+        estimateMinutes: optional(slice.estimateMinutes, v => num(v, 1, 480)),
+      };
+    }),
+  );
   const attachments = optional(t.attachments, v => list(v, 100).map(readAttachment));
   return {
-    id: identifier(t.id), name: str(t.name, 300), description: str(t.description, 20_000),
-    difficulty: difficulty as Task['difficulty'], skill: optional(t.skill, v => str(v, 50)),
-    estimate: num(t.estimate, 1, 480), deadline: date(t.deadline), column: column as Task['column'],
-    failures: num(t.failures), focusSeconds: num(t.focusSeconds), slices, attachments,
-    createdAt: optional(t.createdAt, v => num(v)), completedAt: optional(t.completedAt, v => num(v)),
-    archivedAt: optional(t.archivedAt, v => num(v)), planId: optional(t.planId, identifier),
+    id: identifier(t.id),
+    name: str(t.name, 300),
+    description: str(t.description, 20_000),
+    difficulty: difficulty as Task['difficulty'],
+    skill: optional(t.skill, v => str(v, 50)),
+    estimate: num(t.estimate, 1, 480),
+    deadline: date(t.deadline),
+    column: column as Task['column'],
+    failures: num(t.failures),
+    focusSeconds: num(t.focusSeconds),
+    slices,
+    attachments,
+    createdAt: optional(t.createdAt, v => num(v)),
+    completedAt: optional(t.completedAt, v => num(v)),
+    archivedAt: optional(t.archivedAt, v => num(v)),
+    planId: optional(t.planId, identifier),
     occurrenceDate: optional(t.occurrenceDate, date),
   };
 }
 
 function readHistory(value: unknown): HistoryEntry {
   const h = obj(value);
-  return { id: identifier(h.id), taskId: identifier(h.taskId), kind: str(h.kind, 60),
-    seconds: num(h.seconds), at: num(h.at), sliceIds: list(h.sliceIds, 1000).map(identifier),
-    cycleId: optional(h.cycleId, v => str(v, 120)) };
+  return {
+    id: identifier(h.id),
+    taskId: identifier(h.taskId),
+    kind: str(h.kind, 60),
+    seconds: num(h.seconds),
+    at: num(h.at),
+    sliceIds: list(h.sliceIds, 1000).map(identifier),
+    cycleId: optional(h.cycleId, v => str(v, 120)),
+  };
 }
 
 function readPlan(value: unknown): WeeklyPlan {
@@ -96,21 +138,39 @@ function readPlan(value: unknown): WeeklyPlan {
   if (weekdays.some(v => !Number.isInteger(v))) throw Error('Dia de rotina inválido.');
   const startsOn = date(plan.startsOn);
   if (!startsOn) throw Error('Data de início da rotina ausente.');
-  return { id: identifier(plan.id), name: str(plan.name, 300), estimate: num(plan.estimate, 1, 480),
-    weekdays, startsOn, generatedDates: list(plan.generatedDates ?? [], 5000).map(date),
-    endsOn: optional(plan.endsOn, date), description: optional(plan.description, v => str(v, 20_000)),
-    difficulty: difficulty as WeeklyPlan['difficulty'], skill: optional(plan.skill, v => str(v, 50)),
+  return {
+    id: identifier(plan.id),
+    name: str(plan.name, 300),
+    estimate: num(plan.estimate, 1, 480),
+    weekdays,
+    startsOn,
+    generatedDates: list(plan.generatedDates ?? [], 5000).map(date),
+    endsOn: optional(plan.endsOn, date),
+    description: optional(plan.description, v => str(v, 20_000)),
+    difficulty: difficulty as WeeklyPlan['difficulty'],
+    skill: optional(plan.skill, v => str(v, 50)),
     sliceNames: optional(plan.sliceNames, v => list(v, 1000).map(x => str(x, 140))),
-    attachments: optional(plan.attachments, v => list(v, 100).map(readAttachment)) };
+    attachments: optional(plan.attachments, v => list(v, 100).map(readAttachment)),
+  };
 }
 
 export function makeBackup(data: Data, focusBlocking: FocusBlocking, soundEnabled: boolean): Backup {
   const snapshot: Backup = {
-    schemaVersion: BACKUP_VERSION, appVersion: '0.2.0', exportedAt: new Date().toISOString(),
+    schemaVersion: BACKUP_VERSION,
+    appVersion: '0.2.0',
+    exportedAt: new Date().toISOString(),
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    data: { tasks: data.tasks, history: data.history, weeklyPlans: data.weeklyPlans,
-      breakPreferences: data.breakPreferences, wipLimits: data.wipLimits, breakDurations: data.breakDurations, areas: data.areas,
-      focusBlocking, soundEnabled },
+    data: {
+      tasks: data.tasks,
+      history: data.history,
+      weeklyPlans: data.weeklyPlans,
+      breakPreferences: data.breakPreferences,
+      wipLimits: data.wipLimits,
+      breakDurations: data.breakDurations,
+      areas: data.areas,
+      focusBlocking,
+      soundEnabled,
+    },
   };
   // Re-parse our own export to strip unknown keys added by older versions.
   return parseBackup(JSON.stringify(snapshot));
@@ -119,8 +179,13 @@ export function makeBackup(data: Data, focusBlocking: FocusBlocking, soundEnable
 export function parseBackup(text: string): Backup {
   if (new Blob([text]).size > MAX_BACKUP_BYTES) throw Error('Arquivo de backup acima de 16 MB.');
   let parsed: Record<string, unknown>;
-  try { parsed = obj(JSON.parse(text)); } catch { throw Error('O arquivo não é um JSON de backup válido.'); }
-  if (parsed.schemaVersion !== BACKUP_VERSION) throw Error('Versão do backup incompatível. Este aplicativo aceita apenas a versão 1.');
+  try {
+    parsed = obj(JSON.parse(text));
+  } catch {
+    throw Error('O arquivo não é um JSON de backup válido.');
+  }
+  if (parsed.schemaVersion !== BACKUP_VERSION)
+    throw Error('Versão do backup incompatível. Este aplicativo aceita apenas a versão 1.');
   const d = obj(parsed.data);
   const wip = obj(d.wipLimits);
   const breaks = obj(d.breakDurations);
@@ -129,16 +194,29 @@ export function parseBackup(text: string): Backup {
   if (!['off', 'gentle', 'strict', 'custom'].includes(mode)) throw Error('Perfil de bloqueio inválido.');
   if (typeof d.soundEnabled !== 'boolean') throw Error('Preferência de som inválida.');
   const backup: Backup = {
-    schemaVersion: 1, appVersion: str(parsed.appVersion, 30), exportedAt: str(parsed.exportedAt, 40), timeZone: str(parsed.timeZone, 80),
+    schemaVersion: 1,
+    appVersion: str(parsed.appVersion, 30),
+    exportedAt: str(parsed.exportedAt, 40),
+    timeZone: str(parsed.timeZone, 80),
     data: {
-      tasks: uniqueIds(list(d.tasks).map(readTask)), history: uniqueIds(list(d.history).map(readHistory)),
+      tasks: uniqueIds(list(d.tasks).map(readTask)),
+      history: uniqueIds(list(d.history).map(readHistory)),
       weeklyPlans: uniqueIds(list(d.weeklyPlans, 5000).map(readPlan)),
       breakPreferences: list(d.breakPreferences, 100).map(v => str(v, 80)),
-      areas: [...new Set(list(d.areas ?? [], 100).map(v => str(v, 50).trim()).filter(Boolean))],
+      areas: [
+        ...new Set(
+          list(d.areas ?? [], 100)
+            .map(v => str(v, 50).trim())
+            .filter(Boolean),
+        ),
+      ],
       wipLimits: { doing: num(wip.doing, 1, 50), late: wip.late == null ? null : num(wip.late, 1, 50) },
       breakDurations: { short: num(breaks.short, 1, 120), long: num(breaks.long, 1, 120) },
-      focusBlocking: { mode: mode as FocusBlocking['mode'], exceptions: list(blocking.exceptions, 1000).map(readDomain),
-        customDomains: list(blocking.customDomains, 1000).map(readDomain) },
+      focusBlocking: {
+        mode: mode as FocusBlocking['mode'],
+        exceptions: list(blocking.exceptions, 1000).map(readDomain),
+        customDomains: list(blocking.customDomains, 1000).map(readDomain),
+      },
       soundEnabled: d.soundEnabled,
     },
   };
@@ -163,12 +241,24 @@ export function mergeBackup(current: Backup, incoming: Backup): Backup {
   const plans = new Map(current.data.weeklyPlans.map(plan => [plan.id, plan]));
   for (const plan of incoming.data.weeklyPlans) {
     const old = plans.get(plan.id);
-    plans.set(plan.id, old ? { ...old, generatedDates: [...new Set([...old.generatedDates, ...plan.generatedDates])] } : plan);
+    plans.set(
+      plan.id,
+      old ? { ...old, generatedDates: [...new Set([...old.generatedDates, ...plan.generatedDates])] } : plan,
+    );
   }
-  return { ...current, data: { ...current.data,
-    tasks: [...current.data.tasks, ...incoming.data.tasks.filter(task => !localTasks.has(task.id))],
-    // A reused task ID can name different tasks on independent profiles. Its
-    // imported events must never be attributed to the local task that wins.
-    history: [...current.data.history, ...incoming.data.history.filter(entry => !localHistory.has(entry.id) && !localTasks.has(entry.taskId))],
-    weeklyPlans: [...plans.values()], areas: [...new Set([...current.data.areas, ...incoming.data.areas])] } };
+  return {
+    ...current,
+    data: {
+      ...current.data,
+      tasks: [...current.data.tasks, ...incoming.data.tasks.filter(task => !localTasks.has(task.id))],
+      // A reused task ID can name different tasks on independent profiles. Its
+      // imported events must never be attributed to the local task that wins.
+      history: [
+        ...current.data.history,
+        ...incoming.data.history.filter(entry => !localHistory.has(entry.id) && !localTasks.has(entry.taskId)),
+      ],
+      weeklyPlans: [...plans.values()],
+      areas: [...new Set([...current.data.areas, ...incoming.data.areas])],
+    },
+  };
 }

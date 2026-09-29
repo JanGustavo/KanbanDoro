@@ -1,11 +1,68 @@
-:root { color-scheme:dark; font-family:Inter,system-ui,sans-serif; background:#171719; color:#f9f1e9; }
-* { box-sizing:border-box; }
-body { min-height:100vh; margin:0; display:grid; place-items:center; padding:24px; background:radial-gradient(circle at 50% 30%,#482833 0%,#171719 60%); }
-main { width:min(100%,560px); padding:clamp(28px,7vw,64px); border:1px solid #92535c; border-radius:18px; background:linear-gradient(145deg,#31262b,#231f23); box-shadow:0 30px 80px #0007; }
-.eyebrow { display:block; margin-top:24px; color:#e0ae67; font-size:.7rem; letter-spacing:.18em; font-weight:800; }
-h1 { margin:14px 0; font-size:clamp(2rem,7vw,3.4rem); letter-spacing:-.05em; line-height:1.08; }
-p { color:#d1c0b7; font-size:1.05rem; line-height:1.65; }
-.countdown { padding:18px 0 22px; color:#d8ada6; font-size:.9rem; }
-.countdown strong { color:#e9b963; font-size:1.3rem; font-variant-numeric:tabular-nums; }
-button { border:1px solid #d5a343; border-radius:9px; background:#d5a343; color:#271e22; padding:13px 19px; font:inherit; font-weight:700; cursor:pointer; }
-button:focus-visible { outline:2px solid #fff3e9; outline-offset:3px; }
+:root {
+  color-scheme: dark;
+  font-family: Inter, system-ui, sans-serif;
+  background: #171719;
+  color: #f9f1e9;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  min-height: 100vh;
+  margin: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: radial-gradient(circle at 50% 30%, #482833 0%, #171719 60%);
+}
+main {
+  width: min(100%, 560px);
+  padding: clamp(28px, 7vw, 64px);
+  border: 1px solid #92535c;
+  border-radius: 18px;
+  background: linear-gradient(145deg, #31262b, #231f23);
+  box-shadow: 0 30px 80px #0007;
+}
+.eyebrow {
+  display: block;
+  margin-top: 24px;
+  color: #e0ae67;
+  font-size: 0.7rem;
+  letter-spacing: 0.18em;
+  font-weight: 800;
+}
+h1 {
+  margin: 14px 0;
+  font-size: clamp(2rem, 7vw, 3.4rem);
+  letter-spacing: -0.05em;
+  line-height: 1.08;
+}
+p {
+  color: #d1c0b7;
+  font-size: 1.05rem;
+  line-height: 1.65;
+}
+.countdown {
+  padding: 18px 0 22px;
+  color: #d8ada6;
+  font-size: 0.9rem;
+}
+.countdown strong {
+  color: #e9b963;
+  font-size: 1.3rem;
+  font-variant-numeric: tabular-nums;
+}
+button {
+  border: 1px solid #d5a343;
+  border-radius: 9px;
+  background: #d5a343;
+  color: #271e22;
+  padding: 13px 19px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+button:focus-visible {
+  outline: 2px solid #fff3e9;
+  outline-offset: 3px;
+}

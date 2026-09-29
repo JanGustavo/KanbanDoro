@@ -14,7 +14,10 @@ const gemini = verifiedAIModels('gemini', [
   { id: 'gemini-3.1-flash-image', name: 'Image' },
   { id: 'gemini-3.8-flash-tts', name: 'Speech' },
 ]);
-assert.deepEqual(gemini.map(model => model.id), ['gemini-2.5-flash', 'gemini-3.8-flash']);
+assert.deepEqual(
+  gemini.map(model => model.id),
+  ['gemini-2.5-flash', 'gemini-3.8-flash'],
+);
 assert.equal(gemini[0].freeTier, true);
 assert.equal(gemini[1].freeTier, true);
 console.log('Catálogo de IA: modelos livres comprovados e modelos incompatíveis verificados.');

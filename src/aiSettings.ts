@@ -12,7 +12,17 @@ export interface AISettings {
 
 export type AIProvider = 'xai' | 'gemini' | 'groq' | 'openai' | 'custom' | '';
 const STORAGE_KEY = 'kanbandoro_ai_settings';
-export const emptyAISettings: AISettings = { provider: '', apiKey: '', geminiApiKey: '', model: '', customEndpoint: '', groqModel: '', geminiModel: '', groqSavedModels: [], geminiSavedModels: [] };
+export const emptyAISettings: AISettings = {
+  provider: '',
+  apiKey: '',
+  geminiApiKey: '',
+  model: '',
+  customEndpoint: '',
+  groqModel: '',
+  geminiModel: '',
+  groqSavedModels: [],
+  geminiSavedModels: [],
+};
 
 function remembered(models: unknown, selected: string): string[] {
   const list = Array.isArray(models) ? models.filter((item): item is string => typeof item === 'string' && !!item) : [];
@@ -21,24 +31,43 @@ function remembered(models: unknown, selected: string): string[] {
 
 export function normalizeAISettings(value: Partial<AISettings> = {}): AISettings {
   const provider = value.provider ?? '';
-  const groqModel = value.groqModel ?? (provider === 'groq' ? value.model ?? '' : '');
-  const geminiModel = value.geminiModel ?? (provider === 'gemini' ? value.model ?? '' : '');
+  const groqModel = value.groqModel ?? (provider === 'groq' ? (value.model ?? '') : '');
+  const geminiModel = value.geminiModel ?? (provider === 'gemini' ? (value.model ?? '') : '');
   return {
-    ...emptyAISettings, ...value, provider,
-    groqModel, geminiModel,
+    ...emptyAISettings,
+    ...value,
+    provider,
+    groqModel,
+    geminiModel,
     groqSavedModels: remembered(value.groqSavedModels, groqModel),
     geminiSavedModels: remembered(value.geminiSavedModels, geminiModel),
-    model: provider === 'groq' ? groqModel : provider === 'gemini' ? geminiModel : value.model ?? '',
+    model: provider === 'groq' ? groqModel : provider === 'gemini' ? geminiModel : (value.model ?? ''),
   };
 }
 
 export function selectAIProvider(settings: AISettings, provider: AIProvider): AISettings {
-  return normalizeAISettings({ ...settings, provider, model: provider === 'groq' ? settings.groqModel : provider === 'gemini' ? settings.geminiModel : '' });
+  return normalizeAISettings({
+    ...settings,
+    provider,
+    model: provider === 'groq' ? settings.groqModel : provider === 'gemini' ? settings.geminiModel : '',
+  });
 }
 
 export function selectAIModel(settings: AISettings, model: string): AISettings {
-  if (settings.provider === 'groq') return normalizeAISettings({ ...settings, model, groqModel: model, groqSavedModels: remembered(settings.groqSavedModels, model) });
-  if (settings.provider === 'gemini') return normalizeAISettings({ ...settings, model, geminiModel: model, geminiSavedModels: remembered(settings.geminiSavedModels, model) });
+  if (settings.provider === 'groq')
+    return normalizeAISettings({
+      ...settings,
+      model,
+      groqModel: model,
+      groqSavedModels: remembered(settings.groqSavedModels, model),
+    });
+  if (settings.provider === 'gemini')
+    return normalizeAISettings({
+      ...settings,
+      model,
+      geminiModel: model,
+      geminiSavedModels: remembered(settings.geminiSavedModels, model),
+    });
   return { ...settings, model };
 }
 
@@ -49,14 +78,21 @@ export function toggleAIModel(settings: AISettings, model: string): AISettings {
   const enabled = list.includes(model);
   const next = enabled ? list.filter(item => item !== model) : remembered(list, model);
   const current = groq ? settings.groqModel : settings.geminiModel;
-  const selected = enabled && current === model ? next[0] ?? '' : current || (!enabled ? model : '');
-  return normalizeAISettings({ ...settings, model: selected,
-    ...(groq ? { groqModel: selected, groqSavedModels: next } : { geminiModel: selected, geminiSavedModels: next }) });
+  const selected = enabled && current === model ? (next[0] ?? '') : current || (!enabled ? model : '');
+  return normalizeAISettings({
+    ...settings,
+    model: selected,
+    ...(groq ? { groqModel: selected, groqSavedModels: next } : { geminiModel: selected, geminiSavedModels: next }),
+  });
 }
 
 export function savedAIChoices(settings: AISettings): { provider: 'groq' | 'gemini'; model: string }[] {
-  return ([['groq', settings.apiKey, settings.groqSavedModels], ['gemini', settings.geminiApiKey, settings.geminiSavedModels]] as const)
-    .flatMap(([provider, key, models]) => key ? models.map(model => ({ provider, model })) : []);
+  return (
+    [
+      ['groq', settings.apiKey, settings.groqSavedModels],
+      ['gemini', settings.geminiApiKey, settings.geminiSavedModels],
+    ] as const
+  ).flatMap(([provider, key, models]) => (key ? models.map(model => ({ provider, model })) : []));
 }
 
 export function nextAIChoice(settings: AISettings): AISettings | null {

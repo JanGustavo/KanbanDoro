@@ -9,11 +9,22 @@ export type TourEvents = {
 };
 export type TourOptions = TourEvents & { steps: TourStep[]; storage?: TourStorage };
 
-export function placeTourPopover(target: DOMRect, width: number, height: number, viewportWidth: number, viewportHeight: number) {
+export function placeTourPopover(
+  target: DOMRect,
+  width: number,
+  height: number,
+  viewportWidth: number,
+  viewportHeight: number,
+) {
   const gap = 12;
   const below = target.bottom + gap;
   const above = target.top - height - gap;
-  const top = below + height <= viewportHeight - gap ? below : above >= gap ? above : Math.max(gap, Math.min(below, viewportHeight - height - gap));
+  const top =
+    below + height <= viewportHeight - gap
+      ? below
+      : above >= gap
+        ? above
+        : Math.max(gap, Math.min(below, viewportHeight - height - gap));
   const left = Math.max(gap, Math.min(target.left + (target.width - width) / 2, viewportWidth - width - gap));
   return { top, left };
 }
@@ -29,14 +40,18 @@ export class GuidedTour {
   private generation = 0;
   private active = false;
 
-  constructor(options: TourOptions) { this.options = options; }
+  constructor(options: TourOptions) {
+    this.options = options;
+  }
 
   async start({ force = false }: { force?: boolean } = {}): Promise<boolean> {
     const generation = ++this.generation;
     if (this.active || !this.options.steps.length) return false;
     try {
-      if (!force && await this.options.storage?.get()) return false;
-    } catch { /* Tour continua acessível se o armazenamento falhar. */ }
+      if (!force && (await this.options.storage?.get())) return false;
+    } catch {
+      /* Tour continua acessível se o armazenamento falhar. */
+    }
     if (this.generation !== generation || this.active) return false;
     this.active = true;
     this.index = 0;
@@ -57,7 +72,10 @@ export class GuidedTour {
     if (this.frame) cancelAnimationFrame(this.frame);
     this.frame = requestAnimationFrame(() => {
       this.frame = 0;
-      if (!this.target?.isConnected) { this.showStep(this.index + 1); return; }
+      if (!this.target?.isConnected) {
+        this.showStep(this.index + 1);
+        return;
+      }
       if (!this.popover) return;
       const rect = this.target.getBoundingClientRect();
       const pop = this.popover.getBoundingClientRect();
@@ -77,10 +95,16 @@ export class GuidedTour {
     let target: HTMLElement | null = null;
     while (index < this.options.steps.length) {
       const found = document.querySelector<HTMLElement>(this.options.steps[index].selector);
-      if (found && found.getClientRects().length && getComputedStyle(found).visibility !== 'hidden') { target = found; break; }
+      if (found && found.getClientRects().length && getComputedStyle(found).visibility !== 'hidden') {
+        target = found;
+        break;
+      }
       index++;
     }
-    if (!target) { void this.finish('complete'); return; }
+    if (!target) {
+      void this.finish('complete');
+      return;
+    }
     this.index = index;
     this.target = target;
     target.classList.add('kb-tour-target');
@@ -118,19 +142,32 @@ export class GuidedTour {
   }
 
   private onKeyDown = (event: KeyboardEvent) => {
-    if (event.key === 'Escape') { event.preventDefault(); void this.finish('skip'); return; }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      void this.finish('skip');
+      return;
+    }
     if (event.key !== 'Tab' || !this.popover) return;
     const buttons = Array.from(this.popover.querySelectorAll('button'));
     const first = buttons[0];
     const last = buttons[buttons.length - 1];
-    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
   };
 
   private async finish(kind: 'complete' | 'skip') {
     if (!this.active) return;
     this.destroy();
-    try { await this.options.storage?.set(true); } catch { /* O fluxo permanece utilizável. */ }
+    try {
+      await this.options.storage?.set(true);
+    } catch {
+      /* O fluxo permanece utilizável. */
+    }
     if (kind === 'skip') this.options.onSkip?.();
     else this.options.onComplete?.();
   }

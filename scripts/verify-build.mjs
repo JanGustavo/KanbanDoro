@@ -20,7 +20,10 @@ for (const path of ['offscreen.html', 'offscreen.js']) {
 for (const path of ['focus-blocked.html', 'focus-blocked.js', 'focus-blocked.css']) {
   if (!existsSync(`dist/${path}`)) throw new Error(`Tela de foco ausente: dist/${path}`);
 }
-if (!manifest.permissions.includes('declarativeNetRequest') || !manifest.web_accessible_resources?.some(entry => entry.resources.includes('focus-blocked.html'))) {
+if (
+  !manifest.permissions.includes('declarativeNetRequest') ||
+  !manifest.web_accessible_resources?.some(entry => entry.resources.includes('focus-blocked.html'))
+) {
   throw new Error('Permissão e tela de bloqueio de foco precisam constar no manifesto');
 }
 console.log('Manifest V3: scripts de conteúdo independentes e presentes no dist.');

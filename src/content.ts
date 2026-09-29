@@ -1,4 +1,10 @@
-type TimerSession = { phase: string; endsAt: number; stepEndsAt?: number; pauseEndsAt?: number; pauseStartedAt?: number };
+type TimerSession = {
+  phase: string;
+  endsAt: number;
+  stepEndsAt?: number;
+  pauseEndsAt?: number;
+  pauseStartedAt?: number;
+};
 let session: TimerSession | null = null;
 let mode: 'open' | 'compact' | 'hidden' = 'open';
 const host = document.createElement('div');
@@ -29,41 +35,80 @@ shadow.appendChild(bubble);
 (document.body || document.documentElement).appendChild(host);
 
 function render() {
-  const active = session && ['running', 'decision', 'break', 'intermission', 'intermission-done'].includes(session.phase);
+  const active =
+    session && ['running', 'decision', 'break', 'intermission', 'intermission-done'].includes(session.phase);
   if (!active || mode === 'hidden') {
     host.style.display = 'none';
     return;
   }
   host.style.display = 'block';
   host.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:2147483647;display:block';
-  const remaining = session!.phase === 'decision' || session!.phase === 'intermission-done' ? 0 : Math.max(0, (session!.phase === 'running' ? Math.min(session!.stepEndsAt ?? session!.endsAt, session!.endsAt) : session!.phase === 'intermission' ? session!.pauseEndsAt ?? Date.now() : session!.endsAt) - Date.now());
+  const remaining =
+    session!.phase === 'decision' || session!.phase === 'intermission-done'
+      ? 0
+      : Math.max(
+          0,
+          (session!.phase === 'running'
+            ? Math.min(session!.stepEndsAt ?? session!.endsAt, session!.endsAt)
+            : session!.phase === 'intermission'
+              ? (session!.pauseEndsAt ?? Date.now())
+              : session!.endsAt) - Date.now(),
+        );
   const clock = `${String(Math.floor(remaining / 60_000)).padStart(2, '0')}:${String(Math.floor(remaining / 1_000) % 60).padStart(2, '0')}`;
-  const label = session!.phase.startsWith('intermission') ? 'PAUSA RÁPIDA' : session!.phase === 'break' ? 'PAUSA' : session!.phase === 'decision' ? 'DECIDIR' : 'FOCO';
+  const label = session!.phase.startsWith('intermission')
+    ? 'PAUSA RÁPIDA'
+    : session!.phase === 'break'
+      ? 'PAUSA'
+      : session!.phase === 'decision'
+        ? 'DECIDIR'
+        : 'FOCO';
   bubble.replaceChildren();
   bubble.className = `timer ${mode}`;
   if (mode === 'compact') {
     const icon = document.createElement('img');
-    icon.src = chrome.runtime.getURL('icon.svg'); icon.alt = '';
-    const text = document.createElement('span'); text.className = 'timer-label';
-    const phase = document.createElement('small'); phase.textContent = label;
-    const time = document.createElement('strong'); time.textContent = clock;
-    text.append(phase, time); bubble.append(icon, text);
+    icon.src = chrome.runtime.getURL('icon.svg');
+    icon.alt = '';
+    const text = document.createElement('span');
+    text.className = 'timer-label';
+    const phase = document.createElement('small');
+    phase.textContent = label;
+    const time = document.createElement('strong');
+    time.textContent = clock;
+    text.append(phase, time);
+    bubble.append(icon, text);
     bubble.title = 'Expandir ciclo atual';
-    bubble.onclick = () => { mode = 'open'; render(); };
+    bubble.onclick = () => {
+      mode = 'open';
+      render();
+    };
     return;
   }
   bubble.onclick = null;
-  const top = document.createElement('div'); top.className = 'timer-top';
-  const icon = document.createElement('img'); icon.src = chrome.runtime.getURL('icon.svg'); icon.alt = '';
-  const heading = document.createElement('span'); heading.textContent = 'KANBANDORO / CICLO ATUAL';
-  top.append(icon, heading); bubble.appendChild(top);
-  const body = document.createElement('div'); body.className = 'timer-body';
-  const ring = document.createElement('span'); ring.className = 'timer-ring';
-  const mark = document.createElement('span'); mark.textContent = 'K'; ring.appendChild(mark);
-  const text = document.createElement('span'); text.className = 'timer-label';
-  const phase = document.createElement('small'); phase.textContent = label;
-  const time = document.createElement('strong'); time.textContent = clock;
-  text.append(phase, time); body.append(ring, text); bubble.appendChild(body);
+  const top = document.createElement('div');
+  top.className = 'timer-top';
+  const icon = document.createElement('img');
+  icon.src = chrome.runtime.getURL('icon.svg');
+  icon.alt = '';
+  const heading = document.createElement('span');
+  heading.textContent = 'KANBANDORO / CICLO ATUAL';
+  top.append(icon, heading);
+  bubble.appendChild(top);
+  const body = document.createElement('div');
+  body.className = 'timer-body';
+  const ring = document.createElement('span');
+  ring.className = 'timer-ring';
+  const mark = document.createElement('span');
+  mark.textContent = 'K';
+  ring.appendChild(mark);
+  const text = document.createElement('span');
+  text.className = 'timer-label';
+  const phase = document.createElement('small');
+  phase.textContent = label;
+  const time = document.createElement('strong');
+  time.textContent = clock;
+  text.append(phase, time);
+  body.append(ring, text);
+  bubble.appendChild(body);
   const actions = document.createElement('div');
   actions.className = 'timer-actions';
   const button = (text: string, action: () => void) => {
@@ -73,15 +118,24 @@ function render() {
     actions.appendChild(element);
   };
   button('Abrir', () => chrome.runtime.sendMessage({ type: 'OPEN_BOARD' }));
-  button('Recolher', () => { mode = 'compact'; render(); });
-  button('Ocultar', () => { mode = 'hidden'; render(); });
+  button('Recolher', () => {
+    mode = 'compact';
+    render();
+  });
+  button('Ocultar', () => {
+    mode = 'hidden';
+    render();
+  });
   bubble.appendChild(actions);
 }
 
-chrome.runtime.sendMessage({ type: 'GET_TIMER' }).then((response) => {
-  session = response?.session || null;
-  render();
-}).catch(() => {});
+chrome.runtime
+  .sendMessage({ type: 'GET_TIMER' })
+  .then(response => {
+    session = response?.session || null;
+    render();
+  })
+  .catch(() => {});
 chrome.runtime.onMessage.addListener((message: { type?: string; session?: TimerSession }, _sender, sendResponse) => {
   if (message.type === 'PING_TIMER') {
     sendResponse({ ready: true });

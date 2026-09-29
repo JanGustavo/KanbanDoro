@@ -7,14 +7,18 @@ const envPath = fileURLToPath(new URL('../backend/.env', import.meta.url));
 const remote = process.argv.includes('--remote');
 let clientId = process.env.KANBANDORO_GOOGLE_CLIENT_ID?.trim();
 if (!clientId && existsSync(envPath)) {
-  const value = readFileSync(envPath, 'utf8').match(/^GOOGLE_CLIENT_ID\s*=\s*(.+)\s*$/m)?.[1]?.trim();
+  const value = readFileSync(envPath, 'utf8')
+    .match(/^GOOGLE_CLIENT_ID\s*=\s*(.+)\s*$/m)?.[1]
+    ?.trim();
   clientId = value?.replace(/^['"]|['"]$/g, '');
 }
 if (!clientId) {
   console.error('Falta GOOGLE_CLIENT_ID em backend/.env. Configure o cliente OAuth Web antes de compilar Connections.');
   process.exit(1);
 }
-const apiUrl = remote ? 'https://api.kanbandoro.jangustavo.me' : process.env.KANBANDORO_API_URL || 'http://127.0.0.1:8000';
+const apiUrl = remote
+  ? 'https://api.kanbandoro.jangustavo.me'
+  : process.env.KANBANDORO_API_URL || 'http://127.0.0.1:8000';
 console.log(`Connections: compilando para ${apiUrl}.`);
 const result = spawnSync('npm', ['run', 'build'], {
   cwd: root,
@@ -22,8 +26,8 @@ const result = spawnSync('npm', ['run', 'build'], {
   env: {
     ...process.env,
     KANBANDORO_GOOGLE_CLIENT_ID: clientId,
-    KANBANDORO_API_URL: apiUrl
-  }
+    KANBANDORO_API_URL: apiUrl,
+  },
 });
 if (result.error) throw result.error;
 process.exit(result.status ?? 1);
