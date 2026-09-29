@@ -232,8 +232,15 @@ async function checkAttachment(value) {
     let { response, finalUrl } = await fetchPublicPage(url, 'HEAD');
     if ([403, 405, 501].includes(response.status)) ({ response, finalUrl } = await fetchPublicPage(url, 'GET'));
     if (response.ok && finalUrl) {
-      // Preview failures never invalidate a reachable URL. Some sites deny GET.
-      const preview = await getAttachmentPreview(finalUrl).catch(() => null);
+      // HEAD may succeed while the actual page is gone. Preserve links whose
+      // HTML preview is blocked, but reject a confirmed GET 404 or soft 404.
+      let preview = null;
+      try { preview = await getAttachmentPreview(finalUrl); }
+      catch (error) {
+        if (error.message === 'Página não encontrada (404).') return { url: finalUrl, verifiedAt: null, reason: error.message };
+      }
+      if (preview && /^(?:404|error 404|page not found|página não encontrada)(?:\s*[-|:]|$)/i.test(preview.pageTitle))
+        return { url: finalUrl, verifiedAt: null, reason: 'A página respondeu, mas informa que não foi encontrada.' };
       return { url: finalUrl, verifiedAt: Date.now(), reason: '', ...(preview ? { pageTitle: preview.pageTitle, description: preview.description, source: preview.source } : {}) };
     }
     const reason = response.status === 0 ? 'O site redirecionou sem revelar o destino. Tente um link direto da documentação.'
@@ -271,6 +278,7 @@ async function getAttachmentPreview(value, withText = false) {
   const url = safeAttachmentUrl(value);
   if (!url) throw Error('Link público HTTPS inválido.');
   const { response, finalUrl } = await fetchPublicPage(url, 'GET');
+  if (response.status === 404) throw Error('Página não encontrada (404).');
   if (!response.ok || !finalUrl) throw Error('A página não está disponível para leitura.');
   const type = response.headers.get('content-type') || '';
   if (!/^text\/html\b/i.test(type)) throw Error('A fonte não devolveu uma página HTML.');
@@ -391,26 +399,36 @@ async function aiChat(settings, payload, timeout = 25000) {
   return { choices: [{ message: { content: result.candidates?.[0]?.content?.parts?.map(part => part.text ?? '').join('') ?? '' } }] };
 }
 async function verifiedAttachments(candidates, seen) {
-  const checks = await Promise.all(candidates.slice(0, 3).filter(item => typeof item?.title === 'string' && typeof item?.url === 'string')
+  const checks = await Promise.all(candidates.slice(0, 6).filter(item => typeof item?.title === 'string' && typeof item?.url === 'string')
     .map(async item => ({ title: item.title.trim().slice(0, 120), ...await checkAttachment(item.url) })));
   return checks.filter(link => {
     if (!link.title || !link.verifiedAt || seen.has(link.url)) return false;
     seen.add(link.url);
     return true;
-  });
+  }).slice(0, 3);
+}
+function buildSourceSearch(value) {
+  if (!value || typeof value.query !== 'string' || !['web', 'video', 'code'].includes(value.kind)) return null;
+  const query = value.query.trim().replace(/\s+/g, ' ').slice(0, 140);
+  if (query.length < 4) return null;
+  const base = value.kind === 'video' ? 'https://www.youtube.com/results' : value.kind === 'code' ? 'https://github.com/search' : 'https://www.google.com/search';
+  const url = new URL(base);
+  url.searchParams.set(value.kind === 'video' ? 'search_query' : 'q', query);
+  if (value.kind === 'code') url.searchParams.set('type', 'repositories');
+  return { title: typeof value.title === 'string' && value.title.trim() ? value.title.trim().slice(0, 90) : query, kind: value.kind, url: url.href };
 }
 async function replaceBrokenAttachments(settings, task, failed, working, seen) {
   if (!failed.length || working.length >= 3) return [];
   try {
     const response = await aiChat(settings, { model: settings.model,
       ...(['openai/gpt-oss-20b', 'openai/gpt-oss-120b'].includes(settings.model) ? { reasoning_effort: 'low' } : {}),
-      messages: [{ role: 'system', content: 'Alguns links de uma tarefa falharam na verificação. Retorne até três URLs HTTPS alternativas EXATAS e atuais: documentação, repositório público do GitHub ou vídeo específico do YouTube, somente quando souber o ID real. Prefira páginas iniciais ou índices oficiais; não repita URLs recusadas ou aceitas. Não invente caminhos, IDs ou redirecionamentos. Se não conhecer endereços confiáveis, retorne lista vazia. Responda somente JSON.' },
+      messages: [{ role: 'system', content: 'Alguns links de uma tarefa falharam na verificação. Retorne até seis URLs HTTPS alternativas EXATAS: documentação oficial, repositório público do GitHub ou vídeo específico do YouTube, somente quando souber o ID real. Prefira páginas iniciais ou índices oficiais; não repita URLs recusadas ou aceitas. Não invente caminhos, IDs ou redirecionamentos. Se não conhecer endereços confiáveis, retorne lista vazia. Responda somente JSON.' },
         { role: 'user', content: JSON.stringify({ tarefa: task.slice(0, 140), rejeitados: failed.map(link => ({ titulo: link.title, url: link.url, motivo: link.reason })), aceitos: working.map(link => link.url) }) }],
       response_format: { type: 'json_schema', json_schema: { name: 'attachment_replacements', strict: settings.provider === 'groq' && ['openai/gpt-oss-20b', 'openai/gpt-oss-120b'].includes(settings.model), schema: { type: 'object', additionalProperties: false, required: ['attachments'], properties: { attachments: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['title', 'url'], properties: { title: { type: 'string' }, url: { type: 'string' } } } } } } } },
       max_completion_tokens: 450 }, 12000);
     const draft = JSON.parse(response.choices?.[0]?.message?.content || '{}');
     if (!Array.isArray(draft.attachments)) return [];
-    const replacements = draft.attachments.filter(item => !seen.has(safeAttachmentUrl(item?.url))).slice(0, 3 - working.length);
+    const replacements = draft.attachments.filter(item => !seen.has(safeAttachmentUrl(item?.url))).slice(0, 6);
     return verifiedAttachments(replacements, seen);
   } catch { return []; } // Sources are optional; a failed retry never invalidates the task proposal.
 }
@@ -523,12 +541,12 @@ async function handleGroq(message) {
   const result = await aiChat(settings, {
     model: settings.model,
     messages: [
-      { role: 'system', content: 'Você organiza tarefas para um Kanban Pomodoro. Responda em português brasileiro. Sugira tempo total em minutos e dificuldade 1 leve, 2 média, 3 alta. Para a área, escolha uma das áreas existentes quando fizer sentido; caso contrário sugira uma nova área curta. Se não houver uma classificação útil, devolva uma string vazia. Slices são etapas curtas e concretas. Respeite os campos e etapas já preenchidos quando houver proposta anterior, mudando-os somente para atender ao comentário. Sugira até 3 fontes HTTPS úteis, variando quando relevante entre documentação ou artigo, repositório público do GitHub e vídeo público específico do YouTube (watch?v=, shorts ou youtu.be). Inclua vídeo somente se conhecer seu ID real de 11 caracteres; nunca invente IDs, URLs, caminhos, buscas ou vagas. Prefira página inicial ou índice oficial a caminhos profundos incertos. Se não tiver certeza, devolva anexos vazios. Nunca execute ações nem considere que a proposta foi aceita.' },
+      { role: 'system', content: 'Você organiza tarefas para um Kanban Pomodoro. Responda em português brasileiro. Sugira tempo total em minutos e dificuldade 1 leve, 2 média, 3 alta. Para a área, escolha uma das áreas existentes quando fizer sentido; caso contrário sugira uma nova área curta. Se não houver uma classificação útil, devolva uma string vazia. Slices são etapas curtas e concretas. Respeite os campos e etapas já preenchidos quando houver proposta anterior, mudando-os somente para atender ao comentário. Sugira até 6 URLs HTTPS diretas que conheça com segurança: documentação, artigos, repositórios ou vídeos específicos com ID real. Evite páginas antigas e caminhos profundos incertos. Nunca invente URL de vaga, vídeo ou artigo. Para explorar temas ou vagas sem URL direta confiável, sugira até 3 buscas com título, tipo web/video/code e termos específicos; se houver localidades distintas, crie buscas separadas (por exemplo Bayeux e João Pessoa). A aplicação construirá a URL do buscador, sem chamar isso de fonte verificada. Nunca execute ações nem considere que a proposta foi aceita.' },
       { role: 'user', content: JSON.stringify({ pedido: input, areas_existentes: areas, proposta_anterior: previous, comentario: feedback }) }
     ],
     response_format: { type: 'json_schema', json_schema: { name: 'task_proposal', strict: ['openai/gpt-oss-20b', 'openai/gpt-oss-120b'].includes(settings.model), schema: {
-      type: 'object', additionalProperties: false, required: ['name', 'description', 'difficulty', 'estimate', 'skill', 'slices', 'attachments'],
-      properties: { name: { type: 'string' }, description: { type: 'string' }, difficulty: { type: 'integer' }, estimate: { type: 'integer' }, skill: { type: 'string' }, slices: { type: 'array', items: { type: 'string' } }, attachments: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['title', 'url'], properties: { title: { type: 'string' }, url: { type: 'string' } } } } }
+      type: 'object', additionalProperties: false, required: ['name', 'description', 'difficulty', 'estimate', 'skill', 'slices', 'attachments', 'searches'],
+      properties: { name: { type: 'string' }, description: { type: 'string' }, difficulty: { type: 'integer' }, estimate: { type: 'integer' }, skill: { type: 'string' }, slices: { type: 'array', items: { type: 'string' } }, attachments: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['title', 'url'], properties: { title: { type: 'string' }, url: { type: 'string' } } } }, searches: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['title', 'query', 'kind'], properties: { title: { type: 'string' }, query: { type: 'string' }, kind: { type: 'string', enum: ['web', 'video', 'code'] } } } } }
     } } },
     max_completion_tokens: 1200
   });
@@ -538,13 +556,14 @@ async function handleGroq(message) {
   try { draft = JSON.parse(text); } catch { throw Error('O modelo retornou uma proposta incompleta. Tente novamente.'); }
   if (typeof draft.name !== 'string' || !draft.name.trim() || typeof draft.description !== 'string' || typeof draft.skill !== 'string' || !Number.isInteger(draft.estimate) || draft.estimate < 1 || draft.estimate > 480 || ![1, 2, 3].includes(draft.difficulty)
     || !Array.isArray(draft.slices) || draft.slices.some(s => typeof s !== 'string') || !Array.isArray(draft.attachments)) throw Error('A proposta precisa de revisão. Tente novamente.');
-  const candidates = draft.attachments.slice(0, 3).filter(item => typeof item?.title === 'string' && typeof item?.url === 'string');
+  const candidates = draft.attachments.slice(0, 6).filter(item => typeof item?.title === 'string' && typeof item?.url === 'string');
   const checked = await Promise.all(candidates.map(async item => ({ title: item.title.trim().slice(0, 120), ...await checkAttachment(item.url) })));
   const failed = checked.filter(link => !link.verifiedAt);
   const seen = new Set(checked.map(link => link.url));
-  const attachments = checked.filter(link => link.title && link.verifiedAt);
-  attachments.push(...await replaceBrokenAttachments(settings, draft.name, failed, attachments, seen));
-  return { proposal: { name: draft.name.trim().slice(0, 140), description: draft.description.slice(0, 3000), difficulty: draft.difficulty, estimate: draft.estimate, skill: draft.skill.trim().slice(0, 50), slices: draft.slices.filter(s => s.trim()).slice(0, 8).map(s => s.trim().slice(0, 140)), attachments } };
+  const attachments = checked.filter(link => link.title && link.verifiedAt).slice(0, 3);
+  if (attachments.length < 3) attachments.push(...(await replaceBrokenAttachments(settings, draft.name, failed, attachments, seen)).slice(0, 3 - attachments.length));
+  const searches = Array.isArray(draft.searches) ? draft.searches.slice(0, 3).map(buildSourceSearch).filter(Boolean) : [];
+  return { proposal: { name: draft.name.trim().slice(0, 140), description: draft.description.slice(0, 3000), difficulty: draft.difficulty, estimate: draft.estimate, skill: draft.skill.trim().slice(0, 50), slices: draft.slices.filter(s => s.trim()).slice(0, 8).map(s => s.trim().slice(0, 140)), attachments, searches } };
 }
 
 async function ensureTimerInTab(tabId) {

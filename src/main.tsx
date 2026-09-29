@@ -17,6 +17,7 @@ import { makeBackup, mergeBackup, parseBackup, MAX_BACKUP_BYTES, type Backup } f
 type Column = 'todo' | 'doing' | 'late' | 'done';
 type Slice = { id: string; name: string; done: boolean; estimateMinutes?: number };
 type Attachment = AttachmentInfo;
+type SourceSearch = { title: string; kind: 'web' | 'video' | 'code'; url: string };
 export type Task = {
   id: string;
   name: string;
@@ -59,7 +60,7 @@ type Session = {
   postFocusCompleted?: boolean;
 };
 export type HistoryEntry = { id: string; taskId: string; kind: string; seconds: number; at: number; sliceIds: string[]; cycleId?: string };
-type Proposal = { name: string; description: string; difficulty: 1 | 2 | 3; skill?: string; estimate: number; slices: string[]; attachments: Attachment[]; deadline?: string };
+type Proposal = { name: string; description: string; difficulty: 1 | 2 | 3; skill?: string; estimate: number; slices: string[]; attachments: Attachment[]; searches?: SourceSearch[]; deadline?: string };
 type ScheduleChoice = { mode: 'once' | 'selected-days' | 'weekly'; startDate: string; weekdays: number[] };
 type AIModel = ListedAIModel;
 export type Data = { tasks: Task[]; session: Session | null; history: HistoryEntry[]; breakPreferences: string[]; weeklyPlans: WeeklyPlan[];
@@ -660,7 +661,7 @@ function App() {
       <div className="focus-actions">
         {phase === 'running' && <><button onClick={() => (active.stepIndex ?? 0) < (active.steps?.length ?? 1) - 1 ? nextCycleTask() : stopFocus('completed')}>{(active.stepIndex ?? 0) < (active.steps?.length ?? 1) - 1 ? 'Concluir tarefa e avançar ↗' : 'Concluir tarefa e ciclo'}</button><label>Pausa rápida (min) <NumberStepper label="Minutos da pausa rápida" value={quickBreakMinutes} min={1} max={30} onChange={setQuickBreakMinutes} /></label><button onClick={pauseFocus}>Pausar foco</button><button onClick={() => stopFocus('interrupted')}>Interromper e deixar para depois</button><button onClick={() => { stopFocus('interrupted'); if (activeTask) setRestart(activeTask); }}>Interromper e recomeçar</button></>}
         {phase?.startsWith('intermission') && <><span role="status">{phase === 'intermission-done' ? 'A pausa rápida terminou. Seu foco continua parado.' : 'Tempo da tarefa congelado; retome quando voltar.'}</span><button className="primary" onClick={resumeFocus}>Retomar foco</button></>}
-        {phase === 'post-focus' && <>
+        {phase === 'post-focus' && !active.postFocusCompleted && <>
           <span className="break-recommendation">{active.postFocusCompleted && finishedCycles > 0 && finishedCycles % 4 === 0 ? 'Quarto ciclo concluído: pausa longa sugerida.' : 'Pausa curta sugerida.'}</span>
           <label>Pausa <select value={breakType} onChange={e => setBreakType(e.target.value)}>{[...data.breakPreferences, 'Outra'].map(x => <option key={x} value={x}>{x}</option>)}</select></label>
           <label>min <NumberStepper label="Minutos da pausa" value={breakMinutes} min={1} max={120} onChange={setBreakMinutes} /></label>
@@ -669,6 +670,7 @@ function App() {
         {phase === 'break-done' && <><span role="status">Pausa encerrada. Confirme antes de voltar ao foco.</span><button onClick={() => update(old => ({ ...old, session: null }))}>Entendi</button></>}
       </div>
     </section>}
+    {active?.phase === 'post-focus' && active.postFocusCompleted && <div className="backdrop cycle-success-backdrop"><section className="dialog cycle-success" role="dialog" aria-modal="true" aria-label="Ciclo concluído"><div className="cycle-success-sparks" aria-hidden="true"><span>✦</span><span>✧</span><span>✦</span></div><span className="eyebrow">CICLO CONCLUÍDO</span><h2>Você conseguiu!</h2><p>Seu tempo de foco foi registrado. Agora aproveite o intervalo que faz sentido para você.</p><strong>{activeTask?.name}</strong><span className="break-recommendation">{finishedCycles > 0 && finishedCycles % 4 === 0 ? 'Pausa longa sugerida após quatro ciclos.' : 'Pausa curta sugerida.'}</span><div className="cycle-success-options"><label>Tipo de pausa <select value={breakType} onChange={e => setBreakType(e.target.value)}>{[...data.breakPreferences, 'Outra'].map(x => <option key={x} value={x}>{x}</option>)}</select></label><label>Duração (min) <NumberStepper label="Minutos da pausa" value={breakMinutes} min={1} max={120} onChange={setBreakMinutes} /></label></div><div className="cycle-success-actions"><button className="primary" onClick={startBreak}>Começar {breakType.toLowerCase()}</button><button onClick={() => update(old => ({ ...old, session: null }))}>Finalizar sem pausa</button></div></section></div>}
     {active && phase === 'decision' && <div className="backdrop cycle-decision-backdrop"><section className="dialog cycle-decision" role="dialog" aria-modal="true" aria-label="Tempo reservado encerrado">
       <span className="eyebrow">TEMPO DA TAREFA ENCERRADO</span><h2>{activeTask?.name ?? 'Tarefa atual'}</h2><p>O relógio está pausado. Confirme sua decisão para continuar o ciclo.</p>
       <div className="cycle-decision-actions"><button className="primary" onClick={() => (active.stepIndex ?? 0) < (active.steps?.length ?? 1) - 1 ? nextCycleTask() : stopFocus('completed')}>Concluí e avançar</button>
@@ -697,6 +699,7 @@ function App() {
           <AttachmentPreview link={link} busy={summarizingLink === link.url} error={attachmentError?.url === link.url ? attachmentError.message : undefined} onSummarize={() => void summarizeAttachment(link, proposal)} />
         </div>)}
         <button onClick={() => setProposal({ ...proposal, attachments: [...proposal.attachments, { title: '', url: '', verifiedAt: null, reason: 'Informe um endereço para verificar.' }] })}>+ Adicionar link</button>
+        {!!proposal.searches?.length && <div className="source-searches"><h3>Explorar outras fontes</h3><p>Buscas montadas com os termos da tarefa. Abra os resultados e escolha a fonte antes de adicioná-la como anexo; resultados não foram verificados.</p>{proposal.searches.map((search, index) => <a href={search.url} target="_blank" rel="noopener noreferrer" key={`${search.kind}-${index}`}>{search.kind === 'video' ? '▶ Vídeos' : search.kind === 'code' ? '⌘ Repositórios' : '⌕ Web'} · {search.title} ↗</a>)}</div>}
       </div>}
       <fieldset className="schedule-choice"><legend>Quando criar?</legend><div className="schedule-modes">
         <label><input type="radio" name="schedule-mode" checked={schedule.mode === 'once'} onChange={() => setSchedule(old => ({ ...old, mode: 'once' }))} /> Uma vez</label>

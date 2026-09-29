@@ -53,6 +53,8 @@ A IA nunca muda a tarefa sem revisão: criação abre modal; ajuda comum respond
 
 **Gemini 3.x:** modelos Flash 3.x anunciados no catálogo usam a Interactions API com `store: false` e saída JSON validada; os 2.x seguem no caminho legado quando a chave tiver acesso. Gemini 2.5 pode aparecer no catálogo e ainda assim devolver 404 para chaves novas: use **Atualizar modelos**, selecione `gemini-3.8-flash` se aparecer e teste. O selo Free reflete o plano divulgado pelo provedor, não concede acesso automático para toda chave.
 
+**Versão 0.5:** o quadro ganhou uma moldura visível nas laterais e nas bordas superior e inferior. Ao concluir o ciclo, uma tela celebra o foco registrado e deixa escolher o tipo e a duração da pausa ou terminar sem pausa; a animação respeita a preferência de movimento reduzido do sistema. Nas propostas de IA, até seis endereços candidatos são verificados para apresentar no máximo três fontes diretas. A checagem também recusa páginas que respondem ao HEAD mas devolvem 404 ao abrir, além de algumas páginas 404 disfarçadas de sucesso. A IA pode sugerir buscas por localidade ou assunto, e o KanbanDoro constrói links de busca para web, vídeos e repositórios. Essas buscas são identificadas como exploração e não são tratadas como anexos verificados. O app não tem índice próprio nem API de busca em tempo real, portanto não garante links diretos para vagas específicas ou a atualização do conteúdo das fontes.
+
 Se a API Gemini devolver 503, a extensão aguarda brevemente e tenta mais uma vez. Se o serviço continuar indisponível, mostra um aviso para aguardar ou alternar para Groq; isso não indica uma chave inválida.
 
 Em **Preferências → IA**, cada modelo da lista tem **Habilitar/Desabilitar** para participar da alternância e **Usar agora** para se tornar o único modelo ativo. O modelo em uso aparece marcado na lista e identificado junto ao botão 🤖 no quadro. Desabilitar o ativo escolhe outro habilitado do mesmo provedor, se houver. As escolhas de Groq e Gemini e suas chaves são guardadas separadamente.
@@ -107,7 +109,7 @@ O histórico ainda não é enviado ao modelo. Quando essa etapa for ligada, o co
 
 ## Publicar uma versão 0.x
 
-Atualize `package.json`, `package-lock.json` e `public/manifest.json` para a mesma versão; faça commit na `main` e sincronize com o remoto. Execute `make release VERSION=0.2.0`. O comando verifica versões, árvore limpa, build e testes, e envia a tag `v0.2.0`. A GitHub Action da tag recompila e publica a Release com o ZIP da pasta `dist`. Não rode o comando novamente para uma tag já publicada; versões 0.x são marcadas como pré-lançamento. Criar uma tag é uma ação de publicação, feita apenas ao executar explicitamente o comando.
+Atualize `package.json`, `package-lock.json` e `public/manifest.json` para a mesma versão; faça commit na `main` e sincronize com o remoto. Execute `make release VERSION=0.5.0`. O comando verifica versões, árvore limpa, build e testes, e envia a tag `v0.5.0`. A GitHub Action da tag recompila e publica a Release com o ZIP da pasta `dist`. Não rode o comando novamente para uma tag já publicada; versões 0.x são marcadas como pré-lançamento. Criar uma tag é uma ação de publicação, feita apenas ao executar explicitamente o comando.
 
 ### VPS e estatísticas
 

@@ -109,6 +109,11 @@ vm.runInNewContext(readFileSync('dist/background.js', 'utf8'), { chrome, AbortSi
     if (url === 'https://example.org/redirect') return { ok: false, status: 302, url, headers: { get: () => 'https://127.0.0.1/private' } };
     if (url === 'https://example.org/opaque') return { ok: false, status: 0, url: '', headers: { get: () => null } };
     if (url === 'https://example.org/missing') return { ok: false, status: 404, url, headers: { get: () => null } };
+    if (url === 'https://example.org/head-only') return { ok: options.method === 'HEAD', status: options.method === 'HEAD' ? 200 : 404, url, headers: { get: () => null } };
+    if (url === 'https://example.org/soft-missing') {
+      const bytes = new TextEncoder().encode('<html><title>404 - Página não encontrada</title></html>');
+      return { ok: true, status: 200, url, headers: { get: key => key === 'content-type' ? 'text/html' : null }, body: options.method === 'GET' ? { getReader: () => { let sent = false; return { read: async () => sent ? { done: true } : (sent = true, { done: false, value: bytes }), cancel: async () => {} }; } } : null };
+    }
     if (url === 'https://example.org/forbidden') return { ok: false, status: 403, url, headers: { get: () => null } };
     const attachmentSummary = options?.body?.includes('attachment_summary');
     const replacement = options?.body?.includes('attachment_replacements');
@@ -117,7 +122,7 @@ vm.runInNewContext(readFileSync('dist/background.js', 'utf8'), { chrome, AbortSi
     const sliceInsight = options?.body?.includes('slice_insight');
     return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(attachmentSummary ? { resumo: 'Estude em etapas curtas e revise periodicamente.' } : replacement ? { attachments: [{ title: 'Artigo', url: 'https://example.org/article' }, { title: 'Falso', url: 'https://example.org/missing' }] } : sliceInsight ? { insight: 'Separe o slice maior em etapas curtas.' } : connectionDraft ?
       { title: 'Estudar', description: 'Linux', start: '', end: '', to: '', subject: '', body: '' } :
-      { name: 'Criar API', description: 'Implementar rotas', difficulty: 2, estimate: 35, skill: 'Programação', slices: ['Rotas', 'Testes'], attachments: [{ title: 'Documentação', url: 'https://example.org/info' }, { title: 'Interno', url: 'http://localhost/private' }] }) } }] }) };
+      { name: 'Criar API', description: 'Implementar rotas', difficulty: 2, estimate: 35, skill: 'Programação', slices: ['Rotas', 'Testes'], attachments: [{ title: 'Documentação', url: 'https://example.org/info' }, { title: 'Interno', url: 'http://localhost/private' }, { title: 'HEAD enganoso', url: 'https://example.org/head-only' }, { title: '404 disfarçado', url: 'https://example.org/soft-missing' }], searches: [{ title: 'Vagas em Bayeux', kind: 'web', query: 'vagas programação Bayeux PB' }, { title: 'Vagas em João Pessoa', kind: 'web', query: 'vagas programação João Pessoa PB' }, { title: 'Exemplo', kind: 'video', query: 'aula de API' }] }) } }] }) };
   } });
 const aiMessage = (message, senderUrl = 'index.html') => new Promise(resolve => {
   const accepted = listeners.message(message, { url: senderUrl }, resolve);
@@ -211,12 +216,18 @@ assert.equal(draft.proposal.attachments[0].verifiedAt > 0, true);
 assert.equal(draft.proposal.attachments.length, 2, 'failed suggestions must not be shown');
 assert.equal(draft.proposal.attachments[1].url, 'https://example.org/article');
 assert(draft.proposal.attachments.every(item => item.verifiedAt > 0));
+assert.equal(draft.proposal.searches.length, 3);
+assert.equal(new URL(draft.proposal.searches[0].url).searchParams.get('q'), 'vagas programação Bayeux PB');
+assert.equal(new URL(draft.proposal.searches[1].url).searchParams.get('q'), 'vagas programação João Pessoa PB');
+assert.equal(new URL(draft.proposal.searches[2].url).searchParams.get('search_query'), 'aula de API');
 assert(requests.some(request => request.options?.body?.includes('attachment_replacements')), 'one replacement request should only run when a suggestion fails');
 const redirect = await aiMessage({ type: 'CHECK_ATTACHMENT', url: 'https://example.org/redirect' });
 assert.equal(redirect.check.verifiedAt, null, 'redirects into local addresses must not be followed');
 assert(!requests.some(req => req.url.includes('127.0.0.1/private')));
 assert.match((await aiMessage({ type: 'CHECK_ATTACHMENT', url: 'https://example.org/opaque' })).check.reason, /redirecionou/);
 assert.match((await aiMessage({ type: 'CHECK_ATTACHMENT', url: 'https://example.org/missing' })).check.reason, /Página não encontrada/);
+assert.match((await aiMessage({ type: 'CHECK_ATTACHMENT', url: 'https://example.org/head-only' })).check.reason, /Página não encontrada/);
+assert.match((await aiMessage({ type: 'CHECK_ATTACHMENT', url: 'https://example.org/soft-missing' })).check.reason, /não foi encontrada/);
 assert.match((await aiMessage({ type: 'CHECK_ATTACHMENT', url: 'https://example.org/forbidden' })).check.reason, /recusou a verificação/);
 assert.match((await aiMessage({ type: 'CHECK_ATTACHMENT', url: 'https://www.youtube.com/results?search_query=linux' })).check.reason, /vídeo específico/);
 const video = await aiMessage({ type: 'CHECK_ATTACHMENT', url: 'https://www.youtube.com/watch?v=abcDEF12345' });
