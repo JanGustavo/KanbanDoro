@@ -45,10 +45,11 @@ if [[ -n $(sudo -n ss -H -ltn 'sport = :18080') ]] && [[ -z $(sudo -n docker com
 fi
 # O Compose se conecta somente ao loopback; não publica Nginx de outros projetos.
 sudo -n docker compose -p kanbandoro build api
+# O script chega por stdin via SSH; 'compose run' não pode consumir as linhas seguintes.
 if sudo -n docker volume inspect kanbandoro_kanbandoro_data >/dev/null 2>&1 && \
-    sudo -n docker compose -p kanbandoro run --rm --no-deps api test -f /data/kanbandoro.db; then
+    sudo -n docker compose -p kanbandoro run --rm --no-deps --interactive=false api test -f /data/kanbandoro.db; then
   mkdir -p "$HOME/kanbandoro-backups"
-  sudo -n docker compose -p kanbandoro run --rm --no-deps --user 0 \
+  sudo -n docker compose -p kanbandoro run --rm --no-deps --interactive=false --user 0 \
     -v "$HOME/kanbandoro-backups:/backups" api python -m app.scripts.backup /backups
 fi
 sudo -n docker compose -p kanbandoro up -d --no-build
