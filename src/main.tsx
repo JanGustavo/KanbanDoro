@@ -17,6 +17,8 @@ import {
 } from './aiSettings';
 import { verifiedAIModels, type ListedAIModel } from './aiModelCatalog';
 import AttachmentPreview, { type AttachmentInfo } from './AttachmentPreview';
+import LocalMaterials from './LocalMaterials';
+import { pruneLocalFiles, type LocalFile } from './localFiles';
 import {
   dateFromDay,
   isVisible,
@@ -45,7 +47,7 @@ import {
 import { makeBackup, mergeBackup, parseBackup, MAX_BACKUP_BYTES, type Backup } from './backup';
 
 type Column = 'todo' | 'doing' | 'late' | 'done';
-type Slice = { id: string; name: string; done: boolean; estimateMinutes?: number };
+type Slice = { id: string; name: string; done: boolean; estimateMinutes?: number; notes?: string; files?: LocalFile[] };
 type Attachment = AttachmentInfo;
 type SourceSearch = { title: string; kind: 'web' | 'video' | 'code'; url: string };
 export type Task = {
@@ -61,6 +63,8 @@ export type Task = {
   focusSeconds: number;
   slices: Slice[];
   attachments?: Attachment[];
+  notes?: string;
+  files?: LocalFile[];
   createdAt?: number;
   completedAt?: number;
   archivedAt?: number;
@@ -314,6 +318,13 @@ function App() {
             ? (stored.areas as string[]).filter(area => typeof area === 'string')
             : initial.areas,
         });
+        const referenced = new Set(
+          generated.tasks.flatMap(task => [
+            ...(task.files ?? []).map(file => file.id),
+            ...task.slices.flatMap(slice => (slice.files ?? []).map(file => file.id)),
+          ]),
+        );
+        void pruneLocalFiles(referenced).catch(() => {});
         setReady(true);
       });
     getAISettings().then(setAiSettings);
@@ -2492,8 +2503,9 @@ function App() {
               <section className="backup-panel" aria-label="Backup dos dados">
                 <h3>Backup local</h3>
                 <p>
-                  Tarefas, slices, histórico, rotinas e preferências vão para o JSON. Chaves de IA, tokens Google e a
-                  sessão de foco ativa ficam fora.
+                  Tarefas, anotações de tarefas e etapas, links, histórico, rotinas e preferências vão para o JSON.
+                  Imagens e arquivos locais ficam fora: guarde cópias separadas antes de remover a extensão ou trocar de
+                  navegador. Chaves de IA, tokens Google e a sessão de foco ativa também ficam fora.
                 </p>
                 <button
                   disabled={backupBusy}
@@ -3090,6 +3102,23 @@ function App() {
                       }}
                     />
                   </label>
+                  <LocalMaterials
+                    label={`Etapa ${slice.name}`}
+                    notes={slice.notes ?? ''}
+                    files={slice.files ?? []}
+                    onNotes={notes =>
+                      changeTask(task.id, x => ({
+                        ...x,
+                        slices: x.slices.map(s => (s.id === slice.id ? { ...s, notes } : s)),
+                      }))
+                    }
+                    onFiles={files =>
+                      changeTask(task.id, x => ({
+                        ...x,
+                        slices: x.slices.map(s => (s.id === slice.id ? { ...s, files } : s)),
+                      }))
+                    }
+                  />
                   <button
                     type="button"
                     aria-label={`Remover slice ${slice.name}`}
@@ -3185,6 +3214,14 @@ function App() {
                 {task.archivedAt ? ` · arquivada em ${displayDate(task.archivedAt)}` : ''}
               </p>
             )}
+            <h3>Materiais da tarefa</h3>
+            <LocalMaterials
+              label="Tarefa inteira"
+              notes={task.notes ?? ''}
+              files={task.files ?? []}
+              onNotes={notes => changeTask(task.id, x => ({ ...x, notes }))}
+              onFiles={files => changeTask(task.id, x => ({ ...x, files }))}
+            />
             {!!task.attachments?.length && (
               <>
                 <h3>Anexos</h3>
