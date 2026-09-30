@@ -563,6 +563,11 @@ async function fetchPublicPage(start, method) {
   }
   throw Error('Redirecionamentos em excesso');
 }
+function truncatedGroqOutput() {
+  const error = new Error('A Groq interrompeu a resposta antes de completar o JSON.');
+  error.code = 'GROQ_OUTPUT_TRUNCATED';
+  return error;
+}
 async function groqRequest(path, apiKey, body, timeout = 25000) {
   const response = await fetch(GROQ_URL + path, {
     method: body ? 'POST' : 'GET',
@@ -575,14 +580,44 @@ async function groqRequest(path, apiKey, body, timeout = 25000) {
     if (response.status === 429) throw Error('Limite da Groq atingido. Tente novamente mais tarde.');
     if (response.status === 400) {
       const detail = await response.json().catch(() => null);
-      const reason = typeof detail?.error?.message === 'string' ? detail.error.message.slice(0, 260) : '';
+      const rawReason = typeof detail?.error?.message === 'string' ? detail.error.message : '';
+      if (/max[ _]completion[ _]tokens.*reached|output (?:was )?truncated.*max_completion_tokens/i.test(rawReason))
+        throw truncatedGroqOutput();
+      const reason = rawReason.replaceAll(apiKey, '[chave oculta]').slice(0, 260);
       throw Error(
         reason ? `Groq rejeitou o pedido: ${reason}` : 'Groq rejeitou o pedido (400). Confira o modelo selecionado.',
       );
     }
     throw Error(`Groq não respondeu à solicitação (${response.status}).`);
   }
-  return response.json();
+  const result = await response.json();
+  if (result.choices?.some(choice => choice.finish_reason === 'length')) throw truncatedGroqOutput();
+  return result;
+}
+
+async function groqChat(settings, payload, timeout) {
+  const reasoningModel = ['openai/gpt-oss-20b', 'openai/gpt-oss-120b'].includes(settings.model);
+  const taskProposal = payload.response_format?.json_schema?.name === 'task_proposal';
+  const minimum = reasoningModel ? (taskProposal ? 4096 : 2048) : taskProposal ? 2048 : 1024;
+  const request = {
+    ...payload,
+    // GPT-OSS shares this budget between reasoning and the visible JSON.
+    ...(reasoningModel ? { reasoning_effort: 'low' } : {}),
+    max_completion_tokens: Math.min(8192, Math.max(payload.max_completion_tokens || 0, minimum)),
+  };
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return await groqRequest('/chat/completions', settings.apiKey, request, timeout);
+    } catch (error) {
+      if (error.code !== 'GROQ_OUTPUT_TRUNCATED') throw error;
+      if (attempt === 1 || request.max_completion_tokens >= 8192)
+        throw Error(
+          'A Groq não conseguiu completar a resposta, mesmo com mais espaço para o JSON. Seu rascunho foi mantido. Simplifique o pedido ou escolha outro modelo.',
+        );
+      // Retry only a known token truncation, never quota/auth/schema errors.
+      request.max_completion_tokens = Math.min(8192, request.max_completion_tokens * 2);
+    }
+  }
 }
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta';
 const OPENAI_URL = 'https://api.openai.com/v1';
@@ -670,7 +705,7 @@ function isGeminiInteractionsModel(model) {
   return /^gemini-3\.[1-9]\d*-/.test(model);
 }
 async function aiChat(settings, payload, timeout = 25000) {
-  if (settings.provider === 'groq') return groqRequest('/chat/completions', settings.apiKey, payload, timeout);
+  if (settings.provider === 'groq') return groqChat(settings, payload, timeout);
   if (settings.provider === 'openai') {
     if (!/^gpt-6-(luna|sol|astra)(?:-[a-z0-9-]+)?$/.test(settings.model))
       throw Error('Selecione um modelo GPT-6 disponível em sua conta.');
@@ -1174,7 +1209,7 @@ async function handleGroq(message) {
       {
         role: 'system',
         content:
-          'Você organiza tarefas para um Kanban Pomodoro. Responda em português brasileiro. Sugira tempo total em minutos e dificuldade 1 leve, 2 média, 3 alta. Para a área, escolha uma das áreas existentes quando fizer sentido; caso contrário sugira uma nova área curta. Se não houver uma classificação útil, devolva uma string vazia. Slices são etapas curtas e concretas. Respeite os campos e etapas já preenchidos quando houver proposta anterior, mudando-os somente para atender ao comentário. Sugira até 6 URLs HTTPS diretas que conheça com segurança: documentação, artigos, repositórios ou vídeos específicos com ID real. Evite páginas antigas e caminhos profundos incertos. Nunca invente URL de vaga, vídeo ou artigo. Para explorar temas ou vagas sem URL direta confiável, sugira até 3 buscas com título, tipo web/video/code e termos específicos; se houver localidades distintas, crie buscas separadas (por exemplo Bayeux e João Pessoa). A aplicação construirá a URL do buscador, sem chamar isso de fonte verificada. Nunca execute ações nem considere que a proposta foi aceita.',
+          'Você organiza tarefas para um Kanban Pomodoro. Responda em português brasileiro. Sugira tempo total em minutos e dificuldade 1 leve, 2 média, 3 alta. Para a área, escolha uma das áreas existentes quando fizer sentido; caso contrário sugira uma nova área curta. Se não houver uma classificação útil, devolva uma string vazia. Slices são etapas curtas e concretas. Use descrição objetiva, sem escrever aulas ou explicações longas dentro do JSON. Respeite os campos e etapas já preenchidos quando houver proposta anterior, mudando-os somente para atender ao comentário. Sugira até 6 URLs HTTPS diretas que conheça com segurança: documentação, artigos, repositórios ou vídeos específicos com ID real. Evite páginas antigas e caminhos profundos incertos. Nunca invente URL de vaga, vídeo ou artigo. Para explorar temas ou vagas sem URL direta confiável, sugira até 3 buscas com título, tipo web/video/code e termos específicos; se houver localidades distintas, crie buscas separadas (por exemplo Bayeux e João Pessoa). A aplicação construirá a URL do buscador, sem chamar isso de fonte verificada. Nunca execute ações nem considere que a proposta foi aceita.',
       },
       {
         role: 'user',

@@ -156,6 +156,7 @@ const localDate = offset => {
   return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
 };
 let transientGeminiErrors = 0;
+let groqFailures = [];
 vm.runInNewContext(readFileSync('dist/background.js', 'utf8'), {
   chrome,
   AbortSignal,
@@ -167,6 +168,15 @@ vm.runInNewContext(readFileSync('dist/background.js', 'utf8'), {
   setTimeout,
   fetch: async (url, options) => {
     requests.push({ url, options });
+    if (url === 'https://api.groq.com/openai/v1/chat/completions' && groqFailures.length) {
+      const failure = groqFailures.shift();
+      if (failure === 'length')
+        return {
+          ok: true,
+          json: async () => ({ choices: [{ finish_reason: 'length', message: { content: '{"name":' } }] }),
+        };
+      return { ok: false, status: failure.status, json: async () => ({ error: { message: failure.message } }) };
+    }
     if (url === 'connections-config.json')
       return { json: async () => ({ clientId: 'test.apps.googleusercontent.com', apiUrl: 'http://localhost:8000' }) };
     if (url.startsWith('https://api.openai.com/v1/')) {
@@ -620,6 +630,63 @@ assert(
   requests.some(request => request.options?.body?.includes('attachment_replacements')),
   'one replacement request should only run when a suggestion fails',
 );
+const truncation = {
+  status: 400,
+  message:
+    'max completion tokens reached before generating a valid document: the output was truncated to fit max_completion_tokens',
+};
+const taskRequestsSince = start =>
+  requests
+    .slice(start)
+    .filter(
+      req =>
+        req.url === 'https://api.groq.com/openai/v1/chat/completions' && req.options.body.includes('task_proposal'),
+    )
+    .map(req => JSON.parse(req.options.body));
+let requestStart = requests.length;
+groqFailures = [truncation];
+const recoveredDraft = await aiMessage({ type: 'GROQ_TASK_PROPOSAL', input: 'Estudar Linux' });
+assert(recoveredDraft.proposal, 'A truncated structured output must be retried successfully');
+let retryRequests = taskRequestsSince(requestStart);
+assert.deepEqual(
+  retryRequests.map(body => body.max_completion_tokens),
+  [4096, 8192],
+);
+assert(retryRequests.every(body => body.reasoning_effort === 'low'));
+assert.deepEqual(
+  retryRequests[0].messages,
+  retryRequests[1].messages,
+  'Retry must preserve the original draft and request',
+);
+assert.deepEqual(
+  retryRequests[0].response_format,
+  retryRequests[1].response_format,
+  'Retry must preserve JSON schema validation',
+);
+requestStart = requests.length;
+groqFailures = ['length'];
+assert(
+  (await aiMessage({ type: 'GROQ_TASK_PROPOSAL', input: 'Estudar Linux' })).proposal,
+  'HTTP 200 length must also retry',
+);
+assert.equal(taskRequestsSince(requestStart).length, 2);
+requestStart = requests.length;
+groqFailures = [truncation, truncation];
+const exhaustedDraft = await aiMessage({ type: 'GROQ_TASK_PROPOSAL', input: 'Estudar Linux' });
+assert.match(exhaustedDraft.error, /rascunho foi mantido/);
+assert(!exhaustedDraft.proposal, 'Never accept or repair a partial JSON document');
+assert.equal(taskRequestsSince(requestStart).length, 2, 'There must be at most one retry');
+for (const failure of [
+  { status: 429, message: 'quota' },
+  { status: 401, message: 'auth' },
+  { status: 400, message: 'invalid schema test-only' },
+]) {
+  requestStart = requests.length;
+  groqFailures = [failure];
+  assert((await aiMessage({ type: 'GROQ_TASK_PROPOSAL', input: 'Estudar Linux' })).error);
+  assert.equal(taskRequestsSince(requestStart).length, 1, 'Quota, auth and schema errors must not be retried');
+}
+console.log('Groq: orçamento de raciocínio, truncamento 400/200, retry limitado e validação de JSON verificados.');
 const redirect = await aiMessage({ type: 'CHECK_ATTACHMENT', url: 'https://example.org/redirect' });
 assert.equal(redirect.check.verifiedAt, null, 'redirects into local addresses must not be followed');
 assert(!requests.some(req => req.url.includes('127.0.0.1/private')));
@@ -683,7 +750,7 @@ assert(
   ).summary.includes('etapas curtas'),
 );
 assert(requests.at(-1).options.body.includes('Revisar e praticar'), 'summary should consider the current task goal');
-assert.equal(JSON.parse(requests.at(-1).options.body).max_completion_tokens, 512);
+assert.equal(JSON.parse(requests.at(-1).options.body).max_completion_tokens, 2048);
 assert.equal(JSON.parse(requests.at(-1).options.body).reasoning_effort, 'low');
 assert.match(
   (
