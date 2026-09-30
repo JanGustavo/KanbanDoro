@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
 import { confirmAction } from './confirmation';
+import BubbleSettings from './BubbleSettings';
 import {
   getAISettings,
   saveAISettings,
@@ -255,6 +256,7 @@ function App() {
   const [error, setError] = useState('');
   const [restart, setRestart] = useState<Task | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [showBubbleSettings, setShowBubbleSettings] = useState(false);
   const [showConnections, setShowConnections] = useState(false);
   const [showSupport, setShowSupport] = useState(false);
   const [settingsTab, setSettingsTab] = useState<'breaks' | 'board' | 'ai' | 'data'>('breaks');
@@ -386,7 +388,8 @@ function App() {
         proposal ||
         selectedTask ||
         showSettings ||
-        showConnections
+        showConnections ||
+        showBubbleSettings
       )
         return;
       if (event.target instanceof Element && event.target.closest('input,textarea,select,[contenteditable="true"]'))
@@ -396,7 +399,7 @@ function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [ready, proposal, selectedTask, showSettings, showConnections]);
+  }, [ready, proposal, selectedTask, showSettings, showConnections, showBubbleSettings]);
   useEffect(() => {
     if (!stepNotice) return;
     const timeout = window.setTimeout(() => setStepNotice(''), 10_000);
@@ -1272,7 +1275,7 @@ function App() {
             <button
               onClick={() => {
                 setHeaderTab(0);
-                void chrome.runtime.sendMessage({ type: 'SHOW_TIMER' });
+                setShowBubbleSettings(true);
               }}
             >
               Bolha
@@ -1766,6 +1769,7 @@ function App() {
         </div>
       </form>
       <VoiceRecorder onText={text => setName(current => appendTranscript(current, text))} />
+      {showBubbleSettings && <BubbleSettings active={!!data.session} onClose={() => setShowBubbleSettings(false)} />}
       {proposal && (
         <div
           className="backdrop"

@@ -27,3 +27,9 @@ if (
   throw new Error('Permissão e tela de bloqueio de foco precisam constar no manifesto');
 }
 console.log('Manifest V3: scripts de conteúdo independentes e presentes no dist.');
+
+for (const state of ['focus', 'break', 'decision']) {
+  for (const size of [16, 48, 128]) {
+    if (!existsSync(`dist/icons/${state}${size}.png`)) throw Error(`Ícone de estado ausente: ${state}${size}`);
+  }
+}

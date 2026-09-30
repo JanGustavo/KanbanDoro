@@ -12,6 +12,10 @@ let session = { phase: 'running', endsAt: Date.now() + 60_000 };
 let alerts = 0;
 let notifications = 0;
 let aiSettings = { provider: 'groq', apiKey: 'test-only', model: 'openai/gpt-oss-20b' };
+let bubblePreferences;
+const actionIcons = [];
+const actionTitles = [];
+const badgeTexts = [];
 let googleSession = '';
 let launched = 0;
 let authorizedScopes = ['https://www.googleapis.com/auth/gmail.readonly'];
@@ -33,7 +37,15 @@ const chrome = {
         listeners.click = fn;
       },
     },
-    setBadgeText: async () => {},
+    setBadgeText: async ({ text }) => {
+      badgeTexts.push(text);
+    },
+    setIcon: async ({ path }) => {
+      actionIcons.push(path);
+    },
+    setTitle: async ({ title }) => {
+      actionTitles.push(title);
+    },
     setBadgeBackgroundColor: async () => {},
   },
   runtime: {
@@ -64,6 +76,7 @@ const chrome = {
       setAccessLevel: async () => {},
       get: async () => ({
         session,
+        bubblePreferences,
         tasks,
         deadlineAlerted,
         focusBlocking,
@@ -72,6 +85,7 @@ const chrome = {
         google_connection_session: googleSession,
       }),
       set: async item => {
+        if ('bubblePreferences' in item) bubblePreferences = item.bubblePreferences;
         if ('google_connection_session' in item) googleSession = item.google_connection_session;
         if ('deadlineAlerted' in item) deadlineAlerted = item.deadlineAlerted;
         if ('session' in item) {
@@ -917,6 +931,46 @@ assert.equal(
   'Reunião',
 );
 assert(requests.some(request => request.url === 'https://api.openai.com/v1/responses'));
+assert.deepEqual(JSON.parse(JSON.stringify((await aiMessage({ type: 'GET_BUBBLE_SETTINGS' })).preferences)), {
+  mode: 'open',
+  position: 'right',
+});
+assert.equal(
+  await aiMessage(
+    { type: 'SET_BUBBLE_SETTINGS', preferences: { mode: 'hidden', position: 'left' } },
+    'https://untrusted.example',
+  ),
+  null,
+);
+const savedBubble = await aiMessage({
+  type: 'SET_BUBBLE_SETTINGS',
+  preferences: { mode: 'compact', position: 'left' },
+});
+assert.equal(savedBubble.preferences.mode, 'compact');
+assert.equal((await aiMessage({ type: 'GET_TIMER' })).preferences.position, 'left');
+assert(sent.includes('BUBBLE_SETTINGS_CHANGED'));
+session = { phase: 'running', endsAt: Date.now() + 60000 };
+listeners.storage({ session: { newValue: session } }, 'local');
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(actionIcons.at(-1)[16], 'icons/focus16.png');
+assert.match(actionTitles.at(-1), /Em foco/);
+session = { phase: 'break', endsAt: Date.now() + 60000 };
+listeners.storage({ session: { newValue: session } }, 'local');
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(actionIcons.at(-1)[16], 'icons/break16.png');
+session = { phase: 'decision', endsAt: Date.now() };
+listeners.storage({ session: { newValue: session } }, 'local');
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(actionIcons.at(-1)[16], 'icons/decision16.png');
+session = null;
+listeners.storage({ session: { newValue: null } }, 'local');
+await new Promise(resolve => setTimeout(resolve, 0));
+assert.equal(actionIcons.at(-1)[16], 'icon16.png');
+assert(
+  badgeTexts.every(text => text === ''),
+  'Toolbar must not cover the icon with FOCO/PAUSA',
+);
+console.log('Ícones de estado e preferências persistentes da bolha validados.');
 listeners.message({ type: 'SHOW_TIMER' }, {}, () => {});
 await new Promise(resolve => setTimeout(resolve, 0));
 assert.equal(injections, 1);

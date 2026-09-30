@@ -140,3 +140,11 @@ Esta primeira versão usa `whisper-large-v3-turbo` na Groq, com a chave Groq sal
 As ações de exclusão, substituição de backup e envio de e-mail usam SweetAlert2 empacotado na extensão, com as cores da aplicação. A confirmação mostra a ação e suas consequências, começa com foco em Cancelar e permite sair com Escape. Os modais de tarefas, propostas e decisões do cronômetro mantêm seus fluxos próprios.
 
 O botão **Abrir** da bolha e o ícone da extensão reutilizam uma aba do KanbanDoro já aberta, inclusive em outra janela e com filtros/âncoras na URL. A janela é trazida para frente. Cliques simultâneos são agrupados para criar uma única aba quando ainda não há quadro aberto.
+
+### Bolha e indicador de foco (0.8)
+
+O botão **Bolha** no cabeçalho abre opções de exibição (expandida, recolhida ou oculta) e posição (esquerda/direita). As escolhas ficam salvas para as próximas abas e ciclos. Sem ciclo ativo, o painel explica quando a bolha aparecerá. Na bolha recolhida, clique ou use Enter/Espaço para expandir. Na expandida, clique no relógio ou em **Abrir quadro** para voltar à aba existente.
+
+O ícone da extensão usa um relógio e contorno vinho durante o foco, pausa em amarelo e alerta quando uma decisão é necessária. O texto FOCO/PAUSA não cobre mais a marca.
+
+A publicação também pode ser automática: um commit na `main` que altera a versão em `package.json` dispara o workflow de release. Ele só cria a tag/release após validar versões, compilar com OAuth/API remotos, testar e empacotar apenas `dist/`. Commits sem mudança de versão não publicam. O fluxo `make release VERSION=...` por tag continua disponível.

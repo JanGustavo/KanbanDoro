@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "KanbanDoro",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Tarefas e ciclos de foco em um só lugar.",
   "permissions": ["storage", "alarms", "notifications", "scripting", "offscreen", "identity", "declarativeNetRequest"],
   "host_permissions": [
@@ -10,10 +10,16 @@
     "https://generativelanguage.googleapis.com/*",
     "https://api.openai.com/*"
   ],
-  "background": { "service_worker": "background.js" },
+  "background": {
+    "service_worker": "background.js"
+  },
   "action": {
     "default_title": "Abrir KanbanDoro",
-    "default_icon": { "16": "icon16.png", "48": "icon48.png", "128": "icon128.png" }
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
   },
   "icons": {
     "16": "icon16.png",

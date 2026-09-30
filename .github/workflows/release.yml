@@ -2,23 +2,58 @@ name: Release da extensão
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*.*.*'
+    paths:
+      - package.json
 
 permissions:
   contents: write
+
+concurrency:
+  group: kanbandoro-release
+  cancel-in-progress: false
 
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Detectar versão para publicação
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            current=$(node -p "require('./package.json').version")
+            previous=$(git show HEAD^:package.json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).version))")
+            if [[ "$current" == "$previous" ]]; then
+              echo 'publish=false' >> "$GITHUB_OUTPUT"
+              echo 'Sem alteração de versão; nenhuma release será criada.'
+              exit 0
+            fi
+            tag="v$current"
+          fi
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo 'Versão inválida para publicação.' >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo 'publish=true' >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v4
+        if: steps.version.outputs.publish == 'true'
         with:
           node-version: '22'
           cache: npm
       - run: npm ci
+        if: steps.version.outputs.publish == 'true'
       - name: Exigir configuração OAuth e API no pacote público
+        if: steps.version.outputs.publish == 'true'
         env:
           KANBANDORO_GOOGLE_CLIENT_ID: ${{ vars.KANBANDORO_GOOGLE_CLIENT_ID }}
           KANBANDORO_API_URL: ${{ vars.KANBANDORO_API_URL }}
@@ -27,19 +62,34 @@ jobs:
             echo 'Configure KANBANDORO_GOOGLE_CLIENT_ID e KANBANDORO_API_URL em Settings → Secrets and variables → Actions → Variables.' >&2
             exit 1
           fi
-      - name: Validar versão da tag
-        run: node -e "const fs=require('fs');const v=process.env.GITHUB_REF_NAME.slice(1);for(const p of ['package.json','package-lock.json','public/manifest.json'])if(JSON.parse(fs.readFileSync(p)).version!==v)throw Error(p+' não corresponde à tag '+v)"
+      - name: Validar versão do pacote
+        if: steps.version.outputs.publish == 'true'
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: node -e "const fs=require('fs');const v=process.env.RELEASE_TAG.slice(1);for(const p of ['package.json','package-lock.json','public/manifest.json'])if(JSON.parse(fs.readFileSync(p)).version!==v)throw Error(p+' não corresponde à versão '+v)"
       - run: npm run build
+        if: steps.version.outputs.publish == 'true'
         env:
           KANBANDORO_GOOGLE_CLIENT_ID: ${{ vars.KANBANDORO_GOOGLE_CLIENT_ID }}
           KANBANDORO_API_URL: ${{ vars.KANBANDORO_API_URL }}
       - run: npm test
+        if: steps.version.outputs.publish == 'true'
       - name: Empacotar extensão
-        run: zip -qr "KanbanDoro-${GITHUB_REF_NAME}.zip" dist
+        if: steps.version.outputs.publish == 'true'
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: zip -qr "KanbanDoro-${RELEASE_TAG}.zip" dist
       - name: Criar Release
+        if: steps.version.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
         run: |
           args=()
-          if [[ "$GITHUB_REF_NAME" == v0.* ]]; then args+=(--prerelease); fi
-          gh release create "$GITHUB_REF_NAME" "KanbanDoro-${GITHUB_REF_NAME}.zip" --verify-tag --generate-notes --title "KanbanDoro ${GITHUB_REF_NAME#v}" "${args[@]}"
+          if [[ "$RELEASE_TAG" == v0.* ]]; then args+=(--prerelease); fi
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then args+=(--verify-tag); else args+=(--target "$GITHUB_SHA"); fi
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "KanbanDoro-${RELEASE_TAG}.zip" --clobber
+          else
+            gh release create "$RELEASE_TAG" "KanbanDoro-${RELEASE_TAG}.zip" --generate-notes --title "KanbanDoro ${RELEASE_TAG#v}" "${args[@]}"
+          fi

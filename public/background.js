@@ -82,8 +82,22 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       .catch(error => sendResponse({ error: error.message }));
     return true;
   }
-  if (message?.type === 'GET_TIMER') {
-    chrome.storage.local.get('session').then(({ session }) => sendResponse({ session: session || null }));
+  if (message?.type === 'GET_TIMER' || message?.type === 'GET_BUBBLE_SETTINGS') {
+    chrome.storage.local
+      .get(['session', 'bubblePreferences'])
+      .then(({ session, bubblePreferences }) =>
+        sendResponse({ session: session || null, preferences: normalizeBubblePreferences(bubblePreferences) }),
+      );
+    return true;
+  }
+  if (message?.type === 'SET_BUBBLE_SETTINGS') {
+    if (_sender.url !== chrome.runtime.getURL('index.html') && !_sender.tab) return;
+    const preferences = normalizeBubblePreferences(message.preferences);
+    chrome.storage.local
+      .set({ bubblePreferences: preferences })
+      .then(() => broadcastBubblePreferences(preferences))
+      .then(() => sendResponse({ preferences }))
+      .catch(() => sendResponse({ error: 'Não foi possível salvar as opções da bolha.' }));
     return true;
   }
   if (message?.type === 'OPEN_BOARD') {
@@ -93,7 +107,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
   if (message?.type === 'SHOW_TIMER') {
-    showTimerInActiveTab();
+    chrome.storage.local
+      .get('bubblePreferences')
+      .then(({ bubblePreferences }) =>
+        chrome.storage.local.set({
+          bubblePreferences: { ...normalizeBubblePreferences(bubblePreferences), mode: 'open' },
+        }),
+      )
+      .then(showTimerInActiveTab);
   }
   if (
     message?.type === 'FOCUS_NEW_TAB' &&
@@ -1429,14 +1450,39 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   }
 });
 
-const COLOR_FOCUS = '#8f2948';
-const COLOR_BREAK = '#c98a1c';
-const COLOR_DUE = '#d94f4f';
+function normalizeBubblePreferences(value) {
+  return {
+    mode: value?.mode === 'compact' || value?.mode === 'hidden' ? value.mode : 'open',
+    position: value?.position === 'left' ? 'left' : 'right',
+  };
+}
+async function broadcastBubblePreferences(preferences) {
+  const tabs = await chrome.tabs.query({});
+  await Promise.all(
+    tabs
+      .filter(tab => tab.id != null)
+      .map(tab => chrome.tabs.sendMessage(tab.id, { type: 'BUBBLE_SETTINGS_CHANGED', preferences }).catch(() => {})),
+  );
+}
+async function updateActionIcon(state) {
+  const path = Object.fromEntries(
+    [16, 48, 128].map(size => [size, state === 'idle' ? `icon${size}.png` : `icons/${state}${size}.png`]),
+  );
+  await chrome.action.setBadgeText({ text: '' });
+  await chrome.action.setIcon({ path });
+  const labels = {
+    idle: 'Abrir KanbanDoro',
+    focus: 'KanbanDoro · Em foco — abrir ciclo',
+    break: 'KanbanDoro · Em pausa — abrir ciclo',
+    decision: 'KanbanDoro · Tempo encerrado — revisar ciclo',
+  };
+  await chrome.action.setTitle({ title: labels[state] });
+}
 
 async function reconcile() {
   const { session } = await chrome.storage.local.get('session');
   if (!session || !['running', 'decision', 'break', 'intermission', 'intermission-done'].includes(session.phase)) {
-    await chrome.action.setBadgeText({ text: '' });
+    await updateActionIcon('idle');
     return;
   }
   const deadline =
@@ -1446,26 +1492,18 @@ async function reconcile() {
         ? session.pauseEndsAt
         : session.endsAt;
   if (session.phase === 'intermission-done') {
-    await chrome.action.setBadgeText({ text: '!' });
-    await chrome.action.setBadgeBackgroundColor({ color: COLOR_DUE });
+    await updateActionIcon('decision');
     await chrome.alarms.clear('timer-end');
     return;
   }
   const remaining = deadline - Date.now();
   const due = remaining <= 0;
   if (session.phase === 'decision') {
-    await chrome.action.setBadgeText({ text: '!' });
-    await chrome.action.setBadgeBackgroundColor({ color: COLOR_DUE });
+    await updateActionIcon('decision');
     await chrome.alarms.clear('timer-end');
     return;
   }
-  if (session.phase === 'running') {
-    await chrome.action.setBadgeText({ text: due ? '!' : 'FOCO' });
-    await chrome.action.setBadgeBackgroundColor({ color: due ? COLOR_DUE : COLOR_FOCUS });
-  } else {
-    await chrome.action.setBadgeText({ text: due ? '!' : 'PAUSA' });
-    await chrome.action.setBadgeBackgroundColor({ color: due ? COLOR_DUE : COLOR_BREAK });
-  }
+  await updateActionIcon(due ? 'decision' : session.phase === 'running' ? 'focus' : 'break');
   if (remaining > 0) {
     await chrome.alarms.create('timer-end', { when: deadline });
   } else {
@@ -1530,4 +1568,6 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
   if (area === 'local' && (changes.session || changes.focusBlocking)) queueFocusRules();
   if (area === 'local' && changes.tasks) queueDeadlines();
+  if (area === 'local' && changes.bubblePreferences)
+    broadcastBubblePreferences(normalizeBubblePreferences(changes.bubblePreferences.newValue));
 });
