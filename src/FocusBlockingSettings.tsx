@@ -3,6 +3,7 @@ import {
   blockedDomains,
   focusBlockingDefault,
   gentleDomains,
+  groupFocusDomains,
   normalizeDomain,
   strictDomains,
   type BlockingMode,
@@ -37,6 +38,9 @@ export default function FocusBlockingSettings({
     setError('');
   }
   const editingCustom = settings.mode === 'custom';
+  const domains = editingCustom ? settings.customDomains : settings.mode === 'gentle' ? gentleDomains : strictDomains;
+  const categories = groupFocusDomains(domains);
+  const blocked = new Set(blockedDomains(settings));
   return (
     <div className="blocking-settings">
       <h3>Modo sem distrações</h3>
@@ -99,27 +103,41 @@ export default function FocusBlockingSettings({
               {error}
             </p>
           )}
-          <div
-            className="blocking-list"
-            aria-label={editingCustom ? 'Domínios bloqueados' : 'Exceções e domínios do perfil'}
-          >
-            {(editingCustom ? settings.customDomains : settings.mode === 'gentle' ? gentleDomains : strictDomains).map(
-              domain => (
-                <div key={domain}>
-                  <span>{domain}</span>
-                  {editingCustom && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onChange({ ...settings, customDomains: settings.customDomains.filter(item => item !== domain) })
-                      }
-                      aria-label={`Retirar ${domain} do bloqueio`}
-                    >
-                      Retirar
-                    </button>
-                  )}
+          <div className="blocking-categories" aria-label="Sites por categoria">
+            {categories.map(category => (
+              <details className="blocking-category" key={category.id}>
+                <summary>
+                  <span>{category.title}</span>
+                  <span className="blocking-category-count">{category.domains.length} sites</span>
+                </summary>
+                <div className="blocking-list" aria-label={category.title}>
+                  {category.domains.map(domain => (
+                    <div key={domain}>
+                      <span>{domain}</span>
+                      {!blocked.has(domain) && <small className="blocking-domain-allowed">Liberado</small>}
+                      {editingCustom && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onChange({
+                              ...settings,
+                              customDomains: settings.customDomains.filter(item => normalizeDomain(item) !== domain),
+                            })
+                          }
+                          aria-label={`Retirar ${domain} do bloqueio`}
+                        >
+                          Retirar
+                        </button>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              ),
+              </details>
+            ))}
+            {!categories.length && (
+              <p className="settings-hint">
+                Nenhum domínio neste perfil. Adicione um site ou importe um dos perfis acima.
+              </p>
             )}
           </div>
           {!!settings.exceptions.length && (

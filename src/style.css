@@ -3584,3 +3584,69 @@ header p {
     animation: none;
   }
 }
+
+/* Listas de foco agrupadas: catálogo, exceções e edição pessoal. */
+.blocking-categories {
+  display: grid;
+  gap: 10px;
+  margin: 18px 0;
+}
+.blocking-category {
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-field);
+  overflow: hidden;
+}
+.blocking-category > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 14px;
+  cursor: pointer;
+  color: var(--color-text);
+  font-size: 0.88rem;
+  font-weight: 650;
+  list-style: none;
+}
+.blocking-category > summary::-webkit-details-marker {
+  display: none;
+}
+.blocking-category > summary::before {
+  content: '›';
+  color: var(--color-kanban);
+  font-size: 1.2rem;
+  transition: transform 0.15s ease;
+}
+.blocking-category[open] > summary::before {
+  transform: rotate(90deg);
+}
+.blocking-category > summary:hover {
+  background: var(--color-button);
+}
+.blocking-category > summary:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -3px;
+}
+.blocking-category-count {
+  margin-left: auto;
+  color: var(--color-kanban);
+  white-space: nowrap;
+  font-size: 0.75rem;
+}
+.blocking-category .blocking-list {
+  margin: 0;
+  padding: 0 14px 14px;
+  max-height: 250px;
+}
+.blocking-domain-allowed {
+  padding: 2px 5px;
+  border-radius: 4px;
+  color: var(--color-kanban);
+  background: var(--color-button);
+  font-size: 0.68rem;
+}
+@media (prefers-reduced-motion: reduce) {
+  .blocking-category > summary::before {
+    transition: none;
+  }
+}
