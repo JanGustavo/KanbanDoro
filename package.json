@@ -1,14 +1,14 @@
 {
   "name": "kanbandoro",
   "private": true,
-  "version": "0.8.0",
+  "version": "0.8.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build && vite build --config vite.content.config.ts && node scripts/configure-connections.mjs && node scripts/verify-build.mjs",
     "build:local": "node scripts/build-local.mjs",
     "build:remote": "node scripts/build-local.mjs --remote",
-    "test": "node scripts/test-background.mjs && node --experimental-strip-types scripts/test-schedule.mjs && node --experimental-strip-types scripts/test-focus-blocking.mjs && node --experimental-strip-types scripts/test-cycle-rules.mjs && node --experimental-strip-types scripts/test-backup.mjs && node --experimental-strip-types scripts/test-guided-tour.mjs && node --experimental-strip-types scripts/test-ai-settings.mjs && node --experimental-strip-types scripts/test-ai-model-catalog.mjs && node --experimental-strip-types scripts/test-voice-transcription.mjs && node scripts/test-bubble.mjs",
+    "test": "node scripts/test-background.mjs && node --experimental-strip-types scripts/test-schedule.mjs && node --experimental-strip-types scripts/test-focus-blocking.mjs && node --experimental-strip-types scripts/test-cycle-rules.mjs && node --experimental-strip-types scripts/test-backup.mjs && node --experimental-strip-types scripts/test-guided-tour.mjs && node --experimental-strip-types scripts/test-ai-settings.mjs && node --experimental-strip-types scripts/test-ai-model-catalog.mjs && node --experimental-strip-types scripts/test-voice-transcription.mjs && node scripts/test-bubble.mjs && node --experimental-strip-types scripts/test-proposal-context.mjs",
     "lint": "eslint src/",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"public/**/*.{json,js,html,css}\" \"scripts/**/*.mjs\" \"*.json\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"public/**/*.{json,js,html,css}\" \"scripts/**/*.mjs\" \"*.json\"",

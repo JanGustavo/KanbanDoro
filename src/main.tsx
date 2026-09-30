@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import './style.css';
 import { confirmAction } from './confirmation';
 import BubbleSettings from './BubbleSettings';
+import { proposalContext } from './proposalContext';
 import {
   getAISettings,
   saveAISettings,
@@ -278,6 +279,7 @@ function App() {
   const [aiBusy, setAiBusy] = useState(false);
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const [proposalSource, setProposalSource] = useState<'manual' | 'ai'>('manual');
+  const [proposalEditedEstimates, setProposalEditedEstimates] = useState({ estimate: false, difficulty: false });
   const [schedule, setSchedule] = useState<ScheduleChoice>({
     mode: 'once',
     startDate: localDay(new Date()),
@@ -637,6 +639,7 @@ function App() {
   function openManualDraft(title = '', recurring = false) {
     setError('');
     setProposalSource('manual');
+    setProposalEditedEstimates({ estimate: false, difficulty: false });
     setProposalRevision(1);
     setProposalTab('details');
     setCreatingArea(false);
@@ -768,7 +771,7 @@ function App() {
       const response = (await chrome.runtime.sendMessage({
         type: 'GROQ_TASK_PROPOSAL',
         input: taskInput,
-        previous: comment ? proposal : null,
+        previous: comment && proposal ? proposalContext(proposal, proposalSource, proposalEditedEstimates) : null,
         feedback: comment,
         areas: skills.slice(0, 50),
       })) as { proposal?: Proposal; error?: string } | undefined;
@@ -790,7 +793,7 @@ function App() {
     if (!proposal || aiBusy) return;
     const input = [proposal.name, proposal.description].filter(Boolean).join('\n').trim();
     void requestProposal(
-      'Organize esta tarefa usando o que já foi preenchido; preserve os dados úteis e sugira etapas e fontes somente se forem relevantes.',
+      'Organize esta tarefa usando o que já foi preenchido. Estime do zero o tempo total e a dificuldade quando esses campos estiverem ausentes; quando presentes, foram escolhidos pelo usuário. Preserve os dados úteis e sugira etapas e fontes somente se forem relevantes.',
       input,
     );
   }
@@ -1867,20 +1870,26 @@ function App() {
                 />
                 <div className="fields">
                   <label className="highlight-time">
-                    Tempo sugerido (min){' '}
+                    {proposalSource === 'ai' ? 'Tempo sugerido (min)' : 'Tempo estimado (min)'}{' '}
                     <NumberStepper
                       label="Tempo estimado da tarefa"
                       value={proposal.estimate}
                       min={1}
                       max={480}
-                      onChange={estimate => setProposal({ ...proposal, estimate })}
+                      onChange={estimate => {
+                        setProposalEditedEstimates(current => ({ ...current, estimate: true }));
+                        setProposal({ ...proposal, estimate });
+                      }}
                     />
                   </label>
                   <label>
                     Dificuldade{' '}
                     <select
                       value={proposal.difficulty}
-                      onChange={e => setProposal({ ...proposal, difficulty: +e.target.value as 1 | 2 | 3 })}
+                      onChange={e => {
+                        setProposalEditedEstimates(current => ({ ...current, difficulty: true }));
+                        setProposal({ ...proposal, difficulty: +e.target.value as 1 | 2 | 3 });
+                      }}
                     >
                       <option value="1">1 · leve</option>
                       <option value="2">2 · média</option>

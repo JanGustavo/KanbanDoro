@@ -626,7 +626,8 @@ const catalog = await aiMessage({ type: 'GROQ_MODELS' });
 assert.equal(catalog.models.length, 1, 'only eligible text models should be offered');
 assert.equal(catalog.models[0].freeTier, true, 'known Groq free-plan models should be labeled');
 const draft = await aiMessage({ type: 'GROQ_TASK_PROPOSAL', input: 'Criar API', areas: ['Programação', 'Estudo'] });
-assert.equal(draft.proposal.estimate, 35);
+assert.equal(draft.proposal.estimate, 35, 'the actual AI time must replace the manual 25-minute default');
+assert.equal(draft.proposal.difficulty, 2, 'the actual AI difficulty must replace the manual easy default');
 assert.equal(draft.proposal.skill, 'Programação');
 assert(
   requests.some(request => request.url.includes('api.groq.com') && request.options?.body?.includes('areas_existentes')),
