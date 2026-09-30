@@ -2963,6 +2963,44 @@ header p {
   border-radius: 12px;
   background: #30292e;
 }
+.task-detail-tabs {
+  margin: 16px 0;
+}
+.task-detail-panel[hidden] {
+  display: none;
+}
+.materials-hint {
+  color: #c7b5af;
+  line-height: 1.5;
+}
+.materials-section {
+  margin: 10px 0;
+  border: 1px solid #765866;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.materials-section > summary {
+  padding: 14px;
+  cursor: pointer;
+  background: #30292e;
+  color: #f4c677;
+  overflow-wrap: anywhere;
+}
+.materials-section > summary small {
+  display: block;
+  margin-top: 5px;
+  padding-left: 16px;
+  color: #c7b5af;
+}
+.materials-section > summary:focus-visible {
+  outline: 2px solid #d5a343;
+  outline-offset: -3px;
+}
+.materials-section .local-materials {
+  border: 0;
+  border-top: 1px solid #765866;
+  border-radius: 0;
+}
 .local-materials > label {
   display: grid;
   gap: 7px;
