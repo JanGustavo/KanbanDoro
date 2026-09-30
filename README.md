@@ -129,8 +129,8 @@ O backend agora tem `compose.yaml` e `backend/Dockerfile` com SQLite em volume p
 
 A landing page estática mora em [`site/`](site/), com layout adaptável e a identidade vinho/amarelo da extensão. O endereço previsto é `kanbandoro.jangustavo.me`; um modelo de Nginx serve a página nesse subdomínio e expõe apenas as rotas Google em `api.kanbandoro.jangustavo.me`. Para os registros DNS e a publicação HTTPS, siga [`site/README.md`](site/README.md).
 
-### Ditado por microfone
+### Entrada por voz
 
-O botão **🎙 Ditado** permite gravar até dois minutos na criação de tarefas, na descrição de uma proposta/tarefa e nas anotações da tarefa ou de suas etapas. Permita o microfone no navegador, clique em **Parar gravação** e depois em **Transcrever**. O texto é acrescentado ao campo para revisão; nenhuma tarefa ou proposta é enviada automaticamente.
+O botão **🎙 Entrada por voz** permite gravar até dois minutos na criação de tarefas, na descrição de uma proposta/tarefa e nas anotações da tarefa ou de suas etapas. Permita o microfone no navegador, clique em **Parar gravação** e depois em **Transcrever**. O texto é acrescentado ao campo para revisão; nenhuma tarefa ou proposta é enviada automaticamente.
 
 Esta primeira versão usa `whisper-large-v3-turbo` na Groq, com a chave Groq salva em **Preferências → IA**, mesmo quando outro provedor está selecionado para as propostas. A gravação não é em tempo real. O áudio só sai do navegador ao clicar em Transcrever, está sujeito às cotas da sua conta e não fica guardado pelo KanbanDoro nem entra no backup. Cancelar descarta o áudio local e interrompe a captura; após o envio, não desfaz o processamento já iniciado no provedor. Limite de 10 MB por gravação. Não há nova permissão no manifesto: a autorização do microfone é solicitada pelo navegador.

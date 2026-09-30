@@ -1,7 +1,26 @@
 :root {
+  /* Paleta compartilhada: componentes usam tokens; exceções usam classes. */
+  --color-text: #f5eee8;
+  --color-background: #17181b;
+  --color-field: #252528;
+  --color-border: #474247;
+  --color-pomodoro: #d46a81;
+  --color-kanban: #d6a457;
+  --color-wine: #842b45;
+  --color-primary: #94314e;
+  --color-primary-hover: #b23c60;
+  --color-focus: #bc8b48;
+  --color-muted: #a9a2a1;
+  --color-button: #353033;
+  --color-button-text: #fff2e9;
+  --color-button-hover: #58404a;
+  --color-on-kanban: #251b0e;
+  --color-kanban-hover: #e8ba73;
+  --color-select-hover: #75616a;
+
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-  color: #f5eee8;
-  background: #17181b;
+  color: var(--color-text);
+  background: var(--color-background);
   font-synthesis: none;
 }
 
@@ -25,12 +44,12 @@ button {
   border: 0;
   border-radius: 10px;
   padding: 10px 14px;
-  background: #353033;
-  color: #fff2e9;
+  background: var(--color-button);
+  color: var(--color-button-text);
 }
 
 button:hover {
-  background: #58404a;
+  background: var(--color-button-hover);
 }
 
 button:disabled {
@@ -41,9 +60,9 @@ button:disabled {
 input,
 textarea,
 select {
-  color: #f5eee8;
-  background: #252528;
-  border: 1px solid #474247;
+  color: var(--color-text);
+  background: var(--color-field);
+  border: 1px solid var(--color-border);
   border-radius: 9px;
   padding: 10px;
   min-width: 0;
@@ -52,7 +71,49 @@ select {
 input:focus,
 textarea:focus,
 select:focus {
-  outline: 2px solid #bc8b48;
+  outline: 2px solid var(--color-focus);
+}
+
+/* Controles nativos com a mesma superfície, seta e foco em todas as telas. */
+select {
+  appearance: none;
+  color-scheme: dark;
+  min-height: 42px;
+  padding: 10px 38px 10px 12px;
+  background-color: var(--color-field);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--color-kanban) 50%),
+    linear-gradient(135deg, var(--color-kanban) 50%, transparent 50%);
+  background-position:
+    calc(100% - 19px) 50%,
+    calc(100% - 14px) 50%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+select:hover:not(:disabled) {
+  border-color: var(--color-select-hover);
+}
+select:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+select option,
+select optgroup {
+  background: var(--color-field);
+  color: var(--color-text);
+}
+select[multiple],
+select[size]:not([size='1']) {
+  background-image: none;
+  padding: 10px 12px;
 }
 
 input[type='checkbox'],
@@ -78,7 +139,7 @@ input[type='checkbox'] {
   border-radius: 5px;
 }
 input[type='checkbox']:checked {
-  background: #842b45;
+  background: var(--color-wine);
   border-color: #e8ad6b;
   box-shadow: 0 0 0 2px #842b4528;
 }
@@ -95,7 +156,7 @@ input[type='radio'] {
 }
 input[type='radio']:checked {
   border-color: #e8ad6b;
-  background: #842b45;
+  background: var(--color-wine);
 }
 input[type='radio']:checked::after {
   content: '';
@@ -149,16 +210,16 @@ h1 {
 }
 
 h1 .brand-doro {
-  color: #d46a81;
+  color: var(--color-pomodoro);
 }
 
 h1 .brand-kanban {
-  color: #d6a457;
+  color: var(--color-kanban);
 }
 
 header p {
   margin: 0;
-  color: #a9a2a1;
+  color: var(--color-muted);
 }
 
 .eyebrow {
@@ -209,13 +270,13 @@ header p {
 
 .create button,
 .primary {
-  background: #94314e;
+  background: var(--color-primary);
   font-weight: 750;
 }
 
 .create button:hover,
 .primary:hover {
-  background: #b23c60;
+  background: var(--color-primary-hover);
 }
 
 .board {
@@ -493,7 +554,7 @@ header p {
   display: flex;
   gap: 8px;
   margin-bottom: 16px;
-  border-bottom: 1px solid #353033;
+  border-bottom: 1px solid var(--color-button);
   padding-bottom: 8px;
 }
 
@@ -501,12 +562,12 @@ header p {
   background: transparent;
   padding: 8px 12px;
   border-radius: 8px;
-  color: #a9a2a1;
+  color: var(--color-muted);
 }
 
 .settings-tabs button[aria-selected='true'] {
-  background: #353033;
-  color: #fff2e9;
+  background: var(--color-button);
+  color: var(--color-button-text);
   font-weight: 600;
 }
 
@@ -522,10 +583,6 @@ header p {
   flex-direction: column;
   gap: 6px;
   margin-bottom: 14px;
-}
-
-.ai-settings-form select {
-  background: #252528;
 }
 
 .api-key-input {
@@ -1014,13 +1071,8 @@ header p {
   font-size: 0.82rem;
 }
 .skill-filter select {
-  max-width: 190px;
-  min-height: 36px;
-  border: 1px solid #75575f;
-  border-radius: 8px;
-  background: #29272a;
-  color: #fff0cf;
-  padding: 5px 8px;
+  max-width: 210px;
+  width: 100%;
 }
 
 .board-controls button {
@@ -1404,7 +1456,7 @@ header p {
   border: 1px solid #cb8958;
 }
 .connection-review {
-  border-color: #d6a457;
+  border-color: var(--color-kanban);
   box-shadow: 0 0 18px #ba754b38;
   animation: proposal-appear 0.3s ease-out;
 }
@@ -2366,7 +2418,7 @@ header p {
   position: absolute;
   inset: 0 0 auto;
   height: 5px;
-  background: linear-gradient(90deg, #842b45, #f5ce83, #842b45);
+  background: linear-gradient(90deg, var(--color-wine), #f5ce83, var(--color-wine));
 }
 .cycle-success h2 {
   margin: 0;
@@ -3016,7 +3068,7 @@ header p {
   border: 1px solid #ad7890;
   border-radius: 8px;
   background: #5a3042;
-  color: #fff2e9;
+  color: var(--color-button-text);
   cursor: pointer;
 }
 .local-file-list {
@@ -3385,7 +3437,7 @@ header p {
   }
 }
 
-/* Ditado: gravação explícita, revisão no campo e envio sob demanda. */
+/* Entrada por voz: gravação explícita, revisão no campo e envio sob demanda. */
 .voice-recorder {
   display: flex;
   flex-direction: column;
@@ -3394,12 +3446,23 @@ header p {
   margin: 0.5rem 0;
 }
 .voice-recorder small {
-  color: var(--muted, #888);
+  color: var(--color-muted);
   font-size: 0.75rem;
   max-width: 34rem;
 }
 .voice-trigger {
   align-self: flex-start;
+  background: var(--color-kanban);
+  color: var(--color-on-kanban);
+  font-weight: 750;
+}
+.voice-trigger:hover {
+  background: var(--color-kanban-hover);
+}
+.voice-trigger:focus-visible,
+.voice-transcribe:focus-visible {
+  outline: 2px solid var(--color-kanban);
+  outline-offset: 3px;
 }
 .voice-panel {
   display: flex;
@@ -3407,22 +3470,26 @@ header p {
   flex-wrap: wrap;
   gap: 0.5rem;
   padding: 0.65rem;
-  border: 1px solid #a84965;
+  border: 1px solid var(--color-kanban);
   border-radius: 10px;
 }
 .voice-panel span {
   font-size: 0.85rem;
 }
 .voice-recording {
-  color: #d46a81;
+  color: var(--color-kanban);
   font-weight: 600;
 }
 .voice-transcribe {
-  background: #842b45;
-  color: #fff;
+  background: var(--color-kanban);
+  color: var(--color-on-kanban);
+  font-weight: 750;
+}
+.voice-transcribe:hover {
+  background: var(--color-kanban-hover);
 }
 .voice-error {
-  color: #d46a81;
+  color: var(--color-pomodoro);
   font-size: 0.85rem;
   margin: 0;
 }

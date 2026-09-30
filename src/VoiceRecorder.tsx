@@ -163,7 +163,7 @@ export default function VoiceRecorder({ onText }: { onText: (text: string) => vo
           onClick={() => void start()}
           aria-label="Gravar fala para transcrever"
         >
-          🎙 Ditado
+          🎙 Entrada por voz
         </button>
       )}
       {phase !== 'idle' && (
