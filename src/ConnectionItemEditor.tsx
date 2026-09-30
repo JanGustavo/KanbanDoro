@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { confirmAction } from './confirmation';
 import type { CalendarEvent } from './CalendarConnection';
 import type { GoogleTask } from './TasksConnection';
 
@@ -75,9 +76,12 @@ export default function ConnectionItemEditor({ kind, item, listId, onClose, onCh
 
   async function remove() {
     if (
-      !window.confirm(
-        `Excluir “${item.title}” do Google ${calendar ? 'Calendar' : 'Tasks'}? Esta ação pode não ser desfeita.`,
-      )
+      !(await confirmAction({
+        title: `Excluir ${noun} do Google?`,
+        message: `“${item.title}” será removido do Google ${calendar ? 'Calendar' : 'Tasks'}. Esta ação pode não ser desfeita.`,
+        confirmLabel: `Excluir ${noun}`,
+        destructive: true,
+      }))
     )
       return;
     setBusy(true);

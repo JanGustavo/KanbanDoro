@@ -1,8 +1,22 @@
-async function openBoard() {
-  const url = chrome.runtime.getURL('index.html');
-  const tabs = await chrome.tabs.query({ url });
-  if (tabs[0]?.id) return chrome.tabs.update(tabs[0].id, { active: true });
-  return chrome.tabs.create({ url });
+let boardOpening = null;
+function openBoard() {
+  // Serialize requests from the bubble and toolbar to avoid duplicate tabs.
+  if (boardOpening) return boardOpening;
+  boardOpening = (async () => {
+    const url = chrome.runtime.getURL('index.html');
+    const tabs = await chrome.tabs.query({ url: `${url}*` });
+    const candidates = tabs.filter(tab => (tab.url || tab.pendingUrl || '').split(/[?#]/)[0] === url && tab.id != null);
+    const existing = candidates.find(tab => tab.active) || candidates[0];
+    if (existing) {
+      const tab = await chrome.tabs.update(existing.id, { active: true });
+      if (existing.windowId != null) await chrome.windows.update(existing.windowId, { focused: true });
+      return tab;
+    }
+    return chrome.tabs.create({ url });
+  })().finally(() => {
+    boardOpening = null;
+  });
+  return boardOpening;
 }
 chrome.action.onClicked.addListener(openBoard);
 
@@ -73,7 +87,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
   if (message?.type === 'OPEN_BOARD') {
-    openBoard();
+    openBoard()
+      .then(tab => sendResponse({ opened: true, tabId: tab?.id }))
+      .catch(() => sendResponse({ error: 'Não foi possível abrir o quadro. Tente novamente.' }));
+    return true;
   }
   if (message?.type === 'SHOW_TIMER') {
     showTimerInActiveTab();

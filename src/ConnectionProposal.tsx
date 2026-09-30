@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { confirmAction } from './confirmation';
 
 export type Destination = 'calendar' | 'tasks' | 'email';
 export type ConnectionDraft = {
@@ -55,7 +56,14 @@ export default function ConnectionProposal({
     } else {
       if (!draft.to.trim() || !draft.subject.trim() || !draft.body.trim())
         return setError('Informe destinatário, assunto e mensagem.');
-      if (!window.confirm(`Enviar o e-mail para ${draft.to.trim()}? Confira o conteúdo antes de confirmar.`)) return;
+      if (
+        !(await confirmAction({
+          title: 'Enviar e-mail?',
+          message: `Destinatário: ${draft.to.trim()}. Confira o conteúdo antes de confirmar.`,
+          confirmLabel: 'Enviar e-mail',
+        }))
+      )
+        return;
       type = 'GMAIL_SEND';
       body = { to: draft.to.trim(), subject: draft.subject.trim(), body: draft.body };
     }

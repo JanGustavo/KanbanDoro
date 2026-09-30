@@ -22,6 +22,10 @@ let tasks = [];
 let deadlineAlerted = {};
 const scheduledAlarms = {};
 const requests = [];
+let boardTabs = [];
+let boardCreates = 0;
+const boardActivations = [];
+const focusedWindows = [];
 const chrome = {
   action: {
     onClicked: {
@@ -91,12 +95,24 @@ const chrome = {
       focusRules = addRules;
     },
   },
+  windows: {
+    update: async (id, props) => {
+      focusedWindows.push({ id, ...props });
+    },
+  },
   tabs: {
-    query: async () => [{ id: 42 }],
+    query: async options => (options.url ? boardTabs : [{ id: 42 }]),
     update: async (id, props) => {
       if (props.url === 'chrome://newtab/' && id === 42) newTabNavigations++;
+      if (props.active) boardActivations.push(id);
+      return { id, ...props };
     },
-    create: async () => {},
+    create: async props => {
+      boardCreates++;
+      const tab = { id: 100 + boardCreates, windowId: 8, url: props.url };
+      boardTabs.push(tab);
+      return tab;
+    },
     onActivated: { addListener() {} },
     async sendMessage(id, message) {
       assert.equal(id, 42);
@@ -440,6 +456,27 @@ const aiMessage = (message, senderUrl = 'index.html') =>
     const accepted = listeners.message(message, { url: senderUrl }, resolve);
     if (!accepted) resolve(null);
   });
+// Bubble and toolbar share one board, even across windows and concurrent clicks.
+boardTabs = [{ id: 71, windowId: 9, url: 'index.html#tarefas' }];
+const reused = await aiMessage({ type: 'OPEN_BOARD' });
+assert.equal(reused.tabId, 71);
+assert.equal(boardCreates, 0);
+assert.equal(boardActivations.at(-1), 71);
+assert.equal(focusedWindows.at(-1).id, 9);
+assert.equal(focusedWindows.at(-1).focused, true);
+boardTabs = [{ id: 72, windowId: 10, url: 'index.html?view=weekly' }];
+await listeners.click();
+assert.equal(boardActivations.at(-1), 72);
+assert.equal(focusedWindows.at(-1).id, 10);
+boardTabs = [{ id: 73, windowId: 10, pendingUrl: 'index.html' }];
+await aiMessage({ type: 'OPEN_BOARD' });
+assert.equal(boardActivations.at(-1), 73);
+boardTabs = [{ id: 74, url: 'index.html-other' }];
+await Promise.all([aiMessage({ type: 'OPEN_BOARD' }), aiMessage({ type: 'OPEN_BOARD' }), listeners.click()]);
+assert.equal(boardCreates, 1, 'Concurrent requests must create only one board');
+await aiMessage({ type: 'OPEN_BOARD' });
+assert.equal(boardCreates, 1, 'Opening again must reuse the created tab');
+console.log('Quadro: reutilização de abas, foco da janela e cliques simultâneos validados.');
 assert.equal(
   await aiMessage({ type: 'GROQ_MODELS' }, 'https://example.com'),
   null,

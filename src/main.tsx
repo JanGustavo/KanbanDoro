@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
+import { confirmAction } from './confirmation';
 import {
   getAISettings,
   saveAISettings,
@@ -234,6 +235,10 @@ function newOccurrence(plan: WeeklyPlan, day: string): Task {
 function App() {
   const tourRef = useRef<GuidedTour | null>(null);
   const [data, setData] = useState<Data>(initial);
+  const latestData = useRef(data);
+  useEffect(() => {
+    latestData.current = data;
+  }, [data]);
   const [ready, setReady] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [name, setName] = useState('');
@@ -467,11 +472,16 @@ function App() {
     }
     if (
       mode === 'replace' &&
-      !window.confirm(
-        'Substituir tarefas, histórico, rotinas e preferências locais? Um backup do estado atual será baixado antes.',
-      )
+      !(await confirmAction({
+        title: 'Substituir os dados locais?',
+        message:
+          'Tarefas, histórico, rotinas e preferências serão substituídos. Confira se você guardou o backup atual antes de continuar.',
+        confirmLabel: 'Substituir dados',
+        destructive: true,
+      }))
     )
       return;
+    if (latestData.current.session) return setBackupError('Encerre a sessão ou a pausa antes de restaurar um backup.');
     setBackupBusy(true);
     setBackupError('');
     try {
@@ -645,12 +655,28 @@ function App() {
     setName(draft.name);
     setShowConnections(false);
   }
-  function deleteTask(item: Task) {
+  async function deleteTask(item: Task) {
     if (active?.taskId === item.id || active?.steps?.some(step => step.taskId === item.id))
       return setError('Encerre o ciclo atual antes de apagar esta tarefa.');
-    if (!window.confirm(`Apagar “${item.name}” e seu histórico de foco? Você terá 8 segundos para desfazer.`)) return;
+    if (
+      !(await confirmAction({
+        title: 'Apagar tarefa?',
+        message: `“${item.name}” e seu histórico de foco serão removidos. Você terá 8 segundos para desfazer.`,
+        confirmLabel: 'Apagar tarefa',
+        destructive: true,
+      }))
+    )
+      return;
+    const currentSession = latestData.current.session;
+    if (currentSession?.taskId === item.id || currentSession?.steps?.some(step => step.taskId === item.id))
+      return setError('Encerre o ciclo atual antes de apagar esta tarefa.');
     const message = 'Tarefa e histórico removidos. A rotina semanal continua ativa.';
-    setUndo({ kind: 'delete', task: item, history: data.history.filter(entry => entry.taskId === item.id), message });
+    setUndo({
+      kind: 'delete',
+      task: item,
+      history: latestData.current.history.filter(entry => entry.taskId === item.id),
+      message,
+    });
     update(old => ({
       ...old,
       tasks: old.tasks.filter(task => task.id !== item.id),
@@ -2808,11 +2834,14 @@ function App() {
                   {plan.endsOn ? `até ${plan.endsOn.split('-').reverse().join('/')}` : 'toda semana'}
                 </span>
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     if (
-                      window.confirm(
-                        `Excluir a programação “${plan.name}”? As tarefas já criadas permanecerão no histórico.`,
-                      )
+                      await confirmAction({
+                        title: 'Excluir programação?',
+                        message: `“${plan.name}” não criará novas tarefas. As tarefas já criadas permanecerão no histórico.`,
+                        confirmLabel: 'Excluir programação',
+                        destructive: true,
+                      })
                     )
                       update(old => ({ ...old, weeklyPlans: old.weeklyPlans.filter(p => p.id !== plan.id) }));
                   }}

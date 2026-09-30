@@ -134,3 +134,9 @@ A landing page estática mora em [`site/`](site/), com layout adaptável e a ide
 O botão **🎙 Entrada por voz** permite gravar até dois minutos na criação de tarefas, na descrição de uma proposta/tarefa e nas anotações da tarefa ou de suas etapas. Permita o microfone no navegador, clique em **Parar gravação** e depois em **Transcrever**. O texto é acrescentado ao campo para revisão; nenhuma tarefa ou proposta é enviada automaticamente.
 
 Esta primeira versão usa `whisper-large-v3-turbo` na Groq, com a chave Groq salva em **Preferências → IA**, mesmo quando outro provedor está selecionado para as propostas. A gravação não é em tempo real. O áudio só sai do navegador ao clicar em Transcrever, está sujeito às cotas da sua conta e não fica guardado pelo KanbanDoro nem entra no backup. Cancelar descarta o áudio local e interrompe a captura; após o envio, não desfaz o processamento já iniciado no provedor. Limite de 10 MB por gravação. Não há nova permissão no manifesto: a autorização do microfone é solicitada pelo navegador.
+
+### Confirmações e abertura do quadro
+
+As ações de exclusão, substituição de backup e envio de e-mail usam SweetAlert2 empacotado na extensão, com as cores da aplicação. A confirmação mostra a ação e suas consequências, começa com foco em Cancelar e permite sair com Escape. Os modais de tarefas, propostas e decisões do cronômetro mantêm seus fluxos próprios.
+
+O botão **Abrir** da bolha e o ícone da extensão reutilizam uma aba do KanbanDoro já aberta, inclusive em outra janela e com filtros/âncoras na URL. A janela é trazida para frente. Cliques simultâneos são agrupados para criar uma única aba quando ainda não há quadro aberto.
