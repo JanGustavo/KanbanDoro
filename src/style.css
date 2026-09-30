@@ -3384,3 +3384,49 @@ header p {
     flex: 1;
   }
 }
+
+/* Ditado: gravação explícita, revisão no campo e envio sob demanda. */
+.voice-recorder {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+  margin: 0.5rem 0;
+}
+.voice-recorder small {
+  color: var(--muted, #888);
+  font-size: 0.75rem;
+  max-width: 34rem;
+}
+.voice-trigger {
+  align-self: flex-start;
+}
+.voice-panel {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.65rem;
+  border: 1px solid #a84965;
+  border-radius: 10px;
+}
+.voice-panel span {
+  font-size: 0.85rem;
+}
+.voice-recording {
+  color: #d46a81;
+  font-weight: 600;
+}
+.voice-transcribe {
+  background: #842b45;
+  color: #fff;
+}
+.voice-error {
+  color: #d46a81;
+  font-size: 0.85rem;
+  margin: 0;
+}
+.create + .voice-recorder {
+  margin-top: -12px;
+  margin-bottom: 20px;
+}

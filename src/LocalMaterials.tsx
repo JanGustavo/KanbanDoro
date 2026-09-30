@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import VoiceRecorder from './VoiceRecorder';
+import { appendTranscript } from './voiceTranscription';
 import { deleteLocalFile, getLocalFile, MAX_LOCAL_FILE_BYTES, saveLocalFile, type LocalFile } from './localFiles';
 
 function StoredFile({ file, onRemove }: { file: LocalFile; onRemove: () => void }) {
@@ -78,6 +80,7 @@ export default function LocalMaterials({
           onChange={event => onNotes(event.target.value)}
         />
       </label>
+      <VoiceRecorder onText={text => onNotes(appendTranscript(notes, text).slice(0, 20_000))} />
       <label className="local-file-picker">
         Adicionar imagens ou arquivos (até 10 MB cada)
         <input
