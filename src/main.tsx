@@ -237,6 +237,7 @@ function App() {
   const [name, setName] = useState('');
   const [sliceDraft, setSliceDraft] = useState('');
   const [selectedTask, setSelectedTask] = useState<string | null>(null);
+  const [taskTab, setTaskTab] = useState<'details' | 'materials'>('details');
   const [scope, setScope] = useState<'whole' | 'slices'>('whole');
   const [selectedSlices, setSelectedSlices] = useState<string[]>([]);
   const [breakMinutes, setBreakMinutes] = useState(5);
@@ -598,6 +599,10 @@ function App() {
     return day;
   });
 
+  function openTaskDetails(taskId: string) {
+    setTaskTab('details');
+    setSelectedTask(taskId);
+  }
   function changeTask(taskId: string, fn: (item: Task) => Task) {
     update(old => ({
       ...old,
@@ -961,7 +966,7 @@ function App() {
     update(old => ({ ...old, tasks: [...old.tasks, item] }));
     setProposal(null);
     setName('');
-    setSelectedTask(item.id);
+    openTaskDetails(item.id);
     setToast('Proposta aceita. Só os anexos verificados foram salvos.');
   }
   function startFocus(item: Task) {
@@ -1668,7 +1673,7 @@ function App() {
               )}
               <button
                 onClick={() => {
-                  setSelectedTask(active.taskId);
+                  openTaskDetails(active.taskId);
                   setScope(active.scope);
                   setSelectedSlices(active.selectedSliceIds);
                 }}
@@ -2845,7 +2850,7 @@ function App() {
                       · {minutes(item.focusSeconds)} de foco
                     </span>
                   </div>
-                  <button onClick={() => setSelectedTask(item.id)}>Detalhes</button>
+                  <button onClick={() => openTaskDetails(item.id)}>Detalhes</button>
                 </article>
               ))
           )}
@@ -2924,7 +2929,7 @@ function App() {
                       <button
                         className="card-title"
                         onClick={() => {
-                          setSelectedTask(item.id);
+                          openTaskDetails(item.id);
                           setScope('whole');
                           setSelectedSlices([]);
                           setSliceInsight('');
@@ -2987,121 +2992,286 @@ function App() {
               value={task.name}
               onChange={e => changeTask(task.id, x => ({ ...x, name: e.target.value }))}
             />
-            <textarea
-              aria-label="Descrição"
-              placeholder="Descrição da tarefa"
-              value={task.description}
-              onChange={e => changeTask(task.id, x => ({ ...x, description: e.target.value }))}
-            />
-            <div className="fields">
-              <label>
-                Dificuldade{' '}
-                <select
-                  value={task.difficulty}
-                  onChange={e => changeTask(task.id, x => ({ ...x, difficulty: +e.target.value as 1 | 2 | 3 }))}
-                >
-                  <option value="1">1 · leve</option>
-                  <option value="2">2 · média</option>
-                  <option value="3">3 · alta</option>
-                </select>
-              </label>
-              <label>
-                Estimativa total da tarefa (min){' '}
-                <NumberStepper
-                  label="Estimativa total da tarefa"
-                  value={task.estimate}
-                  min={1}
-                  max={480}
-                  onChange={estimate => changeTask(task.id, x => ({ ...x, estimate }))}
-                />
-              </label>
-              <label>
-                Habilidade ou área{' '}
-                <input
-                  maxLength={50}
-                  list="skill-suggestions"
-                  placeholder="Ex.: Programação"
-                  value={task.skill ?? ''}
-                  onChange={e => changeTask(task.id, x => ({ ...x, skill: e.target.value }))}
-                />
-              </label>
-              <label>
-                Prazo opcional{' '}
-                <input
-                  type="date"
-                  value={task.deadline}
-                  onChange={e => changeTask(task.id, x => ({ ...x, deadline: e.target.value }))}
-                />
-              </label>
-              <label>
-                Coluna{' '}
-                <select
-                  value={task.column}
-                  onChange={e => changeTask(task.id, x => ({ ...x, column: e.target.value as Column }))}
-                >
-                  {columns.map(c => (
-                    <option value={c.id} key={c.id}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+            <div
+              className="task-detail-tabs slide-tabs"
+              role="tablist"
+              aria-label="Conteúdo da tarefa"
+              style={{ '--tab-count': 2, '--active-index': taskTab === 'details' ? 0 : 1 } as React.CSSProperties}
+            >
+              <button
+                id="task-tab-details"
+                role="tab"
+                aria-selected={taskTab === 'details'}
+                aria-controls="task-panel-details"
+                onClick={() => setTaskTab('details')}
+              >
+                Tarefa e etapas
+              </button>
+              <button
+                id="task-tab-materials"
+                role="tab"
+                aria-selected={taskTab === 'materials'}
+                aria-controls="task-panel-materials"
+                onClick={() => setTaskTab('materials')}
+              >
+                Anotações e anexos
+              </button>
             </div>
-            <h3>Slices</h3>
-            <div className="slices">
-              {task.slices.map(slice => (
-                <div className="slice-editor" key={slice.id}>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={slice.done}
-                      onChange={() =>
-                        changeTask(task.id, x => ({
-                          ...x,
-                          slices: x.slices.map(s => (s.id === slice.id ? { ...s, done: !s.done } : s)),
-                        }))
-                      }
-                    />
-                    <input
-                      aria-label={`Nome do slice ${slice.name}`}
-                      value={slice.name}
-                      maxLength={140}
-                      onChange={e => {
+            <div
+              id="task-panel-details"
+              role="tabpanel"
+              aria-labelledby="task-tab-details"
+              hidden={taskTab !== 'details'}
+              className="task-detail-panel"
+            >
+              <textarea
+                aria-label="Descrição"
+                placeholder="Descrição da tarefa"
+                value={task.description}
+                onChange={e => changeTask(task.id, x => ({ ...x, description: e.target.value }))}
+              />
+              <div className="fields">
+                <label>
+                  Dificuldade{' '}
+                  <select
+                    value={task.difficulty}
+                    onChange={e => changeTask(task.id, x => ({ ...x, difficulty: +e.target.value as 1 | 2 | 3 }))}
+                  >
+                    <option value="1">1 · leve</option>
+                    <option value="2">2 · média</option>
+                    <option value="3">3 · alta</option>
+                  </select>
+                </label>
+                <label>
+                  Estimativa total da tarefa (min){' '}
+                  <NumberStepper
+                    label="Estimativa total da tarefa"
+                    value={task.estimate}
+                    min={1}
+                    max={480}
+                    onChange={estimate => changeTask(task.id, x => ({ ...x, estimate }))}
+                  />
+                </label>
+                <label>
+                  Habilidade ou área{' '}
+                  <input
+                    maxLength={50}
+                    list="skill-suggestions"
+                    placeholder="Ex.: Programação"
+                    value={task.skill ?? ''}
+                    onChange={e => changeTask(task.id, x => ({ ...x, skill: e.target.value }))}
+                  />
+                </label>
+                <label>
+                  Prazo opcional{' '}
+                  <input
+                    type="date"
+                    value={task.deadline}
+                    onChange={e => changeTask(task.id, x => ({ ...x, deadline: e.target.value }))}
+                  />
+                </label>
+                <label>
+                  Coluna{' '}
+                  <select
+                    value={task.column}
+                    onChange={e => changeTask(task.id, x => ({ ...x, column: e.target.value as Column }))}
+                  >
+                    {columns.map(c => (
+                      <option value={c.id} key={c.id}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <h3>Slices</h3>
+              <div className="slices">
+                {task.slices.map(slice => (
+                  <div className="slice-editor" key={slice.id}>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={slice.done}
+                        onChange={() =>
+                          changeTask(task.id, x => ({
+                            ...x,
+                            slices: x.slices.map(s => (s.id === slice.id ? { ...s, done: !s.done } : s)),
+                          }))
+                        }
+                      />
+                      <input
+                        aria-label={`Nome do slice ${slice.name}`}
+                        value={slice.name}
+                        maxLength={140}
+                        onChange={e => {
+                          setSliceInsight('');
+                          changeTask(task.id, x => ({
+                            ...x,
+                            slices: x.slices.map(s => (s.id === slice.id ? { ...s, name: e.target.value } : s)),
+                          }));
+                        }}
+                      />
+                    </label>
+                    <label>
+                      min estimados{' '}
+                      <input
+                        aria-label={`Minutos estimados para ${slice.name}`}
+                        type="number"
+                        min="1"
+                        max="480"
+                        value={slice.estimateMinutes ?? ''}
+                        placeholder="—"
+                        onChange={e => {
+                          setSliceInsight('');
+                          changeTask(task.id, x => ({
+                            ...x,
+                            slices: x.slices.map(s =>
+                              s.id === slice.id
+                                ? {
+                                    ...s,
+                                    estimateMinutes: e.target.value
+                                      ? Math.max(1, Math.min(480, Number(e.target.value)))
+                                      : undefined,
+                                  }
+                                : s,
+                            ),
+                          }));
+                        }}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      aria-label={`Remover slice ${slice.name}`}
+                      onClick={() => {
                         setSliceInsight('');
-                        changeTask(task.id, x => ({
-                          ...x,
-                          slices: x.slices.map(s => (s.id === slice.id ? { ...s, name: e.target.value } : s)),
-                        }));
+                        changeTask(task.id, x => ({ ...x, slices: x.slices.filter(s => s.id !== slice.id) }));
                       }}
-                    />
-                  </label>
-                  <label>
-                    min estimados{' '}
-                    <input
-                      aria-label={`Minutos estimados para ${slice.name}`}
-                      type="number"
-                      min="1"
-                      max="480"
-                      value={slice.estimateMinutes ?? ''}
-                      placeholder="—"
-                      onChange={e => {
-                        setSliceInsight('');
-                        changeTask(task.id, x => ({
-                          ...x,
-                          slices: x.slices.map(s =>
-                            s.id === slice.id
-                              ? {
-                                  ...s,
-                                  estimateMinutes: e.target.value
-                                    ? Math.max(1, Math.min(480, Number(e.target.value)))
-                                    : undefined,
-                                }
-                              : s,
-                          ),
-                        }));
-                      }}
-                    />
-                  </label>
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <form
+                onSubmit={e => {
+                  e.preventDefault();
+                  if (sliceDraft.trim()) {
+                    changeTask(task.id, x => ({
+                      ...x,
+                      slices: [...x.slices, { id: id(), name: sliceDraft.trim(), done: false }],
+                    }));
+                    setSliceDraft('');
+                    setSliceInsight('');
+                  }
+                }}
+                className="add-slice"
+              >
+                <input placeholder="Nome do slice" value={sliceDraft} onChange={e => setSliceDraft(e.target.value)} />
+                <button>Adicionar</button>
+              </form>
+              <div className="ai-create-actions">
+                <button disabled={insightBusy} onClick={() => void requestSliceInsight(task)}>
+                  {insightBusy ? 'Analisando…' : '✦ Analisar distribuição dos slices'}
+                </button>
+                <button
+                  className="ai-model-switch"
+                  type="button"
+                  disabled={insightBusy}
+                  onClick={cycleAIChoice}
+                  title={`Alternar modelo de IA · atual: ${aiSettings.provider} / ${aiSettings.model || 'nenhum'}`}
+                  aria-label="Alternar modelo de IA para analisar os slices"
+                >
+                  🤖
+                </button>
+              </div>
+              {sliceInsight && (
+                <p className="slice-insight" role="status">
+                  {sliceInsight}
+                </p>
+              )}
+              <h3>Iniciar foco</h3>
+              <div className="scope">
+                <label>
+                  <input type="radio" checked={scope === 'whole'} onChange={() => setScope('whole')} /> Tarefa inteira
+                </label>
+                <label>
+                  <input type="radio" checked={scope === 'slices'} onChange={() => setScope('slices')} /> Selecionar
+                  slices
+                </label>
+              </div>
+              {scope === 'slices' && (
+                <div className="slices">
+                  {task.slices
+                    .filter(s => !s.done)
+                    .map(s => (
+                      <label key={s.id}>
+                        <input
+                          type="checkbox"
+                          checked={selectedSlices.includes(s.id)}
+                          onChange={() =>
+                            setSelectedSlices(old =>
+                              old.includes(s.id) ? old.filter(v => v !== s.id) : [...old, s.id],
+                            )
+                          }
+                        />
+                        {s.name}
+                      </label>
+                    ))}
+                </div>
+              )}
+              <p className="summary">
+                {minutes(task.focusSeconds)} de foco registrado · {task.failures} tentativas falhas
+              </p>
+              {task.deadline && task.deadline < today && task.column !== 'done' && (
+                <p className="warning">O prazo venceu. A coluna só muda quando você decidir o próximo passo.</p>
+              )}
+              {active?.taskId === task.id && (phase === 'running' || phase === 'decision') && (
+                <button className="delete-task" onClick={() => nextCycleTask('failed')}>
+                  Não consegui terminar · registrar tentativa e avançar
+                </button>
+              )}
+              {task.column === 'done' && (
+                <p className="summary">
+                  Concluída em {displayDate(task.completedAt)}
+                  {task.archivedAt ? ` · arquivada em ${displayDate(task.archivedAt)}` : ''}
+                </p>
+              )}
+            </div>
+            <div
+              id="task-panel-materials"
+              role="tabpanel"
+              aria-labelledby="task-tab-materials"
+              hidden={taskTab !== 'materials'}
+              className="task-detail-panel"
+            >
+              <p className="materials-hint">Abra a tarefa ou uma etapa para consultar suas anotações e arquivos.</p>
+              <details className="materials-section" name={`materials-${task.id}`}>
+                <summary>
+                  Tarefa inteira{' '}
+                  <small>
+                    {task.notes?.trim() ? 'Com anotações · ' : ''}
+                    {task.files?.length ?? 0} arquivo(s)
+                  </small>
+                </summary>
+                <LocalMaterials
+                  label="Tarefa inteira"
+                  notes={task.notes ?? ''}
+                  files={task.files ?? []}
+                  onNotes={notes => changeTask(task.id, x => ({ ...x, notes }))}
+                  onFiles={files => changeTask(task.id, x => ({ ...x, files }))}
+                />
+              </details>
+              {task.slices.map((slice, index) => (
+                <details className="materials-section" name={`materials-${task.id}`} key={slice.id}>
+                  <summary>
+                    <span>
+                      {index + 1}. {slice.name || 'Etapa sem nome'}
+                    </span>
+                    <small>
+                      {slice.notes?.trim() ? 'Com anotações · ' : ''}
+                      {slice.files?.length ?? 0} arquivo(s)
+                    </small>
+                  </summary>
                   <LocalMaterials
                     label={`Etapa ${slice.name}`}
                     notes={slice.notes ?? ''}
@@ -3119,125 +3289,25 @@ function App() {
                       }))
                     }
                   />
-                  <button
-                    type="button"
-                    aria-label={`Remover slice ${slice.name}`}
-                    onClick={() => {
-                      setSliceInsight('');
-                      changeTask(task.id, x => ({ ...x, slices: x.slices.filter(s => s.id !== slice.id) }));
-                    }}
-                  >
-                    ✕
-                  </button>
-                </div>
+                </details>
               ))}
-            </div>
-            <form
-              onSubmit={e => {
-                e.preventDefault();
-                if (sliceDraft.trim()) {
-                  changeTask(task.id, x => ({
-                    ...x,
-                    slices: [...x.slices, { id: id(), name: sliceDraft.trim(), done: false }],
-                  }));
-                  setSliceDraft('');
-                  setSliceInsight('');
-                }
-              }}
-              className="add-slice"
-            >
-              <input placeholder="Nome do slice" value={sliceDraft} onChange={e => setSliceDraft(e.target.value)} />
-              <button>Adicionar</button>
-            </form>
-            <div className="ai-create-actions">
-              <button disabled={insightBusy} onClick={() => void requestSliceInsight(task)}>
-                {insightBusy ? 'Analisando…' : '✦ Analisar distribuição dos slices'}
-              </button>
-              <button
-                className="ai-model-switch"
-                type="button"
-                disabled={insightBusy}
-                onClick={cycleAIChoice}
-                title={`Alternar modelo de IA · atual: ${aiSettings.provider} / ${aiSettings.model || 'nenhum'}`}
-                aria-label="Alternar modelo de IA para analisar os slices"
-              >
-                🤖
-              </button>
-            </div>
-            {sliceInsight && (
-              <p className="slice-insight" role="status">
-                {sliceInsight}
-              </p>
-            )}
-            <h3>Iniciar foco</h3>
-            <div className="scope">
-              <label>
-                <input type="radio" checked={scope === 'whole'} onChange={() => setScope('whole')} /> Tarefa inteira
-              </label>
-              <label>
-                <input type="radio" checked={scope === 'slices'} onChange={() => setScope('slices')} /> Selecionar
-                slices
-              </label>
-            </div>
-            {scope === 'slices' && (
-              <div className="slices">
-                {task.slices
-                  .filter(s => !s.done)
-                  .map(s => (
-                    <label key={s.id}>
-                      <input
-                        type="checkbox"
-                        checked={selectedSlices.includes(s.id)}
-                        onChange={() =>
-                          setSelectedSlices(old => (old.includes(s.id) ? old.filter(v => v !== s.id) : [...old, s.id]))
-                        }
+              {!!task.attachments?.length && (
+                <>
+                  <h3>Anexos</h3>
+                  <div className="task-attachments">
+                    {task.attachments.map((link, index) => (
+                      <AttachmentPreview
+                        key={index}
+                        link={link}
+                        busy={summarizingLink === link.url}
+                        error={attachmentError?.url === link.url ? attachmentError.message : undefined}
+                        onSummarize={() => void summarizeAttachment(link, task, task.id)}
                       />
-                      {s.name}
-                    </label>
-                  ))}
-              </div>
-            )}
-            <p className="summary">
-              {minutes(task.focusSeconds)} de foco registrado · {task.failures} tentativas falhas
-            </p>
-            {task.deadline && task.deadline < today && task.column !== 'done' && (
-              <p className="warning">O prazo venceu. A coluna só muda quando você decidir o próximo passo.</p>
-            )}
-            {active?.taskId === task.id && (phase === 'running' || phase === 'decision') && (
-              <button className="delete-task" onClick={() => nextCycleTask('failed')}>
-                Não consegui terminar · registrar tentativa e avançar
-              </button>
-            )}
-            {task.column === 'done' && (
-              <p className="summary">
-                Concluída em {displayDate(task.completedAt)}
-                {task.archivedAt ? ` · arquivada em ${displayDate(task.archivedAt)}` : ''}
-              </p>
-            )}
-            <h3>Materiais da tarefa</h3>
-            <LocalMaterials
-              label="Tarefa inteira"
-              notes={task.notes ?? ''}
-              files={task.files ?? []}
-              onNotes={notes => changeTask(task.id, x => ({ ...x, notes }))}
-              onFiles={files => changeTask(task.id, x => ({ ...x, files }))}
-            />
-            {!!task.attachments?.length && (
-              <>
-                <h3>Anexos</h3>
-                <div className="task-attachments">
-                  {task.attachments.map((link, index) => (
-                    <AttachmentPreview
-                      key={index}
-                      link={link}
-                      busy={summarizingLink === link.url}
-                      error={attachmentError?.url === link.url ? attachmentError.message : undefined}
-                      onSummarize={() => void summarizeAttachment(link, task, task.id)}
-                    />
-                  ))}
-                </div>
-              </>
-            )}
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
             <div className="task-actions">
               <button
                 className="primary"
