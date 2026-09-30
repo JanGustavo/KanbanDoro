@@ -18,6 +18,8 @@ import {
 import { verifiedAIModels, type ListedAIModel } from './aiModelCatalog';
 import AttachmentPreview, { type AttachmentInfo } from './AttachmentPreview';
 import LocalMaterials from './LocalMaterials';
+import VoiceRecorder from './VoiceRecorder';
+import { appendTranscript } from './voiceTranscription';
 import { pruneLocalFiles, type LocalFile } from './localFiles';
 import {
   dateFromDay,
@@ -1737,6 +1739,7 @@ function App() {
           </span>
         </div>
       </form>
+      <VoiceRecorder onText={text => setName(current => appendTranscript(current, text))} />
       {proposal && (
         <div
           className="backdrop"
@@ -1825,6 +1828,13 @@ function App() {
                     onChange={e => setProposal({ ...proposal, description: e.target.value })}
                   />
                 </label>
+                <VoiceRecorder
+                  onText={text =>
+                    setProposal(current =>
+                      current ? { ...current, description: appendTranscript(current.description, text) } : current,
+                    )
+                  }
+                />
                 <div className="fields">
                   <label className="highlight-time">
                     Tempo sugerido (min){' '}
@@ -3029,6 +3039,14 @@ function App() {
                 placeholder="Descrição da tarefa"
                 value={task.description}
                 onChange={e => changeTask(task.id, x => ({ ...x, description: e.target.value }))}
+              />
+              <VoiceRecorder
+                onText={text =>
+                  changeTask(task.id, current => ({
+                    ...current,
+                    description: appendTranscript(current.description, text),
+                  }))
+                }
               />
               <div className="fields">
                 <label>
