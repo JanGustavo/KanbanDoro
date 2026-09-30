@@ -93,6 +93,7 @@ function readTask(value: unknown): Task {
         name: str(slice.name, 140),
         done: slice.done,
         estimateMinutes: optional(slice.estimateMinutes, v => num(v, 1, 480)),
+        notes: optional(slice.notes, v => str(v, 20_000)),
       };
     }),
   );
@@ -110,6 +111,7 @@ function readTask(value: unknown): Task {
     focusSeconds: num(t.focusSeconds),
     slices,
     attachments,
+    notes: optional(t.notes, v => str(v, 20_000)),
     createdAt: optional(t.createdAt, v => num(v)),
     completedAt: optional(t.completedAt, v => num(v)),
     archivedAt: optional(t.archivedAt, v => num(v)),

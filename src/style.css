@@ -2954,6 +2954,66 @@ header p {
   width: 76px;
   margin-left: 5px;
 }
+.local-materials {
+  flex: 1 1 100%;
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid #765866;
+  border-radius: 12px;
+  background: #30292e;
+}
+.local-materials > label {
+  display: grid;
+  gap: 7px;
+  color: #ead2bf;
+}
+.local-file-picker input[type='file'] {
+  width: 100%;
+  border-style: dashed;
+}
+.local-file-picker input::file-selector-button {
+  margin-right: 12px;
+  padding: 7px 12px;
+  border: 1px solid #ad7890;
+  border-radius: 8px;
+  background: #5a3042;
+  color: #fff2e9;
+  cursor: pointer;
+}
+.local-file-list {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.local-file {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #624a56;
+  border-radius: 10px;
+}
+.local-file img {
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+.local-file a {
+  overflow-wrap: anywhere;
+  color: #f4c677;
+}
+.local-file small {
+  color: #c7b5af;
+}
+.local-file button {
+  margin-left: auto;
+}
 .slice-insight {
   margin-top: 10px;
   padding: 15px;
