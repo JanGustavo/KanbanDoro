@@ -54,6 +54,8 @@ import {
   completedCycleCount,
   elapsedCredit,
   extensionBudget,
+  extendFocusSession,
+  sessionClock,
   nextStepTiming,
   resumeAfterPause,
   stepDeadline,
@@ -364,7 +366,10 @@ function App() {
       setData(old =>
         old.session?.phase === 'running' &&
         old.session.startedAt === incoming.startedAt &&
-        old.session.taskId === incoming.taskId
+        old.session.taskId === incoming.taskId &&
+        old.session.stepIndex === incoming.stepIndex &&
+        old.session.extensions === incoming.extensions &&
+        stepDeadline(old.session) === stepDeadline(incoming)
           ? { ...old, session: incoming }
           : old,
       );
@@ -622,13 +627,22 @@ function App() {
         active.extensions,
       )
     : 0;
+  const remainingExtensionSlots = 2 - (active?.extensions ?? 0);
+  useEffect(() => {
+    if (phase === 'decision' && extensionRemaining > 0) {
+      // Suggest a first increment that leaves room for the second; the user can edit it.
+      setRequestedExtension(Math.max(1, Math.min(5, Math.floor(extensionRemaining / remainingExtensionSlots))));
+    }
+  }, [phase, extensionRemaining, remainingExtensionSlots, active?.taskId, active?.stepIndex]);
   useEffect(() => {
     if (!ready || !data.session || data.session.phase !== 'running') return;
     const current = data.session;
     const remaining = stepDeadline(current) - now;
     if (remaining <= 0) {
       update(old =>
-        old.session?.startedAt === current.startedAt && old.session?.phase === 'running'
+        old.session?.startedAt === current.startedAt &&
+        old.session?.phase === 'running' &&
+        stepDeadline(old.session) <= Date.now()
           ? { ...old, session: { ...old.session, phase: 'decision' } }
           : old,
       );
@@ -1226,20 +1240,13 @@ function App() {
     if (!Number.isInteger(amount) || amount < 1 || amount > extensionRemaining) return;
     update(old => {
       if (!old.session) return old;
-      const waitingMs = Math.max(0, Date.now() - stepDeadline(old.session));
-      return {
-        ...old,
-        session: {
-          ...old.session,
-          phase: 'running',
-          stepEndsAt: Date.now() + amount * 60000,
-          endsAt: old.session.endsAt + waitingMs + amount * 60000,
-          excludedSeconds: (old.session.excludedSeconds ?? 0) + Math.floor(waitingMs / 1000),
-          extensions: old.session.extensions + 1,
-          extensionMinutes: old.session.extensionMinutes + amount,
-          warnedMinutes: [],
-        },
-      };
+      const current = old.session;
+      const estimate =
+        current.steps?.[current.stepIndex ?? 0]?.originalEstimate ??
+        old.tasks.find(t => t.id === current.taskId)?.estimate ??
+        current.originalMinutes;
+      const session = extendFocusSession(current, estimate, amount, Date.now());
+      return session === current ? old : { ...old, session };
     });
     setStepNotice('');
   }
@@ -1499,7 +1506,12 @@ function App() {
             <div className="focus-task">
               <div className="focus-task-heading">
                 <span>{phase === 'break' || phase === 'break-done' ? active.breakType : 'SEU PRÓXIMO PASSO'}</span>
-                <span>{active.originalMinutes + active.extensionMinutes} MIN</span>
+                <span>
+                  {phase === 'break' || phase === 'break-done'
+                    ? Math.round((active.endsAt - active.startedAt) / 60_000)
+                    : active.originalMinutes + active.extensionMinutes}{' '}
+                  MIN
+                </span>
               </div>
               <h2>{activeTask?.name ?? 'Tarefa removida'}</h2>
               <p>
@@ -1508,7 +1520,7 @@ function App() {
                     ? 'Tarefa inteira'
                     : `${active.selectedSliceIds.length} slices · tempo compartilhado`)}
               </p>
-              {!!active.steps && (
+              {!!active.steps && !['break', 'break-done'].includes(phase ?? '') && (
                 <p className="cycle-step-summary">
                   Tarefa {(active.stepIndex ?? 0) + 1} de {active.steps.length} ·{' '}
                   {active.steps[active.stepIndex ?? 0].minutes} min reservados inicialmente · tempo restante nesta
@@ -1543,14 +1555,9 @@ function App() {
               )}
             </div>
             {(() => {
-              const totalMs = Math.max(
-                1,
-                (active?.stepEndsAt ?? active?.endsAt ?? now) - (active?.stepStartedAt ?? active?.startedAt ?? now),
-              );
-              const remMs =
-                (active?.phase === 'intermission' ? active.pauseEndsAt : (active?.stepEndsAt ?? active?.endsAt)) ?? now;
-              const currentRemMs = Math.max(0, remMs - now);
-              const remPercent = (currentRemMs / totalMs) * 100;
+              const clock = sessionClock(active, now);
+              const currentRemMs = clock.remainingMs;
+              const remPercent = (currentRemMs / clock.totalMs) * 100;
               const clockColorClass =
                 remPercent > 75
                   ? 'clock-green'
@@ -1565,7 +1572,7 @@ function App() {
                     className="focus-ring"
                     style={
                       {
-                        '--ring-progress': `${Math.min(100, Math.max(0, (((phase?.startsWith('intermission') ? (active?.pauseStartedAt ?? now) : now) - (active?.startedAt ?? now)) / Math.max(1, (active?.endsAt ?? now) - (active?.startedAt ?? now))) * 100))}%`,
+                        '--ring-progress': `${clock.progress}%`,
                       } as React.CSSProperties
                     }
                   >
@@ -1582,7 +1589,7 @@ function App() {
                           ? '00:00'
                           : minutes(Math.floor(currentRemMs / 1000))}
                       </strong>
-                      <span>{phase?.startsWith('intermission') ? 'restantes da pausa' : 'do ciclo atual'}</span>
+                      <span>{clock.isBreak ? 'restantes da pausa' : 'da tarefa atual'}</span>
                     </div>
                   </div>
                   <div className="focus-next">
@@ -1790,10 +1797,21 @@ function App() {
                     max={extensionRemaining}
                     onChange={setRequestedExtension}
                   />
+                  <small>
+                    {extensionRemaining} min disponíveis no limite combinado de 50%. Você pode dividir esse saldo em até{' '}
+                    {2 - active.extensions} extensão(ões).
+                  </small>
                   <button onClick={() => extend(Math.min(Math.max(1, requestedExtension), extensionRemaining))}>
-                    Estender ({active.extensions}/2)
+                    Estender ({active.extensions + 1}/2)
                   </button>
                 </label>
+              )}
+              {extensionRemaining === 0 && (
+                <p role="status">
+                  {active.extensions >= 2
+                    ? 'As duas extensões desta tarefa já foram usadas.'
+                    : 'O limite combinado de 50% do tempo original foi consumido; não há saldo para outra extensão.'}
+                </p>
               )}
               <button
                 onClick={() => {

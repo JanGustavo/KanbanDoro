@@ -3,6 +3,8 @@ import {
   completedCycleCount,
   elapsedCredit,
   extensionBudget,
+  extendFocusSession,
+  sessionClock,
   nextStepTiming,
   resumeAfterPause,
   stepDeadline,
@@ -58,3 +60,40 @@ assert.equal(
 assert.equal(suggestedBreakMinutes(4, true, { short: 5, long: 20 }), 20);
 assert.equal(suggestedBreakMinutes(4, false, { short: 5, long: 20 }), 5);
 console.log('Crédito de tempo por tarefa e alternância de pausas validados.');
+
+const finished = { ...multi, phase: 'decision', extensions: 0, extensionMinutes: 0 };
+const firstExtension = extendFocusSession(finished, 20, 5, 31 * 60_000);
+assert.equal(firstExtension.extensions, 1);
+assert.equal(firstExtension.stepEndsAt, 36 * 60_000);
+assert.equal(firstExtension.excludedSeconds, 60);
+assert.equal(
+  extendFocusSession(firstExtension, 20, 5, 31 * 60_000),
+  firstExtension,
+  'a duplicate click cannot consume the second extension',
+);
+assert.equal(extensionBudget(20, firstExtension.extensionMinutes, firstExtension.extensions), 5);
+const secondExtension = extendFocusSession(firstExtension, 20, 5, 37 * 60_000);
+assert.equal(secondExtension.extensions, 2, 'the second increment remains available when the first expires');
+assert.equal(secondExtension.extensionMinutes, 10);
+assert.equal(secondExtension.excludedSeconds, 120);
+assert.equal(extendFocusSession(secondExtension, 20, 1, 43 * 60_000), secondExtension);
+assert.equal(
+  extendFocusSession(firstExtension, 20, 6, 37 * 60_000),
+  firstExtension,
+  'both extensions share the same 50 percent cap',
+);
+const allBudget = extendFocusSession(finished, 20, 10, 31 * 60_000);
+assert.equal(extensionBudget(20, allBudget.extensionMinutes, allBudget.extensions), 0);
+const rest = { ...finished, phase: 'break', startedAt: 100 * 60_000, endsAt: 140 * 60_000 };
+assert.equal(
+  sessionClock(rest, 100 * 60_000).remainingMs,
+  40 * 60_000,
+  'a break ignores the expired focus step deadline',
+);
+assert.equal(sessionClock(rest, 120 * 60_000).progress, 50);
+assert.equal(sessionClock(rest, 141 * 60_000).remainingMs, 0);
+assert.equal(sessionClock(paused, 90_000).remainingMs, 120_000);
+assert.equal(sessionClock(firstExtension, 32 * 60_000).remainingMs, 4 * 60_000);
+assert.equal(sessionClock(firstExtension, 32 * 60_000).totalMs, 5 * 60_000);
+assert.equal(extendFocusSession(rest, 20, 5, 141 * 60_000), rest);
+console.log('Duas extensões, proteção contra clique duplicado e relógios de pausa validados.');
