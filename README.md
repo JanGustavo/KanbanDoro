@@ -4,7 +4,7 @@
 
 # KanbanDoro
 
-Extensão Manifest V3 que reúne Kanban, ciclos de foco vinculados a tarefas e assistência de IA. Versão 0.8.2. Próximo ciclo em revisão por PR; a versão 0.9 ainda não foi publicada.
+Extensão Manifest V3 que reúne Kanban, ciclos de foco vinculados a tarefas e assistência de IA. Versão 0.9.0. Backup completo, revisão semanal e gerenciamento de áreas.
 
 ## Rodar o esqueleto
 
