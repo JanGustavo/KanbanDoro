@@ -8,6 +8,7 @@ const sent = [];
 let injected = false;
 let injections = 0;
 let soundEnabled = true;
+let invalidWeeklyReview = false;
 let session = { phase: 'running', endsAt: Date.now() + 60_000 };
 let alerts = 0;
 let notifications = 0;
@@ -171,7 +172,7 @@ const localDate = offset => {
 };
 let transientGeminiErrors = 0;
 let groqFailures = [];
-vm.runInNewContext(readFileSync('dist/background.js', 'utf8'), {
+vm.runInNewContext(readFileSync('public/background.js', 'utf8'), {
   chrome,
   AbortSignal,
   URL,
@@ -422,6 +423,7 @@ vm.runInNewContext(readFileSync('dist/background.js', 'utf8'), {
       };
     }
     if (url === 'https://example.org/forbidden') return { ok: false, status: 403, url, headers: { get: () => null } };
+    const weeklyReview = options?.body?.includes('weekly_review');
     const attachmentSummary = options?.body?.includes('attachment_summary');
     const replacement = options?.body?.includes('attachment_replacements');
     if (attachmentSummary && options.body.includes('force-groq-error'))
@@ -435,38 +437,56 @@ vm.runInNewContext(readFileSync('dist/background.js', 'utf8'), {
           {
             message: {
               content: JSON.stringify(
-                attachmentSummary
-                  ? { resumo: 'Estude em etapas curtas e revise periodicamente.' }
-                  : replacement
-                    ? {
-                        attachments: [
-                          { title: 'Artigo', url: 'https://example.org/article' },
-                          { title: 'Falso', url: 'https://example.org/missing' },
-                        ],
-                      }
-                    : sliceInsight
-                      ? { insight: 'Separe o slice maior em etapas curtas.' }
-                      : connectionDraft
-                        ? { title: 'Estudar', description: 'Linux', start: '', end: '', to: '', subject: '', body: '' }
-                        : {
-                            name: 'Criar API',
-                            description: 'Implementar rotas',
-                            difficulty: 2,
-                            estimate: 35,
-                            skill: 'Programação',
-                            slices: ['Rotas', 'Testes'],
-                            attachments: [
-                              { title: 'Documentação', url: 'https://example.org/info' },
-                              { title: 'Interno', url: 'http://localhost/private' },
-                              { title: 'HEAD enganoso', url: 'https://example.org/head-only' },
-                              { title: '404 disfarçado', url: 'https://example.org/soft-missing' },
-                            ],
-                            searches: [
-                              { title: 'Vagas em Bayeux', kind: 'web', query: 'vagas programação Bayeux PB' },
-                              { title: 'Vagas em João Pessoa', kind: 'web', query: 'vagas programação João Pessoa PB' },
-                              { title: 'Exemplo', kind: 'video', query: 'aula de API' },
-                            ],
-                          },
+                weeklyReview
+                  ? {
+                      summary: invalidWeeklyReview ? null : 'Amostra pequena; observe mais uma semana.',
+                      adjustments: ['Revise uma estimativa.'],
+                      nextStep: 'Retome uma etapa pequena.',
+                    }
+                  : attachmentSummary
+                    ? { resumo: 'Estude em etapas curtas e revise periodicamente.' }
+                    : replacement
+                      ? {
+                          attachments: [
+                            { title: 'Artigo', url: 'https://example.org/article' },
+                            { title: 'Falso', url: 'https://example.org/missing' },
+                          ],
+                        }
+                      : sliceInsight
+                        ? { insight: 'Separe o slice maior em etapas curtas.' }
+                        : connectionDraft
+                          ? {
+                              title: 'Estudar',
+                              description: 'Linux',
+                              start: '',
+                              end: '',
+                              to: '',
+                              subject: '',
+                              body: '',
+                            }
+                          : {
+                              name: 'Criar API',
+                              description: 'Implementar rotas',
+                              difficulty: 2,
+                              estimate: 35,
+                              skill: 'Programação',
+                              slices: ['Rotas', 'Testes'],
+                              attachments: [
+                                { title: 'Documentação', url: 'https://example.org/info' },
+                                { title: 'Interno', url: 'http://localhost/private' },
+                                { title: 'HEAD enganoso', url: 'https://example.org/head-only' },
+                                { title: '404 disfarçado', url: 'https://example.org/soft-missing' },
+                              ],
+                              searches: [
+                                { title: 'Vagas em Bayeux', kind: 'web', query: 'vagas programação Bayeux PB' },
+                                {
+                                  title: 'Vagas em João Pessoa',
+                                  kind: 'web',
+                                  query: 'vagas programação João Pessoa PB',
+                                },
+                                { title: 'Exemplo', kind: 'video', query: 'aula de API' },
+                              ],
+                            },
               ),
             },
           },
@@ -625,6 +645,48 @@ assert.equal(requests.length, 0);
 const catalog = await aiMessage({ type: 'GROQ_MODELS' });
 assert.equal(catalog.models.length, 1, 'only eligible text models should be offered');
 assert.equal(catalog.models[0].freeTier, true, 'known Groq free-plan models should be labeled');
+const periodMetrics = {
+  week: '2026-09-28',
+  completed: 1,
+  focusMinutes: 40,
+  areas: [
+    {
+      area: 'Estudo',
+      sample: 1,
+      plannedMinutes: 25,
+      actualMinutes: 40,
+      medianRatio: 1.6,
+      smallSample: true,
+      notes: 'DO-NOT-SEND',
+    },
+  ],
+};
+const weeklyData = {
+  current: periodMetrics,
+  previous: { ...periodMetrics, week: '2026-09-21' },
+  pendingNow: 1,
+  stalledNow: 0,
+  taskNames: ['DO-NOT-SEND'],
+  apiKey: 'DO-NOT-SEND',
+};
+const weeklyRequestsBefore = requests.length;
+assert.equal(await aiMessage({ type: 'AI_WEEKLY_REVIEW', data: weeklyData }, 'https://untrusted.example'), null);
+assert.equal(requests.length, weeklyRequestsBefore, 'content scripts cannot trigger history analysis');
+const weekly = await aiMessage({ type: 'AI_WEEKLY_REVIEW', data: weeklyData });
+assert.match(weekly.review.summary, /Amostra pequena/);
+const weeklyRequest = requests.find(request => request.options?.body?.includes('weekly_review'));
+assert(weeklyRequest);
+assert(!weeklyRequest.options.body.includes('DO-NOT-SEND'), 'unknown fields and free text never reach the provider');
+const weeklyCount = requests.length;
+const badMetrics = await aiMessage({
+  type: 'AI_WEEKLY_REVIEW',
+  data: { ...weeklyData, current: { ...periodMetrics, focusMinutes: -1 } },
+});
+assert.match(badMetrics.error, /inválidas/);
+assert.equal(requests.length, weeklyCount, 'invalid metrics are rejected before HTTP');
+invalidWeeklyReview = true;
+assert.match((await aiMessage({ type: 'AI_WEEKLY_REVIEW', data: weeklyData })).error, /Formato inválido/);
+invalidWeeklyReview = false;
 const spokenRequest = 'Ah, cara, eu queria fazer uma API, sabe, para implementar umas rotas e testes.';
 const draft = await aiMessage({
   type: 'GROQ_TASK_PROPOSAL',

@@ -31,7 +31,7 @@ let listener;
 let tick;
 let preferences = { mode: 'compact', position: 'right' };
 const messages = [];
-vm.runInNewContext(readFileSync('dist/content.js', 'utf8'), {
+vm.runInNewContext(readFileSync('.test-dist/content.js', 'utf8'), {
   document,
   Date,
   window: {

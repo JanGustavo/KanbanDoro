@@ -1,6 +1,8 @@
 import type { Data, HistoryEntry, Task } from './main';
 import type { FocusBlocking } from './focusBlocking';
 import type { WeeklyPlan } from './schedule';
+import { APP_VERSION } from './appVersion.ts';
+import { MAX_LOCAL_FILE_BYTES, type LocalFile } from './localFiles.ts';
 import { normalizeDomain } from './focusBlocking.ts';
 
 export const BACKUP_VERSION = 1;
@@ -78,7 +80,22 @@ function readAttachment(value: unknown) {
   };
 }
 
-function readTask(value: unknown): Task {
+function readFiles(value: unknown): LocalFile[] | undefined {
+  return optional(value, v =>
+    uniqueIds(
+      list(v, 100).map(entry => {
+        const file = obj(entry);
+        const id = identifier(file.id);
+        if (!/^[a-zA-Z0-9_-]+$/.test(id)) throw Error('Identificador de arquivo inválido.');
+        const size = num(file.size, 1, MAX_LOCAL_FILE_BYTES);
+        if (!Number.isInteger(size)) throw Error('Tamanho de arquivo inválido.');
+        return { id, name: str(file.name, 180), type: str(file.type, 100), size, addedAt: num(file.addedAt) };
+      }),
+    ),
+  );
+}
+
+function readTask(value: unknown, includeFiles = false): Task {
   const t = obj(value);
   const column = str(t.column, 12);
   if (!['todo', 'doing', 'late', 'done'].includes(column)) throw Error('Coluna inválida no backup.');
@@ -94,6 +111,7 @@ function readTask(value: unknown): Task {
         done: slice.done,
         estimateMinutes: optional(slice.estimateMinutes, v => num(v, 1, 480)),
         notes: optional(slice.notes, v => str(v, 20_000)),
+        ...(includeFiles ? { files: readFiles(slice.files) } : {}),
       };
     }),
   );
@@ -112,6 +130,7 @@ function readTask(value: unknown): Task {
     slices,
     attachments,
     notes: optional(t.notes, v => str(v, 20_000)),
+    ...(includeFiles ? { files: readFiles(t.files) } : {}),
     createdAt: optional(t.createdAt, v => num(v)),
     completedAt: optional(t.completedAt, v => num(v)),
     archivedAt: optional(t.archivedAt, v => num(v)),
@@ -156,10 +175,15 @@ function readPlan(value: unknown): WeeklyPlan {
   };
 }
 
-export function makeBackup(data: Data, focusBlocking: FocusBlocking, soundEnabled: boolean): Backup {
+export function makeBackup(
+  data: Data,
+  focusBlocking: FocusBlocking,
+  soundEnabled: boolean,
+  includeFiles = false,
+): Backup {
   const snapshot: Backup = {
     schemaVersion: BACKUP_VERSION,
-    appVersion: '0.2.0',
+    appVersion: APP_VERSION,
     exportedAt: new Date().toISOString(),
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     data: {
@@ -175,10 +199,10 @@ export function makeBackup(data: Data, focusBlocking: FocusBlocking, soundEnable
     },
   };
   // Re-parse our own export to strip unknown keys added by older versions.
-  return parseBackup(JSON.stringify(snapshot));
+  return parseBackup(JSON.stringify(snapshot), includeFiles);
 }
 
-export function parseBackup(text: string): Backup {
+export function parseBackup(text: string, includeFiles = false): Backup {
   if (new Blob([text]).size > MAX_BACKUP_BYTES) throw Error('Arquivo de backup acima de 16 MB.');
   let parsed: Record<string, unknown>;
   try {
@@ -201,7 +225,7 @@ export function parseBackup(text: string): Backup {
     exportedAt: str(parsed.exportedAt, 40),
     timeZone: str(parsed.timeZone, 80),
     data: {
-      tasks: uniqueIds(list(d.tasks).map(readTask)),
+      tasks: uniqueIds(list(d.tasks).map(value => readTask(value, includeFiles))),
       history: uniqueIds(list(d.history).map(readHistory)),
       weeklyPlans: uniqueIds(list(d.weeklyPlans, 5000).map(readPlan)),
       breakPreferences: list(d.breakPreferences, 100).map(v => str(v, 80)),

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import {
   normalizeDomain,
+  toggleFocusCategory,
   blockedDomains,
   gentleDomains,
   strictDomains,
@@ -204,3 +205,17 @@ const worker = vm.runInNewContext(`${presetBlock}; ({ gentle: FOCUS_GENTLE, stri
 assert.deepEqual(Array.from(worker.gentle).sort(), [...gentleDomains].sort(), 'Essencial must match the worker');
 assert.deepEqual(Array.from(worker.strict).sort(), [...strictDomains].sort(), 'Intenso must match the worker');
 console.log('Categorias, novos domínios, exceções e paridade entre interface/bloqueador validados.');
+
+const custom = { mode: 'custom', exceptions: ['web.whatsapp.com'], customDomains: ['work.example', 'm.instagram.com'] };
+const enabled = toggleFocusCategory(custom, 'social', true);
+assert(enabled.customDomains.includes('instagram.com'));
+assert(enabled.customDomains.includes('work.example'));
+assert.deepEqual(enabled.exceptions, custom.exceptions);
+const disabled = toggleFocusCategory(enabled, 'social', false);
+assert.deepEqual(
+  disabled.customDomains,
+  ['work.example'],
+  'category removal includes custom subdomains in that category',
+);
+assert.deepEqual(disabled.exceptions, custom.exceptions, 'bulk controls cannot remove exceptions');
+assert.equal(toggleFocusCategory({ ...custom, mode: 'gentle' }, 'social', true).mode, 'gentle');

@@ -162,3 +162,19 @@ export function blockedDomains(settings: FocusBlocking): string[] {
     domain => ![...exceptions].some(except => domain === except || domain.endsWith(`.${except}`)),
   );
 }
+
+/** Toggle preset categories only; unrelated custom sites and exceptions are retained. */
+export function toggleFocusCategory(settings: FocusBlocking, categoryId: string, enabled: boolean): FocusBlocking {
+  const category = focusDomainCategories.find(item => item.id === categoryId);
+  if (!category || settings.mode !== 'custom') return settings;
+  const sites = new Set([...category.gentle, ...category.strict]);
+  const removed = new Set(
+    groupFocusDomains(settings.customDomains).find(group => group.id === categoryId)?.domains ?? [],
+  );
+  return {
+    ...settings,
+    customDomains: enabled
+      ? [...new Set([...settings.customDomains, ...sites])]
+      : settings.customDomains.filter(domain => !removed.has(domain)),
+  };
+}

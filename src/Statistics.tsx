@@ -1,8 +1,11 @@
+import WeeklyReview from './WeeklyReview';
 import { calculateStats } from './stats';
 
 type Props = {
   tasks: Array<{
     id: string;
+    name?: string;
+    createdAt?: number;
     skill?: string;
     estimate: number;
     focusSeconds: number;
@@ -32,6 +35,7 @@ export default function Statistics({ tasks, history, now, wipLimit, onClose }: P
         </div>
         <button onClick={onClose}>Voltar ao quadro</button>
       </header>
+      <WeeklyReview tasks={tasks} history={history} now={now} />
       <div className="stats-overview">
         <div className="stats-overview-focus">
           <span className="eyebrow">VISÃO DA SEMANA</span>

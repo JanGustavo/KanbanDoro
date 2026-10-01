@@ -1,4 +1,4 @@
-.PHONY: dev build typecheck release backend-dev backend-build backend-test backend-lint
+.PHONY: dev build typecheck release backend-dev backend-build backend-test backend-lint validate
 
 dev:
 	npm run dev
@@ -24,3 +24,6 @@ backend-test:
 
 backend-lint:
 	cd backend && ruff check app tests
+
+validate:
+	npm run validate

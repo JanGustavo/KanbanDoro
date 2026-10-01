@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import {
   blockedDomains,
+  toggleFocusCategory,
   focusBlockingDefault,
   gentleDomains,
   groupFocusDomains,
@@ -20,6 +21,7 @@ export default function FocusBlockingSettings({
   const settings = saved ?? focusBlockingDefault;
   const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
   if (!saved) return <p>Carregando suas preferências de foco…</p>;
   function add(event: FormEvent) {
     event.preventDefault();
@@ -39,7 +41,16 @@ export default function FocusBlockingSettings({
   }
   const editingCustom = settings.mode === 'custom';
   const domains = editingCustom ? settings.customDomains : settings.mode === 'gentle' ? gentleDomains : strictDomains;
-  const categories = groupFocusDomains(domains);
+  const allCategories = groupFocusDomains(editingCustom ? [...strictDomains, ...domains] : domains);
+  const query = search.trim().toLocaleLowerCase();
+  const categories = allCategories
+    .map(category => ({
+      ...category,
+      domains: category.domains.filter(
+        domain => !query || domain.includes(query) || category.title.toLocaleLowerCase().includes(query),
+      ),
+    }))
+    .filter(category => category.domains.length);
   const blocked = new Set(blockedDomains(settings));
   return (
     <div className="blocking-settings">
@@ -87,7 +98,10 @@ export default function FocusBlockingSettings({
             {editingCustom
               ? 'Adicione ou retire domínios deste perfil.'
               : 'Adicione exceções para sites que você precisa usar, como WhatsApp.'}{' '}
-            Vale para o domínio e seus subdomínios. {blockedDomains(settings).length} domínio(s) na lista.
+            Uma exceção libera esse domínio e todos os seus subdomínios em qualquer perfil; ela não libera o domínio pai
+            nem muda o restante da categoria. Por exemplo, liberar web.whatsapp.com não libera todo whatsapp.com. O
+            bloqueio também cobre os subdomínios dos sites cadastrados. {blockedDomains(settings).length} domínio(s) na
+            lista.
           </p>
           <form className="blocking-add" onSubmit={add}>
             <input
@@ -103,9 +117,45 @@ export default function FocusBlockingSettings({
               {error}
             </p>
           )}
+          <label>
+            Buscar site ou categoria{' '}
+            <input
+              type="search"
+              value={search}
+              onChange={event => setSearch(event.target.value)}
+              placeholder="Ex.: apostas, youtube…"
+            />
+          </label>
+          {editingCustom && (
+            <div className="blocking-category-toggles" aria-label="Ativar categorias no perfil personalizado">
+              {allCategories
+                .filter(category => category.id !== 'other')
+                .map(category => {
+                  const selected = category.domains.filter(domain => settings.customDomains.includes(domain)).length;
+                  return (
+                    <label key={category.id}>
+                      <input
+                        type="checkbox"
+                        checked={selected === category.domains.length}
+                        aria-checked={
+                          selected && selected < category.domains.length
+                            ? 'mixed'
+                            : selected === category.domains.length
+                        }
+                        onChange={event => onChange(toggleFocusCategory(settings, category.id, event.target.checked))}
+                      />
+                      {category.title}{' '}
+                      <small>
+                        {selected}/{category.domains.length} selecionados
+                      </small>
+                    </label>
+                  );
+                })}
+            </div>
+          )}
           <div className="blocking-categories" aria-label="Sites por categoria">
             {categories.map(category => (
-              <details className="blocking-category" key={category.id}>
+              <details className="blocking-category" key={category.id} open={query ? true : undefined}>
                 <summary>
                   <span>{category.title}</span>
                   <span className="blocking-category-count">{category.domains.length} sites</span>
@@ -135,9 +185,7 @@ export default function FocusBlockingSettings({
               </details>
             ))}
             {!categories.length && (
-              <p className="settings-hint">
-                Nenhum domínio neste perfil. Adicione um site ou importe um dos perfis acima.
-              </p>
+              <p className="settings-hint">Nenhum site encontrado. Ajuste a busca ou adicione um domínio ao perfil.</p>
             )}
           </div>
           {!!settings.exceptions.length && (

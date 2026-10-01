@@ -2,6 +2,16 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
 import { confirmAction } from './confirmation';
+import AIIcon from './AIIcon';
+import { removeArea } from './areas';
+import {
+  exportFullBackup,
+  parseFullBackup,
+  restoreFullBackup,
+  referencedFiles,
+  MAX_FULL_BACKUP_BYTES,
+  type FullBackup,
+} from './fullBackup';
 import BubbleSettings from './BubbleSettings';
 import { proposalContext, proposalInput } from './proposalContext';
 import {
@@ -266,6 +276,7 @@ function App() {
   const [wipHelp, setWipHelp] = useState(false);
   const [creatingArea, setCreatingArea] = useState(false);
   const [importPreview, setImportPreview] = useState<Backup | null>(null);
+  const [importArchive, setImportArchive] = useState<FullBackup | null>(null);
   const [backupError, setBackupError] = useState('');
   const [backupBusy, setBackupBusy] = useState(false);
   const [savedBeforeImport, setSavedBeforeImport] = useState('');
@@ -456,17 +467,54 @@ function App() {
     link.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
   }
+  async function saveCompleteBackup(prefix = 'kanbandoro-completo', beforeImport = false) {
+    if (backupBusy) return;
+    setBackupBusy(true);
+    setBackupError('');
+    const snapshotState = JSON.stringify({ data, focusBlocking, soundEnabled });
+    try {
+      const snapshot = makeBackup(data, focusBlocking ?? focusBlockingDefault, soundEnabled, true);
+      const bytes = await exportFullBackup(snapshot);
+      const url = URL.createObjectURL(new Blob([new Uint8Array(bytes).buffer], { type: 'application/zip' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${prefix}-${snapshot.exportedAt.slice(0, 10)}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+      if (beforeImport) {
+        setSavedBeforeImport(snapshotState);
+        setBackupAcknowledged(false);
+      }
+    } catch (reason) {
+      setBackupError(reason instanceof Error ? reason.message : 'Não foi possível exportar o ZIP.');
+    } finally {
+      setBackupBusy(false);
+    }
+  }
   async function chooseBackup(file?: File) {
+    if (backupBusy) return;
     setImportPreview(null);
+    setImportArchive(null);
     setBackupError('');
     setSavedBeforeImport('');
     setBackupAcknowledged(false);
     if (!file) return;
-    if (file.size > MAX_BACKUP_BYTES) return setBackupError('Arquivo acima de 16 MB.');
+    const zipped = file.name.toLowerCase().endsWith('.zip');
+    if (file.size > (zipped ? MAX_FULL_BACKUP_BYTES : MAX_BACKUP_BYTES))
+      return setBackupError(zipped ? 'ZIP acima de 128 MB.' : 'JSON acima de 16 MB.');
+    setBackupBusy(true);
     try {
-      setImportPreview(parseBackup(await file.text()));
+      if (zipped) {
+        const archive = await parseFullBackup(new Uint8Array(await file.arrayBuffer()));
+        setImportArchive(archive);
+        setImportPreview(archive.backup);
+      } else setImportPreview(parseBackup(await file.text()));
     } catch (err) {
       setBackupError(err instanceof Error ? err.message : 'Não foi possível ler o backup.');
+    } finally {
+      setBackupBusy(false);
     }
   }
   async function restoreBackup(mode: 'merge' | 'replace') {
@@ -490,9 +538,29 @@ function App() {
     setBackupBusy(true);
     setBackupError('');
     try {
-      const current = makeBackup(data, focusBlocking ?? focusBlockingDefault, soundEnabled);
+      const current = makeBackup(data, focusBlocking ?? focusBlockingDefault, soundEnabled, true);
+      const persist = async (target: Backup) => {
+        const stored = await chrome.storage.local.get([...Object.keys(initial), 'focusBlocking', 'soundEnabled']);
+        if (stored.session) throw Error('Encerre o ciclo ou a pausa antes de restaurar.');
+        const latest = makeBackup(
+          { ...initial, ...stored } as Data,
+          (stored.focusBlocking as FocusBlocking | undefined) ?? focusBlockingDefault,
+          stored.soundEnabled !== false,
+          true,
+        );
+        if (JSON.stringify(latest.data) !== JSON.stringify(current.data))
+          throw Error(
+            'O quadro mudou durante a importação. Recarregue o painel e exporte uma nova cópia antes de tentar novamente.',
+          );
+        await chrome.storage.local.set({ ...target.data, session: null });
+      };
+      if (importArchive) {
+        await restoreFullBackup(current, importArchive, mode, persist);
+        window.location.reload();
+        return;
+      }
       const target = mode === 'merge' ? mergeBackup(current, importPreview) : importPreview;
-      await chrome.storage.local.set({ ...target.data, session: null });
+      await persist(target);
       window.location.reload();
     } catch (err) {
       setBackupError(err instanceof Error ? err.message : 'Não foi possível restaurar o backup.');
@@ -604,7 +672,11 @@ function App() {
       (!skillFilter || (skillFilter === '__without_skill__' ? !t.skill?.trim() : t.skill?.trim() === skillFilter)),
   );
   const skills = [
-    ...new Set([...data.areas, ...data.tasks.map(t => t.skill?.trim()).filter((skill): skill is string => !!skill)]),
+    ...new Set([
+      ...data.areas,
+      ...data.tasks.map(t => t.skill?.trim()).filter((skill): skill is string => !!skill),
+      ...data.weeklyPlans.map(plan => plan.skill?.trim()).filter((skill): skill is string => !!skill),
+    ]),
   ].sort((a, b) => a.localeCompare(b, 'pt-BR'));
   const soonDate = dateFromDay(today);
   soonDate.setDate(soonDate.getDate() + 2);
@@ -645,6 +717,24 @@ function App() {
     setCreatingArea(false);
     setSchedule({ mode: recurring ? 'weekly' : 'once', startDate: localDay(new Date()), weekdays: [1, 2, 3, 4, 5] });
     setProposal({ name: title, description: '', difficulty: 1, estimate: 25, slices: [], attachments: [] });
+  }
+  async function deleteArea(area: string) {
+    const matches = (value?: string) => value?.trim().toLocaleLowerCase() === area.toLocaleLowerCase();
+    const tasks = data.tasks.filter(task => matches(task.skill)).length;
+    const plans = data.weeklyPlans.filter(plan => matches(plan.skill)).length;
+    if (
+      !(await confirmAction({
+        title: `Remover área “${area}”?`,
+        message: `${tasks} tarefa(s) e ${plans} rotina(s) ficarão sem área. Tarefas, arquivos e registros de foco serão mantidos. A classificação das estatísticas também muda.`,
+        confirmLabel: 'Remover área',
+        destructive: true,
+      }))
+    )
+      return;
+    update(old => removeArea(old, area));
+    if (matches(skillFilter)) setSkillFilter('');
+    setProposal(current => (current && matches(current.skill) ? { ...current, skill: undefined } : current));
+    setToast('Área removida. Tarefas e rotinas mantidas sem classificação.');
   }
   function addArea(raw: string) {
     const area = raw.trim().slice(0, 50);
@@ -1744,7 +1834,7 @@ function App() {
             disabled={aiBusy || !name.trim()}
             onClick={() => void requestProposal()}
           >
-            {aiBusy ? 'Consultando…' : '✦ Propor com IA'}
+            <AIIcon /> {aiBusy ? 'Consultando…' : 'Propor com IA'}
           </button>
           <button
             className="ai-model-switch"
@@ -1762,7 +1852,7 @@ function App() {
                 : 'Configurar modelos de IA'
             }
           >
-            🤖
+            <AIIcon />
           </button>
           <span className="ai-active-label" aria-live="polite">
             {aiSettings.model
@@ -1791,7 +1881,7 @@ function App() {
           >
             <header className="proposal-header">
               <span className="proposal-spark" aria-hidden="true">
-                {proposalSource === 'ai' ? 'ϟ' : '+'}
+                {proposalSource === 'ai' ? <AIIcon /> : '+'}
               </span>
               <div>
                 <span className="eyebrow">
@@ -2141,7 +2231,7 @@ function App() {
               </button>
               {proposalSource === 'manual' && (
                 <button className="propose-draft" disabled={aiBusy || !proposal.name.trim()} onClick={proposeFromDraft}>
-                  {aiBusy ? 'Consultando…' : '✦ Propor com IA'}
+                  <AIIcon /> {aiBusy ? 'Consultando…' : 'Propor com IA'}
                 </button>
               )}
               {proposalSource === 'ai' && (
@@ -2316,13 +2406,10 @@ function App() {
                   sujeita à sua aprovação.
                 </p>
                 <div className="area-list">
-                  {data.areas.map(area => (
+                  {skills.map(area => (
                     <span key={area}>
                       {area}{' '}
-                      <button
-                        aria-label={`Remover área ${area}`}
-                        onClick={() => update(old => ({ ...old, areas: old.areas.filter(name => name !== area) }))}
-                      >
+                      <button aria-label={`Remover área ${area}`} onClick={() => void deleteArea(area)}>
                         ×
                       </button>
                     </span>
@@ -2558,10 +2645,14 @@ function App() {
               <section className="backup-panel" aria-label="Backup dos dados">
                 <h3>Backup local</h3>
                 <p>
-                  Tarefas, anotações de tarefas e etapas, links, histórico, rotinas e preferências vão para o JSON.
-                  Imagens e arquivos locais ficam fora: guarde cópias separadas antes de remover a extensão ou trocar de
-                  navegador. Chaves de IA, tokens Google e a sessão de foco ativa também ficam fora.
+                  Tarefas, anotações de tarefas e etapas, links, histórico, rotinas e preferências vão para o JSON. Use
+                  o ZIP completo para levar imagens e arquivos de tarefas e etapas (até 100 arquivos, 128 MB). O JSON
+                  continua disponível, mas não inclui os arquivos locais. Chaves de IA, tokens Google e a sessão de foco
+                  ativa também ficam fora.
                 </p>
+                <button className="primary" disabled={backupBusy} onClick={() => void saveCompleteBackup()}>
+                  {backupBusy ? 'Processando…' : 'Exportar ZIP completo'}
+                </button>
                 <button
                   disabled={backupBusy}
                   onClick={() => {
@@ -2579,7 +2670,8 @@ function App() {
                   Escolher arquivo para prévia{' '}
                   <input
                     type="file"
-                    accept=".json,application/json"
+                    accept=".json,.zip,application/json,application/zip"
+                    disabled={backupBusy}
                     onChange={e => {
                       void chooseBackup(e.target.files?.[0]);
                       e.target.value = '';
@@ -2603,27 +2695,49 @@ function App() {
                       {importPreview.data.weeklyPlans.length} rotinas.
                     </p>
                     <p>
+                      {importArchive
+                        ? `${importArchive.files.size} arquivo(s) verificado(s) · ${(importArchive.bytes / 1024 / 1024).toFixed(1)} MB descompactados. Arquivos da tarefa e das etapas serão restaurados.`
+                        : 'JSON: imagens e arquivos locais não serão restaurados.'}
+                    </p>
+                    {importArchive && (
+                      <details>
+                        <summary>Arquivos presentes no ZIP</summary>
+                        <ul className="backup-file-list">
+                          {referencedFiles(importArchive.backup).map(file => (
+                            <li key={file.id}>
+                              {file.name} · {(file.size / 1024).toFixed(1)} KB
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+                    <details>
+                      <summary>Tarefas da cópia</summary>
+                      <ul className="backup-file-list">
+                        {importPreview.data.tasks.slice(0, 50).map(task => (
+                          <li key={task.id}>{task.name}</li>
+                        ))}
+                      </ul>
+                      {importPreview.data.tasks.length > 50 && (
+                        <p>Mostrando as primeiras 50; a importação considera todas.</p>
+                      )}
+                    </details>
+                    <p>
+                      {importPreview.data.tasks.filter(task => data.tasks.some(local => local.id === task.id)).length}{' '}
+                      tarefa(s) com IDs já presentes. Ao mesclar, seus arquivos importados também são descartados,
+                      mantendo os anexos locais.
+                    </p>
+                    <p>
                       Ao mesclar, IDs repetidos preservam a tarefa local e descartam os eventos importados ligados a
                       ela; datas de ocorrências semanais são reunidas. Substituir troca os dados locais. As credenciais
                       atuais nunca são importadas.
                     </p>
                     <button
                       type="button"
-                      onClick={() => {
-                        try {
-                          saveBackup(
-                            makeBackup(data, focusBlocking ?? focusBlockingDefault, soundEnabled),
-                            'kanbandoro-antes-de-importar',
-                          );
-                          setSavedBeforeImport(JSON.stringify({ data, focusBlocking, soundEnabled }));
-                          setBackupAcknowledged(false);
-                          setBackupError('');
-                        } catch (err) {
-                          setBackupError(err instanceof Error ? err.message : 'Não foi possível exportar.');
-                        }
-                      }}
+                      disabled={backupBusy}
+                      onClick={() => void saveCompleteBackup('kanbandoro-antes-de-importar', true)}
                     >
-                      Baixar cópia do quadro atual
+                      Baixar cópia completa do quadro atual
                     </button>
                     {savedBeforeImport === JSON.stringify({ data, focusBlocking, soundEnabled }) && (
                       <label>
@@ -2659,7 +2773,15 @@ function App() {
                       >
                         Substituir dados
                       </button>
-                      <button onClick={() => setImportPreview(null)}>Cancelar</button>
+                      <button
+                        disabled={backupBusy}
+                        onClick={() => {
+                          setImportPreview(null);
+                          setImportArchive(null);
+                        }}
+                      >
+                        Cancelar
+                      </button>
                     </div>
                     {data.session && <p className="warning">Encerre o ciclo ou a pausa atual antes de importar.</p>}
                   </div>
@@ -3228,7 +3350,7 @@ function App() {
               </form>
               <div className="ai-create-actions">
                 <button disabled={insightBusy} onClick={() => void requestSliceInsight(task)}>
-                  {insightBusy ? 'Analisando…' : '✦ Analisar distribuição dos slices'}
+                  <AIIcon /> {insightBusy ? 'Analisando…' : 'Analisar distribuição dos slices'}
                 </button>
                 <button
                   className="ai-model-switch"
@@ -3238,7 +3360,7 @@ function App() {
                   title={`Alternar modelo de IA · atual: ${aiSettings.provider} / ${aiSettings.model || 'nenhum'}`}
                   aria-label="Alternar modelo de IA para analisar os slices"
                 >
-                  🤖
+                  <AIIcon />
                 </button>
               </div>
               {sliceInsight && (
