@@ -1,10 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { getAISettings } from './aiSettings';
-import { MAX_AUDIO_BYTES, MAX_RECORDING_SECONDS, transcribeAudio } from './voiceTranscription';
+import { MAX_AUDIO_BYTES, MAX_RECORDING_SECONDS, transcribeAudio, type TranscriptTarget } from './voiceTranscription';
 
 type Phase = 'idle' | 'permission' | 'recording' | 'ready' | 'sending';
 
-export default function VoiceRecorder({ onText }: { onText: (text: string) => void }) {
+export default function VoiceRecorder({
+  onText,
+  allowTaskFields = false,
+}: {
+  onText: (text: string, target: TranscriptTarget) => void;
+  allowTaskFields?: boolean;
+}) {
+  const [target, setTarget] = useState<TranscriptTarget>('name');
   const onTextRef = useRef(onText);
   useEffect(() => {
     onTextRef.current = onText;
@@ -123,6 +130,7 @@ export default function VoiceRecorder({ onText }: { onText: (text: string) => vo
   async function send() {
     if (!audio.current) return;
     const attempt = generation.current;
+    const destination = target;
     const controller = new AbortController();
     request.current = controller;
     setPhase('sending');
@@ -133,7 +141,7 @@ export default function VoiceRecorder({ onText }: { onText: (text: string) => vo
       if (attempt !== generation.current) return;
       const text = await transcribeAudio(audio.current, settings.apiKey, controller.signal);
       if (attempt !== generation.current) return;
-      onTextRef.current(text);
+      onTextRef.current(text, destination);
       audio.current = null;
       setPhase('idle');
     } catch (reason) {
@@ -156,6 +164,20 @@ export default function VoiceRecorder({ onText }: { onText: (text: string) => vo
 
   return (
     <div className="voice-recorder">
+      {allowTaskFields && (
+        <label className="voice-target">
+          Transcrever em
+          <select
+            aria-label="Destino da transcrição"
+            value={target}
+            disabled={phase !== 'idle' && phase !== 'ready'}
+            onChange={event => setTarget(event.target.value as TranscriptTarget)}
+          >
+            <option value="name">Nome / pedido da tarefa</option>
+            <option value="description">Descrição</option>
+          </select>
+        </label>
+      )}
       {phase === 'idle' && (
         <button
           type="button"
@@ -193,7 +215,9 @@ export default function VoiceRecorder({ onText }: { onText: (text: string) => vo
         </div>
       )}
       <small>
-        Até 2 minutos. O áudio só é enviado à Groq ao clicar em Transcrever. Revise o texto antes de enviar.
+        Até 2 minutos. O áudio só é enviado à Groq ao clicar em Transcrever.{' '}
+        {allowTaskFields ? `O texto será acrescentado ${target === 'name' ? 'ao nome/pedido' : 'à descrição'}. ` : ''}
+        Revise o texto antes de enviar à IA.
       </small>
       {error && (
         <p className="voice-error" role="alert">

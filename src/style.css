@@ -3673,3 +3673,18 @@ header p {
   color: var(--color-kanban);
   font-size: 0.85rem;
 }
+
+/* Voice destination follows the shared form palette and select styling. */
+.voice-target {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  color: var(--color-text);
+  font-size: 0.85rem;
+}
+.voice-target select {
+  flex: 1;
+  min-width: 12rem;
+  max-width: 24rem;
+}

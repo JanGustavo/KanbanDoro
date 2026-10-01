@@ -5,6 +5,18 @@ export function appendTranscript(current: string, text: string): string {
   return [current.trimEnd(), text.trim()].filter(Boolean).join('\n');
 }
 
+export type TranscriptTarget = 'name' | 'description';
+
+/** Append to the chosen field; never replace the other field or the rest of the draft. */
+export function appendTaskTranscript<T extends { name: string; description: string }>(
+  draft: T,
+  text: string,
+  target: TranscriptTarget,
+): T {
+  const combined = appendTranscript(draft[target], text);
+  return { ...draft, [target]: target === 'name' ? combined.replace(/\s+/g, ' ').trim() : combined };
+}
+
 export async function transcribeAudio(audio: Blob, apiKey: string, signal?: AbortSignal): Promise<string> {
   if (!apiKey.trim()) throw Error('Salve sua chave da Groq em Preferências → IA para transcrever.');
   if (!audio.size || audio.size > MAX_AUDIO_BYTES) throw Error('O áudio deve ter conteúdo e no máximo 10 MB.');

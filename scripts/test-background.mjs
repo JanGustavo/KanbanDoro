@@ -625,7 +625,23 @@ assert.equal(requests.length, 0);
 const catalog = await aiMessage({ type: 'GROQ_MODELS' });
 assert.equal(catalog.models.length, 1, 'only eligible text models should be offered');
 assert.equal(catalog.models[0].freeTier, true, 'known Groq free-plan models should be labeled');
-const draft = await aiMessage({ type: 'GROQ_TASK_PROPOSAL', input: 'Criar API', areas: ['Programação', 'Estudo'] });
+const spokenRequest = 'Ah, cara, eu queria fazer uma API, sabe, para implementar umas rotas e testes.';
+const draft = await aiMessage({
+  type: 'GROQ_TASK_PROPOSAL',
+  input: spokenRequest,
+  previous: { description: 'Implementar rotas', slices: [] },
+  feedback: 'Interprete a fala e organize a tarefa.',
+  areas: ['Programação', 'Estudo'],
+});
+assert.equal(draft.proposal.name, 'Criar API', 'use the synthesized AI title rather than the raw transcript');
+const spokenPayload = requests
+  .filter(request => request.url.includes('api.groq.com') && request.options?.body?.includes('task_proposal'))
+  .map(request => JSON.parse(request.options.body))
+  .find(body => JSON.parse(body.messages[1].content).pedido === spokenRequest);
+assert(spokenPayload, 'the full spoken request must reach the model');
+const prior = JSON.parse(JSON.parse(spokenPayload.messages[1].content).proposta_anterior);
+assert(!('name' in prior), 'manual requests do not impose a copied title');
+assert(spokenPayload.messages[0].content.includes('Nunca copie a transcrição inteira como título'));
 assert.equal(draft.proposal.estimate, 35, 'the actual AI time must replace the manual 25-minute default');
 assert.equal(draft.proposal.difficulty, 2, 'the actual AI difficulty must replace the manual easy default');
 assert.equal(draft.proposal.skill, 'Programação');

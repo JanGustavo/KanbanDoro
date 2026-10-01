@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import './style.css';
 import { confirmAction } from './confirmation';
 import BubbleSettings from './BubbleSettings';
-import { proposalContext } from './proposalContext';
+import { proposalContext, proposalInput } from './proposalContext';
 import {
   getAISettings,
   saveAISettings,
@@ -22,7 +22,7 @@ import { verifiedAIModels, type ListedAIModel } from './aiModelCatalog';
 import AttachmentPreview, { type AttachmentInfo } from './AttachmentPreview';
 import LocalMaterials from './LocalMaterials';
 import VoiceRecorder from './VoiceRecorder';
-import { appendTranscript } from './voiceTranscription';
+import { appendTaskTranscript } from './voiceTranscription';
 import { pruneLocalFiles, type LocalFile } from './localFiles';
 import {
   dateFromDay,
@@ -791,9 +791,9 @@ function App() {
   }
   function proposeFromDraft() {
     if (!proposal || aiBusy) return;
-    const input = [proposal.name, proposal.description].filter(Boolean).join('\n').trim();
+    const input = proposalInput(proposal);
     void requestProposal(
-      'Organize esta tarefa usando o que já foi preenchido. Estime do zero o tempo total e a dificuldade quando esses campos estiverem ausentes; quando presentes, foram escolhidos pelo usuário. Preserve os dados úteis e sugira etapas e fontes somente se forem relevantes.',
+      'Interprete o pedido e transforme-o em um título curto e objetivo, em vez de copiar a fala ou o texto bruto. Organize os detalhes na descrição e nas etapas, sem perder o objetivo nem inventar informações. Estime do zero o tempo total e a dificuldade quando esses campos estiverem ausentes; quando presentes, foram escolhidos pelo usuário. Preserve os dados úteis e sugira etapas e fontes somente se forem relevantes.',
       input,
     );
   }
@@ -1771,7 +1771,9 @@ function App() {
           </span>
         </div>
       </form>
-      <VoiceRecorder onText={text => setName(current => appendTranscript(current, text))} />
+      <VoiceRecorder
+        onText={text => setName(current => appendTaskTranscript({ name: current, description: '' }, text, 'name').name)}
+      />
       {showBubbleSettings && <BubbleSettings active={!!data.session} onClose={() => setShowBubbleSettings(false)} />}
       {proposal && (
         <div
@@ -1854,6 +1856,12 @@ function App() {
                     }}
                   />
                 </label>
+                <VoiceRecorder
+                  allowTaskFields
+                  onText={(text, target) =>
+                    setProposal(current => (current ? appendTaskTranscript(current, text, target) : current))
+                  }
+                />
                 <label>
                   Descrição{' '}
                   <textarea
@@ -1861,13 +1869,6 @@ function App() {
                     onChange={e => setProposal({ ...proposal, description: e.target.value })}
                   />
                 </label>
-                <VoiceRecorder
-                  onText={text =>
-                    setProposal(current =>
-                      current ? { ...current, description: appendTranscript(current.description, text) } : current,
-                    )
-                  }
-                />
                 <div className="fields">
                   <label className="highlight-time">
                     {proposalSource === 'ai' ? 'Tempo sugerido (min)' : 'Tempo estimado (min)'}{' '}
@@ -3083,12 +3084,8 @@ function App() {
                 onChange={e => changeTask(task.id, x => ({ ...x, description: e.target.value }))}
               />
               <VoiceRecorder
-                onText={text =>
-                  changeTask(task.id, current => ({
-                    ...current,
-                    description: appendTranscript(current.description, text),
-                  }))
-                }
+                allowTaskFields
+                onText={(text, target) => changeTask(task.id, current => appendTaskTranscript(current, text, target))}
               />
               <div className="fields">
                 <label>

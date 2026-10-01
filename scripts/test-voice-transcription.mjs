@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { transcribeAudio, appendTranscript, MAX_AUDIO_BYTES } from '../src/voiceTranscription.ts';
+import { transcribeAudio, appendTranscript, appendTaskTranscript, MAX_AUDIO_BYTES } from '../src/voiceTranscription.ts';
 const originalFetch = globalThis.fetch;
 try {
   let calls = 0;
@@ -19,6 +19,21 @@ try {
   assert.equal(calls, 0, 'Áudio inválido não deve ser enviado');
   assert.equal(await transcribeAudio(audio, 'test-key'), 'Estudar Linux.');
   assert.equal(appendTranscript('Rascunho existente ', ' outra ideia '), 'Rascunho existente\noutra ideia');
+  const draft = { name: 'Estudar Linux', description: 'Praticar ls', estimate: 90, slices: ['Ler', 'Praticar'] };
+  const spokenName = appendTaskTranscript(draft, 'e entender grep', 'name');
+  assert.equal(spokenName.name, 'Estudar Linux e entender grep');
+  assert.equal(
+    appendTaskTranscript(draft, 'e\n  entender grep', 'name').name,
+    'Estudar Linux e entender grep',
+    'name inputs need spaces instead of line breaks',
+  );
+  assert.equal(spokenName.description, draft.description, 'voice in the name must not change the description');
+  const spokenDescription = appendTaskTranscript(draft, 'com exemplos reais', 'description');
+  assert.equal(spokenDescription.name, draft.name, 'voice in the description must not change the title');
+  assert.equal(spokenDescription.description, 'Praticar ls\ncom exemplos reais');
+  assert.equal(spokenDescription.estimate, draft.estimate);
+  assert.deepEqual(spokenDescription.slices, draft.slices);
+  assert.equal(draft.name, 'Estudar Linux', 'the existing draft must remain intact');
   globalThis.fetch = async () => new Response('{}', { status: 429 });
   await assert.rejects(transcribeAudio(audio, 'test-key'), /Cota/);
   globalThis.fetch = async () => new Response('{}', { status: 401 });
