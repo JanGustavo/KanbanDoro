@@ -56,8 +56,11 @@ export async function saveLocalFile(file: File): Promise<LocalFile> {
   return metadata;
 }
 
-export function getLocalFile(id: string): Promise<Blob | undefined> {
-  return transact('readonly', store => store.get(id));
+export async function getLocalFile(id: string): Promise<Blob | undefined> {
+  const stored = await transact<Blob | { blob: Blob; pendingAt: number } | undefined>('readonly', store =>
+    store.get(id),
+  );
+  return stored instanceof Blob ? stored : stored?.blob;
 }
 
 export function deleteLocalFile(id: string): Promise<undefined> {
@@ -72,7 +75,7 @@ export async function pruneLocalFiles(referenced: Set<string>): Promise<void> {
     cursor.onsuccess = () => {
       const item = cursor.result;
       if (item) {
-        if (!referenced.has(String(item.key))) item.delete();
+        if (!referenced.has(String(item.key)) && !(item.value?.pendingAt > Date.now() - 5 * 60_000)) item.delete();
         item.continue();
       }
     };
@@ -81,6 +84,49 @@ export async function pruneLocalFiles(referenced: Set<string>): Promise<void> {
       resolve();
     };
     transaction.onerror = () => {
+      db.close();
+      reject(transaction.error);
+    };
+  });
+}
+
+/** Write a batch in one IndexedDB transaction; new IDs never overwrite existing files. */
+export async function stageLocalFiles(files: Array<{ id: string; blob: Blob }>): Promise<void> {
+  const db = await database();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction(STORE, 'readwrite');
+    const store = transaction.objectStore(STORE);
+    for (const file of files) store.add({ blob: file.blob, pendingAt: Date.now() }, file.id);
+    transaction.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+    transaction.onerror = transaction.onabort = () => {
+      db.close();
+      reject(transaction.error);
+    };
+  });
+}
+
+export async function finishLocalFiles(ids: string[], commit: boolean): Promise<void> {
+  const db = await database();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction(STORE, 'readwrite');
+    const store = transaction.objectStore(STORE);
+    for (const id of ids) {
+      if (!commit) store.delete(id);
+      else {
+        const request = store.get(id);
+        request.onsuccess = () => {
+          if (request.result?.blob) store.put(request.result.blob, id);
+        };
+      }
+    }
+    transaction.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+    transaction.onerror = transaction.onabort = () => {
       db.close();
       reject(transaction.error);
     };

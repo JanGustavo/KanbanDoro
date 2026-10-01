@@ -3688,3 +3688,107 @@ header p {
   min-width: 12rem;
   max-width: 24rem;
 }
+
+/* Shared AI mark and the weekly review keep the existing wine/yellow palette. */
+.ai-icon {
+  display: inline-block;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+.weekly-review {
+  margin-bottom: 24px;
+  border: 1px solid var(--color-border);
+}
+.weekly-heading {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+}
+.weekly-heading h3 {
+  margin: 6px 0;
+}
+.weekly-heading label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.review-table-scroll {
+  overflow-x: auto;
+}
+.weekly-review table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+.weekly-review th,
+.weekly-review td {
+  padding: 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+.weekly-review caption {
+  text-align: left;
+  padding: 12px 0;
+  color: var(--color-muted);
+}
+.weekly-review details {
+  margin: 12px 0;
+  padding: 12px;
+  background: var(--color-field);
+  border-radius: 10px;
+}
+.weekly-review summary {
+  cursor: pointer;
+}
+.review-history {
+  max-height: 280px;
+  overflow-y: auto;
+  padding-left: 22px;
+}
+.review-history li {
+  padding: 8px 0;
+}
+.weekly-suggestion {
+  border-left: 3px solid var(--color-kanban);
+  padding: 12px;
+}
+.weekly-ai-preview,
+.weekly-ai-result {
+  padding: 16px;
+  border: 1px solid var(--color-kanban);
+  border-radius: 12px;
+  margin-top: 16px;
+}
+.weekly-ai-preview pre {
+  max-height: 260px;
+  overflow: auto;
+  font-size: 12px;
+  background: var(--color-field);
+  padding: 12px;
+}
+.blocking-category-toggles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin: 16px 0;
+}
+.blocking-category-toggles label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--color-border);
+  padding: 10px;
+  border-radius: 10px;
+}
+.blocking-category-toggles small {
+  color: var(--color-muted);
+}
+
+.backup-file-list {
+  max-height: 200px;
+  overflow-y: auto;
+  padding-left: 24px;
+  overflow-wrap: anywhere;
+}
