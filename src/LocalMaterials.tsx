@@ -50,11 +50,15 @@ export default function LocalMaterials({
   notes: string;
   files: LocalFile[];
   onNotes: (notes: string) => void;
-  onFiles: (files: LocalFile[]) => void;
+  onFiles: (change: (files: LocalFile[]) => LocalFile[]) => void;
 }) {
   const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState('');
   async function addFiles(chosen: FileList | null) {
-    if (!chosen?.length) return;
+    if (!chosen?.length || busy) return;
+    setBusy(true);
+    setStatus('Guardando arquivos…');
     const added: LocalFile[] = [];
     try {
       if (files.length + chosen.length > 20) throw Error('Limite de 20 arquivos por tarefa ou etapa.');
@@ -62,11 +66,15 @@ export default function LocalMaterials({
         if (!file.size || file.size > MAX_LOCAL_FILE_BYTES) throw Error(`${file.name}: limite de 10 MB por arquivo.`);
         added.push(await saveLocalFile(file));
       }
-      onFiles([...files, ...added]);
+      onFiles(current => [...current, ...added]);
+      setStatus(`${added.length} arquivo(s) anexado(s).`);
       setError('');
     } catch (reason) {
       await Promise.all(added.map(file => deleteLocalFile(file.id)));
       setError(reason instanceof Error ? reason.message : 'Não foi possível guardar o arquivo.');
+      setStatus('');
+    } finally {
+      setBusy(false);
     }
   }
   return (
@@ -86,12 +94,14 @@ export default function LocalMaterials({
         <input
           type="file"
           multiple
+          disabled={busy}
           onChange={event => {
             void addFiles(event.target.files);
             event.target.value = '';
           }}
         />
       </label>
+      {status && <p role="status">{status}</p>}
       {error && (
         <p className="warning" role="alert">
           {error}
@@ -106,7 +116,7 @@ export default function LocalMaterials({
               onRemove={() => {
                 void deleteLocalFile(file.id)
                   .then(() => {
-                    onFiles(files.filter(item => item.id !== file.id));
+                    onFiles(current => current.filter(item => item.id !== file.id));
                     setError('');
                   })
                   .catch(() => setError('Não foi possível remover o arquivo.'));

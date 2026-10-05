@@ -31,6 +31,9 @@ import {
 import { verifiedAIModels, type ListedAIModel } from './aiModelCatalog';
 import AttachmentPreview, { type AttachmentInfo } from './AttachmentPreview';
 import LocalMaterials from './LocalMaterials';
+import FocusTaskMaterials from './FocusTaskMaterials';
+import DailyPlan from './DailyPlan';
+import { planTask, movePlannedTask } from './dailyPlan';
 import VoiceRecorder from './VoiceRecorder';
 import { appendTaskTranscript } from './voiceTranscription';
 import { pruneLocalFiles, type LocalFile } from './localFiles';
@@ -47,6 +50,8 @@ import Connections from './Connections';
 import SupportPix from './SupportPix';
 import Statistics from './Statistics';
 import NumberStepper from './NumberStepper';
+import TaskScheduleEditor from './TaskScheduleEditor';
+import { saveTaskSchedule } from './taskScheduling';
 import { GuidedTour, type TourStep } from './guidedTour';
 import { focusBlockingDefault, type FocusBlocking } from './focusBlocking';
 import FocusBlockingSettings from './FocusBlockingSettings';
@@ -87,6 +92,10 @@ export type Task = {
   archivedAt?: number;
   planId?: string;
   occurrenceDate?: string;
+  plannedFor?: string;
+  plannedOrder?: number;
+  reminderDate?: string;
+  reminderTime?: string;
 };
 type Session = {
   taskId: string;
@@ -130,7 +139,12 @@ type Proposal = {
   searches?: SourceSearch[];
   deadline?: string;
 };
-type ScheduleChoice = { mode: 'once' | 'selected-days' | 'weekly'; startDate: string; weekdays: number[] };
+type ScheduleChoice = {
+  mode: 'once' | 'selected-days' | 'weekly';
+  startDate: string;
+  weekdays: number[];
+  reminderTime?: string;
+};
 type AIModel = ListedAIModel;
 export type Data = {
   tasks: Task[];
@@ -242,6 +256,8 @@ function newOccurrence(plan: WeeklyPlan, day: string): Task {
     attachments: plan.attachments ?? [],
     planId: plan.id,
     occurrenceDate: day,
+    reminderDate: plan.reminderTime ? day : undefined,
+    reminderTime: plan.reminderTime,
     createdAt: Date.now(),
   };
 }
@@ -1024,6 +1040,12 @@ function App() {
       proposal.estimate > 480
     )
       return setError('Revise o nome e o tempo estimado (1 a 480 minutos).');
+    if (
+      schedule.reminderTime &&
+      (!schedule.startDate || localDay(dateFromDay(schedule.startDate)) !== schedule.startDate)
+    ) {
+      return setError('Escolha uma data válida para o lembrete.');
+    }
     if (schedule.mode !== 'once') {
       const start = dateFromDay(schedule.startDate);
       const end = weekEnd(start);
@@ -1059,6 +1081,7 @@ function App() {
         attachments,
         weekdays: [...schedule.weekdays].sort(),
         startsOn: schedule.startDate,
+        reminderTime: schedule.reminderTime || undefined,
         generatedDates: [],
         endsOn: schedule.mode === 'selected-days' ? weekEnd(dateFromDay(schedule.startDate)) : undefined,
       };
@@ -1085,6 +1108,8 @@ function App() {
       createdAt: Date.now(),
       estimate: proposal.estimate,
       deadline: proposal.deadline ?? '',
+      reminderDate: schedule.reminderTime ? schedule.startDate : undefined,
+      reminderTime: schedule.reminderTime || undefined,
       column: 'todo',
       failures: 0,
       focusSeconds: 0,
@@ -1124,10 +1149,7 @@ function App() {
       steps.some(
         step =>
           !data.tasks.some(
-            task =>
-              task.id === step.taskId &&
-              !task.archivedAt &&
-              (item ? task.column !== 'done' : ['todo', 'doing'].includes(task.column)),
+            task => task.id === step.taskId && !task.archivedAt && ['todo', 'doing', 'late'].includes(task.column),
           ),
       )
     )
@@ -1532,26 +1554,12 @@ function App() {
                   {stepNotice}
                 </p>
               )}
-              {!!activeTask?.slices.length && (
-                <div className="focus-slices" aria-label="Etapas da tarefa">
-                  {activeTask.slices.map(slice => (
-                    <button
-                      type="button"
-                      className={`slice-toggle-btn ${slice.done ? 'finished' : ''}`}
-                      key={slice.id}
-                      onClick={() =>
-                        changeTask(activeTask.id, task => ({
-                          ...task,
-                          slices: task.slices.map(s => (s.id === slice.id ? { ...s, done: !s.done } : s)),
-                        }))
-                      }
-                      title="Clique para alternar o status deste slice"
-                    >
-                      {slice.name}
-                      {slice.done ? ' ✓' : ''}
-                    </button>
-                  ))}
-                </div>
+              {activeTask && phase !== 'decision' && !(phase === 'post-focus' && active.postFocusCompleted) && (
+                <FocusTaskMaterials
+                  key={activeTask.id}
+                  task={activeTask}
+                  onChange={change => changeTask(activeTask.id, change)}
+                />
               )}
             </div>
             {(() => {
@@ -1731,6 +1739,13 @@ function App() {
             <h2>Você conseguiu!</h2>
             <p>Seu tempo de foco foi registrado. Agora aproveite o intervalo que faz sentido para você.</p>
             <strong>{activeTask?.name}</strong>
+            {activeTask && (
+              <FocusTaskMaterials
+                key={activeTask.id}
+                task={activeTask}
+                onChange={change => changeTask(activeTask.id, change)}
+              />
+            )}
             <span className="break-recommendation">
               {finishedCycles > 0 && finishedCycles % 4 === 0
                 ? 'Pausa longa sugerida após quatro ciclos.'
@@ -1778,6 +1793,13 @@ function App() {
             <span className="eyebrow">TEMPO DA TAREFA ENCERRADO</span>
             <h2>{activeTask?.name ?? 'Tarefa atual'}</h2>
             <p>O relógio está pausado. Confirme sua decisão para continuar o ciclo.</p>
+            {activeTask && (
+              <FocusTaskMaterials
+                key={activeTask.id}
+                task={activeTask}
+                onChange={change => changeTask(activeTask.id, change)}
+              />
+            )}
             <div className="cycle-decision-actions">
               <button
                 className="primary"
@@ -2186,7 +2208,7 @@ function App() {
                     checked={schedule.mode === 'weekly'}
                     onChange={() => setSchedule(old => ({ ...old, mode: 'weekly' }))}
                   />{' '}
-                  Toda semana
+                  Toda semana (fixa)
                 </label>
               </div>
               {schedule.mode !== 'once' && (
@@ -2226,6 +2248,26 @@ function App() {
                   </small>
                 </div>
               )}
+              <label>
+                Horário do lembrete (opcional){' '}
+                <input
+                  type="time"
+                  value={schedule.reminderTime ?? ''}
+                  onChange={e => setSchedule(old => ({ ...old, reminderTime: e.target.value }))}
+                />
+              </label>
+              {schedule.mode === 'once' && schedule.reminderTime && (
+                <label>
+                  Dia do lembrete{' '}
+                  <input
+                    type="date"
+                    min={today}
+                    value={schedule.startDate}
+                    onChange={e => setSchedule(old => ({ ...old, startDate: e.target.value }))}
+                  />
+                </label>
+              )}
+              <small>Horário local do navegador. Clique no aviso para abrir o quadro.</small>
             </fieldset>
             {proposalSource === 'ai' && (
               <label className="revision-label">
@@ -2871,6 +2913,23 @@ function App() {
           </button>
         </div>
       </nav>
+      {!showStatistics && view === 'today' && (
+        <DailyPlan
+          tasks={data.tasks}
+          day={today}
+          active={!!active}
+          onPlan={(taskId, day) => update(old => ({ ...old, tasks: planTask(old.tasks, taskId, day) }))}
+          onMove={(taskId, offset) =>
+            update(old => ({ ...old, tasks: movePlannedTask(old.tasks, today, taskId, offset) }))
+          }
+          onOpen={openTaskDetails}
+          onPrepare={tasks => {
+            setCycleSelection(tasks.map(task => task.id));
+            setCycleMinutes(Object.fromEntries(tasks.map(task => [task.id, task.estimate])));
+            setToast('Plano levado ao ciclo. Ajuste os minutos reservados antes de iniciar.');
+          }}
+        />
+      )}
       {!!cycleSelection.length && !showStatistics && view !== 'archive' && (
         <section className="cycle-builder" aria-label="Montar ciclo com várias tarefas">
           <div>
@@ -2974,7 +3033,10 @@ function App() {
                       (!plan.endsOn || localDay(day) <= plan.endsOn),
                   )
                   .map(plan => (
-                    <span key={plan.id}>{plan.name}</span>
+                    <span key={plan.id}>
+                      {plan.reminderTime ? `${plan.reminderTime} · ` : ''}
+                      {plan.name}
+                    </span>
                   ))}
               </div>
             ))}
@@ -2985,7 +3047,8 @@ function App() {
                 <strong>{plan.name}</strong>
                 <span>
                   {plan.weekdays.map(day => weekdays[day]).join(', ')} · {plan.estimate} min ·{' '}
-                  {plan.endsOn ? `até ${plan.endsOn.split('-').reverse().join('/')}` : 'toda semana'}
+                  {plan.endsOn ? `até ${plan.endsOn.split('-').reverse().join('/')}` : 'toda semana (fixa)'}
+                  {plan.reminderTime && ` · lembrete às ${plan.reminderTime}`}
                 </span>
                 <button
                   onClick={async () => {
@@ -3105,7 +3168,7 @@ function App() {
                         </span>
                         <span className="card-time">{item.estimate} MIN</span>
                       </div>
-                      {(column.id === 'doing' || column.id === 'todo') && !active && (
+                      {column.id !== 'done' && !active && (
                         <label className="cycle-select">
                           <input
                             type="checkbox"
@@ -3130,12 +3193,32 @@ function App() {
                       >
                         {item.name}
                       </button>
+                      {item.column !== 'done' && (
+                        <button
+                          type="button"
+                          className="plan-task-button"
+                          onClick={() =>
+                            update(old => ({
+                              ...old,
+                              tasks: planTask(old.tasks, item.id, item.plannedFor === today ? undefined : today),
+                            }))
+                          }
+                        >
+                          {item.plannedFor === today ? 'Retirar do plano de hoje' : 'Planejar hoje'}
+                        </button>
+                      )}
                       <div className="meta">
                         <span>Dificuldade {item.difficulty}</span>
                         <span>{item.estimate} min</span>
                         {item.deadline && <span>{item.deadline}</span>}
                         {overdue && <span className="overdue-badge">⚠ Prazo vencido</span>}
                         {dueSoon && <span className="due-soon-badge">◷ Prazo próximo</span>}
+                        {item.reminderTime && (
+                          <span>
+                            ⏰ {item.reminderDate} · {item.reminderTime}
+                          </span>
+                        )}
+                        {item.plannedFor && <span>Plano: {item.plannedFor === today ? 'hoje' : item.plannedFor}</span>}
                         {item.planId && <span>↻ {item.occurrenceDate}</span>}
                         {item.column === 'done' && <span>Feita em {displayDate(item.completedAt)}</span>}
                       </div>
@@ -3281,6 +3364,15 @@ function App() {
                   </select>
                 </label>
               </div>
+              <TaskScheduleEditor
+                key={task.id}
+                task={task}
+                plan={data.weeklyPlans.find(plan => plan.id === task.planId)}
+                onSave={choice => {
+                  update(old => saveTaskSchedule(old, task.id, choice, new Date(), id, newOccurrence));
+                  setToast('Programação salva. As próximas ocorrências usam os detalhes atuais da tarefa.');
+                }}
+              />
               <h3>Slices</h3>
               <div className="slices">
                 {task.slices.map(slice => (
@@ -3455,7 +3547,7 @@ function App() {
                   notes={task.notes ?? ''}
                   files={task.files ?? []}
                   onNotes={notes => changeTask(task.id, x => ({ ...x, notes }))}
-                  onFiles={files => changeTask(task.id, x => ({ ...x, files }))}
+                  onFiles={change => changeTask(task.id, x => ({ ...x, files: change(x.files ?? []) }))}
                 />
               </details>
               {task.slices.map((slice, index) => (
@@ -3479,10 +3571,10 @@ function App() {
                         slices: x.slices.map(s => (s.id === slice.id ? { ...s, notes } : s)),
                       }))
                     }
-                    onFiles={files =>
+                    onFiles={change =>
                       changeTask(task.id, x => ({
                         ...x,
-                        slices: x.slices.map(s => (s.id === slice.id ? { ...s, files } : s)),
+                        slices: x.slices.map(s => (s.id === slice.id ? { ...s, files: change(s.files ?? []) } : s)),
                       }))
                     }
                   />

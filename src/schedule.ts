@@ -6,6 +6,7 @@ export type WeeklyPlan = {
   startsOn: string;
   generatedDates: string[];
   endsOn?: string;
+  reminderTime?: string;
   description?: string;
   difficulty?: 1 | 2 | 3;
   skill?: string;

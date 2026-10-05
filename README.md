@@ -22,7 +22,17 @@ Ao atualizar a extensão, recarregue também as abas que já estavam abertas. O 
 
 O aviso automático de prazo usa notificações locais às 9h do dia previsto, uma vez por tarefa e data. Se o navegador estiver fechado, a extensão avisa ao abrir dentro das 24 horas seguintes; não acumula avisos antigos. Tarefas concluídas ou arquivadas não notificam. O aviso não muda a coluna da tarefa.
 
+
+Nos **Detalhes da tarefa → Recorrência e lembrete**, transforme uma tarefa existente em **Só na semana escolhida** ou **Toda semana (fixa)**, defina dias, data inicial e horário opcional e clique em **Salvar programação**. Fixa significa repetir continuamente. A conversão preserva a tarefa e seu histórico; salvar uma rotina atualiza os detalhes das próximas ocorrências. **Uma vez** encerra a repetição, mantendo as tarefas já criadas. Criação manual/assistida também oferece horário; tarefas únicas escolhem a data do lembrete.
+
+O lembrete usa o horário local do navegador e funciona com a aba do quadro fechada, inclusive para rotinas ainda sem ocorrência gerada. Clicar no aviso abre o quadro. Conclusão, arquivo ou exclusão da ocorrência silencia o aviso daquele dia. Se o navegador estiver fechado, avisa ao reabrir no mesmo dia; dias anteriores não acumulam avisos. O Chrome pode atrasar alarmes durante suspensão, e as notificações precisam estar habilitadas no sistema. O aviso de prazo às 9h continua separado do lembrete de execução. Os novos campos entram nos backups JSON e ZIP.
+
 Em **Modo foco**, acima do quadro, o modo sem distrações fica desligado por padrão. Essencial bloqueia algumas redes e jogos; Intenso amplia a lista; Meu perfil permite importar uma das listas e editá-la. É possível liberar domínios necessários ao trabalho. O bloqueio só vale para a navegação principal enquanto o ciclo está em foco, nunca nas pausas: uma tela escura aparece por cinco segundos e depois tenta abrir uma nova guia (ou uma guia vazia se o navegador impedir a navegação). Fechar o navegador, terminar o ciclo ou desligar o perfil libera os sites. O bloqueio é uma ferramenta de apoio, não um controle de acesso impossível de desativar. A extensão usa regras temporárias `declarativeNetRequest` e não envia o histórico de navegação a nenhum servidor; recomendações de tema escuro não alteram a aparência dos sites.
+
+
+No ciclo atual, cada etapa oferece **Anexar / anotar**. Concluir uma etapa abre seus materiais imediatamente, com anotações, entrada por voz e imagens/arquivos locais. O destino aparece no cabeçalho; os arquivos continuam disponíveis nos detalhes da tarefa e no backup ZIP. A tarefa inteira também tem um atalho de materiais. Esses controles aparecem durante o foco e nos modais de decisão e conclusão, sem precisar procurar o card no quadro. Anexar não pausa nem encerra o cronômetro; os limites de 20 arquivos por tarefa/etapa e 10 MB por arquivo continuam valendo.
+
+Em **Hoje → Plano para hoje**, escolha tarefas da fila, organize a ordem e acompanhe minutos estimados pendentes e conclusões. Também é possível clicar em **Planejar hoje** no card. O plano inclui todas as áreas, persiste ao reabrir o quadro e entra no backup JSON/ZIP. **Montar ciclo com este plano** copia as tarefas pendentes para o construtor; ajuste os minutos reservados e confirme o início. Tarefas em atraso também podem compor o ciclo. Retirar do plano preserva a tarefa e seu histórico. Compromissos do dia anterior não são transferidos automaticamente: o painel sinaliza pendências anteriores para você escolher o que retomar.
 
 ## Produto
 
@@ -102,6 +112,8 @@ Os escopos solicitados juntos são `gmail.readonly`, `gmail.send`, `calendar.rea
 2. **Extensão completa:** bolha opcional nos sites permitidos, badge, alertas e preferências de pausa.
 3. **Integração:** migração local → servidor, ajuda contextual, contratos de IA para decisões e propostas com aprovação. O cadastro da API não recebe chaves de IA; a criação assistida usa Groq ou Gemini configurado na extensão.
 4. **Após histórico real:** score transparente de eficiência e WIP, voz local em tempo real, relatórios, formatos de exportação adicionais e modos da comunidade.
+
+As lacunas priorizadas para fechar a 1.0 estão em [docs/V1_READINESS.md](docs/V1_READINESS.md).
 
 Veja [docs/REQUISITOS.md](docs/REQUISITOS.md) para regras e decisões em aberto. Ideias novas dentro deste conceito podem substituir o desenho atual; registre a motivação e atualize requisitos antes da implementação.
 

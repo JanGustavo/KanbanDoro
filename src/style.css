@@ -3792,3 +3792,164 @@ header p {
   padding-left: 24px;
   overflow-wrap: anywhere;
 }
+
+/* Materials stay beside the current step instead of behind task editing. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.focus-materials {
+  margin-top: 16px;
+  min-width: 0;
+  text-align: left;
+}
+.focus-slice-list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.focus-slice-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.focus-slice-row .slice-toggle-btn {
+  flex: 1 1 180px;
+  text-align: left;
+  font-size: 0.85rem;
+}
+.focus-slice-row .finished {
+  color: #e2ac68;
+  text-decoration: line-through;
+}
+.focus-materials-button {
+  font-size: 0.8rem;
+  padding: 8px 10px;
+}
+.focus-materials-panel {
+  margin-top: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.focus-materials-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  color: var(--color-kanban);
+  overflow-wrap: anywhere;
+}
+.focus-materials-panel .local-materials {
+  border: 0;
+  border-radius: 0;
+}
+.focus-materials-panel textarea {
+  width: 100%;
+  min-height: 85px;
+}
+.focus-materials-panel .local-file-picker input {
+  min-width: 0;
+}
+.daily-plan {
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  padding: 20px;
+  margin: 16px 0;
+  background: #262125;
+}
+.daily-plan-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.daily-plan h2 {
+  font-size: 1.3rem;
+  margin: 8px 0;
+}
+.daily-plan > p {
+  color: var(--color-muted);
+  line-height: 1.5;
+}
+.daily-plan-add {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.daily-plan-add label {
+  display: grid;
+  gap: 8px;
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.daily-plan-add select {
+  width: 100%;
+}
+.daily-plan-list {
+  padding-left: 24px;
+}
+.daily-plan-list li {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.daily-plan-task {
+  text-align: left;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  background: transparent;
+  color: var(--color-kanban);
+  padding: 6px 0;
+}
+.daily-plan-list li > span {
+  display: inline-block;
+  margin-left: 12px;
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+.daily-plan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.daily-plan-actions button {
+  font-size: 0.8rem;
+  padding: 7px 10px;
+}
+.daily-plan-done .daily-plan-task {
+  text-decoration: line-through;
+}
+.daily-plan > small {
+  display: block;
+  margin-top: 12px;
+  color: var(--color-muted);
+  line-height: 1.5;
+}
+.plan-task-button {
+  font-size: 0.75rem;
+  margin: 5px 0;
+}
+@media (max-width: 600px) {
+  .daily-plan {
+    padding: 14px;
+  }
+  .daily-plan-list li > span {
+    display: block;
+    margin-left: 0;
+  }
+  .focus-slice-row .slice-toggle-btn {
+    flex-basis: 100%;
+  }
+}
