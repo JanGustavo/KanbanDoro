@@ -13,6 +13,25 @@ Este documento é vivo. Uma solução melhor pode substituir a regra anterior de
 - Preferências → Dados oferece exportação local em JSON versionado e importação com validação e prévia. O arquivo inclui tarefas, histórico, rotinas e preferências, mas exclui chaves de IA, tokens Google e sessão ativa. Importar exige encerrar a sessão, baixar e confirmar uma cópia atual do quadro antes de gravar. Mesclar por ID mantém a tarefa local e descarta eventos importados ligados a IDs de tarefa colidentes; substituir exige confirmação adicional.
 - O modal manual e o de proposta permitem tarefa única, dias selecionados somente na semana da data inicial ou recorrência nos mesmos dias de todas as semanas. Ao abrir o quadro em um dia agendado, gerar uma ocorrência independente no máximo uma vez naquele dia; excluir uma ocorrência não a recria. Dias com a extensão fechada não são preenchidos retroativamente. Excluir a programação preserva ocorrências passadas.
 
+
+## Plano para hoje e materiais no foco
+
+- Motivação: filtrar conclusões do dia não define prioridades; anexar resultados aos slices exigia sair do foco e procurar a tarefa e a etapa nos detalhes.
+- Hoje inclui um plano explícito, separado da fila geral do quadro. Cada tarefa guarda opcionalmente `plannedFor` e `plannedOrder`, compatíveis com dados antigos e preservados no backup. Não muda prazo, coluna, estimativa ou histórico.
+- Escolher tarefas pendentes, inclusive atrasadas, ordenar e retirar do plano; mostrar soma de estimativas das pendências e quantidade concluída. O plano reúne todas as áreas. Arquivadas ficam fora do plano. Dia anterior permanece registrado na tarefa até novo planejamento; não transfere automaticamente as pendências.
+- Preparar o ciclo copia as tarefas pendentes na ordem do plano e suas estimativas para o construtor existente, sem iniciar foco. O usuário ajusta os minutos reservados; continua valendo o teto de 480 minutos por ciclo e uma sessão por vez. Atrasadas podem compor ciclos e passam a Em andamento ao iniciar.
+- No foco, cada slice oferece conclusão e acesso direto aos seus materiais; marcar concluído abre o destino daquela etapa sem abrir a edição da tarefa. Materiais da tarefa inteira também são acessíveis. Os controles ficam disponíveis nos modais de decisão e ciclo concluído.
+- Anexos usam o armazenamento local existente e aparecem nos detalhes e no backup ZIP; anotações entram no JSON. O cabeçalho identifica o destino. Adicionar/remover arquivos usa o conjunto atual de arquivos, preservando adições realizadas enquanto outro painel estava aberto. Upload informa progresso e resultado. Anexar ou escrever não altera a sessão nem pausa automaticamente o foco.
+
+## Recorrência e lembretes
+
+- Motivação: rotinas já podiam ser criadas, mas tarefas existentes não podiam receber programação. A edição agora permite Uma vez, Só na semana escolhida e Toda semana (fixa). Fixa significa recorrência contínua nos dias escolhidos.
+- Converter uma tarefa preserva ID, slices, coluna, tempo e histórico. Se hoje for um dia programado, ela representa a ocorrência de hoje. Alterar uma rotina mantém seu ID e as datas já geradas; salvar copia os detalhes atuais para próximas ocorrências, sem modificar outras ocorrências existentes. Uma vez encerra a rotina e mantém as tarefas geradas.
+- Criação e edição permitem horário opcional de lembrete; tarefas únicas também escolhem a data. O calendário e os cards mostram o horário. O backup JSON/ZIP preserva e valida os novos campos, sem exigir migração de dados antigos.
+- O service worker usa alarmes e notificações locais, mesmo com a aba do quadro fechada. As rotinas notificam sem depender de gerar uma tarefa pela interface; clicar abre/reutiliza o quadro, que gera a ocorrência do dia. Não inicia foco nem muda a coluna automaticamente.
+- Um aviso por fonte, data e horário; concluir, arquivar ou apagar a ocorrência a silencia. Editar o horário substitui o próximo aviso. Não existe preenchimento retroativo: ao reabrir o navegador, apenas lembretes do dia atual podem aparecer. Horário local do navegador; sistema suspenso, navegador fechado ou notificações desativadas podem impedir entrega pontual.
+- Avisos de prazo às 9h permanecem independentes dos lembretes de execução, pois prazo e horário planejado têm significados diferentes.
+
 ## Sessões
 
 - Um ciclo escolhe tarefa inteira ou subconjunto de slices. Tempo de seleção múltipla permanece compartilhado. Concluir o escopo de slices marca apenas os slices selecionados; a tarefa só vai para Concluído se todos os slices estiverem completos. Concluir a tarefa inteira move o card para Concluído.

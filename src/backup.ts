@@ -54,6 +54,11 @@ const date = (value: unknown) => {
     throw Error('Data inválida no backup.');
   return day;
 };
+const time = (value: unknown) => {
+  const result = str(value, 5);
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(result)) throw Error('Horário inválido no backup.');
+  return result;
+};
 const identifier = (value: unknown) => {
   const key = str(value, 120);
   if (!key) throw Error('Identificador vazio no backup.');
@@ -136,6 +141,10 @@ function readTask(value: unknown, includeFiles = false): Task {
     archivedAt: optional(t.archivedAt, v => num(v)),
     planId: optional(t.planId, identifier),
     occurrenceDate: optional(t.occurrenceDate, date),
+    plannedFor: optional(t.plannedFor, date),
+    plannedOrder: optional(t.plannedOrder, v => num(v)),
+    reminderDate: optional(t.reminderDate, date),
+    reminderTime: optional(t.reminderTime, time),
   };
 }
 
@@ -165,6 +174,7 @@ function readPlan(value: unknown): WeeklyPlan {
     estimate: num(plan.estimate, 1, 480),
     weekdays,
     startsOn,
+    reminderTime: optional(plan.reminderTime, time),
     generatedDates: list(plan.generatedDates ?? [], 5000).map(date),
     endsOn: optional(plan.endsOn, date),
     description: optional(plan.description, v => str(v, 20_000)),

@@ -25,6 +25,9 @@ let focusRules = [];
 let newTabNavigations = 0;
 let tasks = [];
 let deadlineAlerted = {};
+let weeklyPlans = [];
+let reminderAlerted = {};
+const reminderNotifications = [];
 const scheduledAlarms = {};
 const requests = [];
 let boardTabs = [];
@@ -80,6 +83,8 @@ const chrome = {
         bubblePreferences,
         tasks,
         deadlineAlerted,
+        weeklyPlans,
+        reminderAlerted,
         focusBlocking,
         soundEnabled,
         kanbandoro_ai_settings: aiSettings,
@@ -88,6 +93,7 @@ const chrome = {
       set: async item => {
         if ('bubblePreferences' in item) bubblePreferences = item.bubblePreferences;
         if ('google_connection_session' in item) googleSession = item.google_connection_session;
+        if ('reminderAlerted' in item) reminderAlerted = item.reminderAlerted;
         if ('deadlineAlerted' in item) deadlineAlerted = item.deadlineAlerted;
         if ('session' in item) {
           session = item.session;
@@ -158,8 +164,17 @@ const chrome = {
     },
   },
   notifications: {
-    create: async options => {
-      assert.equal(options.silent, true);
+    onClicked: {
+      addListener(fn) {
+        listeners.notificationClick = fn;
+      },
+    },
+    create: async (idOrOptions, options) => {
+      if (options) {
+        reminderNotifications.push({ id: idOrOptions, ...options });
+        return;
+      }
+      assert.equal(idOrOptions.silent, true);
       notifications++;
     },
   },
@@ -172,8 +187,18 @@ const localDate = offset => {
 };
 let transientGeminiErrors = 0;
 let groqFailures = [];
+let reminderNow;
+class WorkerDate extends Date {
+  constructor(...args) {
+    super(...(args.length ? args : [reminderNow ?? Date.now()]));
+  }
+  static now() {
+    return reminderNow ?? Date.now();
+  }
+}
 vm.runInNewContext(readFileSync('public/background.js', 'utf8'), {
   chrome,
+  Date: WorkerDate,
   AbortSignal,
   URL,
   crypto: webcrypto,
@@ -640,6 +665,69 @@ tasks = tasks.map(task => (task.id === 'deadline-1' ? { ...task, column: 'done' 
 listeners.storage({ tasks: { newValue: tasks } }, 'local');
 await new Promise(resolve => setTimeout(resolve, 0));
 assert.equal(notifications, notified, 'completed tasks do not raise deadline alerts');
+
+reminderNow = new Date(2026, 9, 5, 12).getTime();
+tasks = [
+  { id: 'once', name: 'Reunião', reminderDate: '2026-10-05', reminderTime: '11:30', column: 'todo' },
+  { id: 'done', reminderDate: '2026-10-05', reminderTime: '11:30', column: 'done' },
+  { id: 'archived', reminderDate: '2026-10-05', reminderTime: '11:30', column: 'todo', archivedAt: 1 },
+  { id: 'past', reminderDate: '2026-10-04', reminderTime: '11:30', column: 'todo' },
+  { id: 'invalid', reminderDate: '2026-10-05', reminderTime: '25:30', column: 'todo' },
+];
+weeklyPlans = [
+  {
+    id: 'routine',
+    name: 'Estudar',
+    weekdays: [1, 3],
+    startsOn: '2026-10-05',
+    generatedDates: [],
+    reminderTime: '11:00',
+  },
+];
+await listeners.alarm({ name: 'scheduled-task-check' });
+assert.equal(reminderNotifications.length, 2, 'one-off and weekly reminders work without opening the board');
+assert.equal(scheduledAlarms['scheduled-task-check'], new Date(2026, 9, 7, 11).getTime());
+await listeners.alarm({ name: 'scheduled-task-check' });
+assert.equal(reminderNotifications.length, 2, 'worker reconciliation does not repeat delivered reminders');
+tasks.push({
+  id: 'occurrence',
+  planId: 'routine',
+  occurrenceDate: '2026-10-05',
+  reminderDate: '2026-10-05',
+  reminderTime: '11:00',
+  column: 'todo',
+});
+weeklyPlans[0].generatedDates = ['2026-10-05'];
+await listeners.alarm({ name: 'scheduled-task-check' });
+assert.equal(
+  reminderNotifications.length,
+  2,
+  'opening the board and generating the occurrence does not duplicate its reminder',
+);
+weeklyPlans[0].reminderTime = '12:30';
+await listeners.alarm({ name: 'scheduled-task-check' });
+assert.equal(scheduledAlarms['scheduled-task-check'], new Date(2026, 9, 5, 12, 30).getTime());
+reminderNow = new Date(2026, 9, 5, 12, 31).getTime();
+await listeners.alarm({ name: 'scheduled-task-check' });
+assert.equal(reminderNotifications.length, 3, 'edited routine time replaces the original reminder time');
+await listeners.alarm({ name: 'scheduled-task-check' });
+assert.equal(reminderNotifications.length, 3, 'future occurrences must not overwrite today’s delivered marker');
+const focusedBeforeReminder = focusedWindows.length;
+await listeners.notificationClick('scheduled:plan:routine');
+assert.equal(focusedWindows.length, focusedBeforeReminder + 1, 'clicking a reminder reuses and focuses the board');
+weeklyPlans = [{ ...weeklyPlans[0], id: 'finished', reminderTime: '10:00' }];
+tasks = [{ id: 'finished-task', planId: 'finished', occurrenceDate: '2026-10-05', column: 'done' }];
+await listeners.alarm({ name: 'scheduled-task-check' });
+assert.equal(reminderNotifications.length, 3, 'completed weekly occurrences are silent');
+tasks = [];
+await listeners.alarm({ name: 'scheduled-task-check' });
+assert.equal(reminderNotifications.length, 3, 'deleted weekly occurrences are silent');
+weeklyPlans = [{ ...weeklyPlans[0], id: 'ended', endsOn: '2026-10-04' }];
+await listeners.alarm({ name: 'scheduled-task-check' });
+assert.equal(scheduledAlarms['scheduled-task-check'], undefined, 'ended routines clear their alarm');
+weeklyPlans = [];
+tasks = [];
+reminderNow = undefined;
 requests.length = 0;
 assert.equal(requests.length, 0);
 const catalog = await aiMessage({ type: 'GROQ_MODELS' });

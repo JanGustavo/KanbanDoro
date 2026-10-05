@@ -310,6 +310,86 @@ async function reconcileDeadlines() {
 }
 queueDeadlines();
 
+// Persist one marker per source; weekly checks never require an open board tab.
+let remindersPending = Promise.resolve();
+function queueReminders() {
+  remindersPending = remindersPending.catch(() => {}).then(reconcileReminders);
+  remindersPending.catch(error => console.warn('Não foi possível verificar os lembretes:', error));
+  return remindersPending;
+}
+function reminderDay(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+function reminderTimestamp(day, time) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day || '') || !/^([01]\d|2[0-3]):[0-5]\d$/.test(time || '')) return NaN;
+  const date = new Date(`${day}T${time}:00`);
+  return reminderDay(date) === day ? date.getTime() : NaN;
+}
+async function reconcileReminders() {
+  const {
+    tasks = [],
+    weeklyPlans = [],
+    reminderAlerted = {},
+  } = await chrome.storage.local.get(['tasks', 'weeklyPlans', 'reminderAlerted']);
+  const now = new Date();
+  const today = reminderDay(now);
+  let next = Infinity;
+  const alerted = {};
+  const candidates = [];
+  for (const task of tasks) {
+    if (!task?.id || task.column === 'done' || task.archivedAt || weeklyPlans.some(plan => plan.id === task.planId))
+      continue;
+    candidates.push({ source: `task:${task.id}`, name: task.name, day: task.reminderDate, time: task.reminderTime });
+  }
+  for (const plan of weeklyPlans) {
+    if (!plan?.id || !plan.reminderTime || !Array.isArray(plan.weekdays)) continue;
+    for (let offset = 0; offset <= 7; offset++) {
+      const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset, 12);
+      const day = reminderDay(date);
+      if (day < plan.startsOn || (plan.endsOn && day > plan.endsOn) || !plan.weekdays.includes(date.getDay())) continue;
+      const occurrences = tasks.filter(task => task.planId === plan.id && task.occurrenceDate === day);
+      if (
+        occurrences.length
+          ? occurrences.every(task => task.column === 'done' || task.archivedAt)
+          : plan.generatedDates?.includes(day)
+      )
+        continue;
+      candidates.push({ source: `plan:${plan.id}`, name: plan.name, day, time: plan.reminderTime });
+    }
+  }
+  for (const candidate of candidates) {
+    const due = reminderTimestamp(candidate.day, candidate.time);
+    if (!Number.isFinite(due)) continue;
+    if (reminderAlerted[candidate.source]) alerted[candidate.source] ??= reminderAlerted[candidate.source];
+    if (due > now.getTime()) {
+      next = Math.min(next, due);
+      continue;
+    }
+    const marker = `${candidate.day}T${candidate.time}`;
+    if (candidate.day !== today || alerted[candidate.source] === marker) continue;
+    await chrome.notifications.create(`scheduled:${candidate.source}`, {
+      type: 'basic',
+      iconUrl: chrome.runtime.getURL('icon128.png'),
+      title: 'Hora da tarefa programada',
+      message: `${String(candidate.name || 'Tarefa').slice(0, 100)} · ${candidate.time}. Abra o quadro para começar.`,
+      silent: false,
+    });
+    alerted[candidate.source] = marker;
+    await chrome.storage.local.set({ reminderAlerted: alerted });
+  }
+  // Keep same-day markers even after completing/deleting a task to prevent duplicates on undo.
+  for (const [source, marker] of Object.entries(reminderAlerted)) {
+    if (typeof marker === 'string' && marker.startsWith(today)) alerted[source] ??= marker;
+  }
+  await chrome.storage.local.set({ reminderAlerted: alerted });
+  await chrome.alarms.clear('scheduled-task-check');
+  if (Number.isFinite(next)) await chrome.alarms.create('scheduled-task-check', { when: next });
+}
+queueReminders();
+chrome.notifications.onClicked.addListener(notificationId => {
+  if (notificationId.startsWith('scheduled:')) return openBoard();
+});
+
 const GROQ_URL = 'https://api.groq.com/openai/v1';
 const GOOGLE_SESSION = 'google_connection_session';
 const GOOGLE_SCOPES = [
@@ -1612,13 +1692,16 @@ chrome.runtime.onInstalled.addListener(() => {
   reconcile();
   queueFocusRules();
   queueDeadlines();
+  queueReminders();
 });
 chrome.runtime.onStartup.addListener(() => {
   reconcile();
   queueFocusRules();
   queueDeadlines();
+  queueReminders();
 });
 chrome.alarms.onAlarm.addListener(async alarm => {
+  if (alarm.name === 'scheduled-task-check') return queueReminders();
   if (alarm.name === 'deadline-check') return queueDeadlines();
   if (alarm.name !== 'timer-end') return;
   const { session, soundEnabled } = await chrome.storage.local.get(['session', 'soundEnabled']);
@@ -1665,6 +1748,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
   if (area === 'local' && (changes.session || changes.focusBlocking)) queueFocusRules();
   if (area === 'local' && changes.tasks) queueDeadlines();
+  if (area === 'local' && (changes.tasks || changes.weeklyPlans)) queueReminders();
   if (area === 'local' && changes.bubblePreferences)
     broadcastBubblePreferences(normalizeBubblePreferences(changes.bubblePreferences.newValue));
 });

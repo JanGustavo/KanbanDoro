@@ -8,6 +8,10 @@ const item = {
   difficulty: 1,
   estimate: 30,
   deadline: '',
+  plannedFor: '2026-10-05',
+  plannedOrder: 2,
+  reminderDate: '2026-10-05',
+  reminderTime: '14:30',
   column: 'doing',
   failures: 0,
   focusSeconds: 200,
@@ -26,6 +30,7 @@ const data = {
       estimate: 20,
       weekdays: [1],
       startsOn: '2026-09-27',
+      reminderTime: '09:15',
       generatedDates: ['2026-09-27'],
     },
   ],
@@ -48,6 +53,16 @@ assert.equal(backup.data.tasks[0].files, undefined);
 assert(!serialized.includes('aula.pdf'));
 
 const imported = parseBackup(serialized);
+assert.equal(imported.data.tasks[0].plannedFor, '2026-10-05');
+assert.equal(imported.data.tasks[0].plannedOrder, 2);
+assert.equal(imported.data.tasks[0].reminderDate, '2026-10-05');
+assert.equal(imported.data.tasks[0].reminderTime, '14:30');
+assert.equal(imported.data.weeklyPlans[0].reminderTime, '09:15');
+assert.throws(
+  () =>
+    parseBackup(JSON.stringify({ ...backup, data: { ...backup.data, tasks: [{ ...item, reminderTime: '24:00' }] } })),
+  /Horário inválido/,
+);
 assert.equal(imported.data.tasks[0].slices[0].name, 'Ler');
 const withSliceNotes = parseBackup(
   JSON.stringify({
