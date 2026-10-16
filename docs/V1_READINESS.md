@@ -13,6 +13,13 @@ A promessa central é ajudar o usuário a escolher o próximo passo, reservar te
 - Preservação de histórico na conversão, prevenção de duplicação no mesmo dia e backup compatível com os novos campos.
 - Build, lint e testes automatizados. Anexo de imagem, anotação de etapa concluída, troca de etapa e planejamento foram conferidos em prévia com dados descartáveis. A entrega visual de notificações pelo navegador/sistema ainda exige teste com a extensão instalada.
 
+
+## Atualização em 16/10/2026
+
+Implementados nesta rodada: ponto de retomada com contexto e materiais; fechamento diário com decisão por pendência; lembrete com destino direto e adiamento; primeiro uso com tarefa real. A base opcional Estudo acrescenta contexto aos pedidos de IA sobre tarefas e etapas. A arquitetura e o recorte futuro de NotebookLM estão em [WORKFLOW_PROFILES.md](WORKFLOW_PROFILES.md).
+
+Os itens de lembrete e fechamento abaixo registram a motivação inicial; suas entregas básicas já foram implementadas. O trabalho restante antes da 1.0 é conferir notificações na extensão instalada, validar backup/recuperação no ambiente de uso e observar se os usuários conseguem completar o fluxo diário sem ajuda. A edição de programações futuras antes da primeira ocorrência continua sendo uma lacuna independente.
+
 ## Prioridades propostas antes da 1.0
 
 1. **Validar o plano diário no uso.** Já implementado: seleção explícita, ordem persistente, soma do esforço pendente e passagem para um ciclo revisável. `isVisible` ainda mantém a fila geral de pendências no quadro; o plano acima dela indica o compromisso escolhido. Critério de aceitação: escolher o próximo trabalho e perceber excesso de planejamento sem procurar pelo quadro inteiro. Ajustar capacidade e fechamento diário após observar o uso.

@@ -1,24 +1,47 @@
 let boardOpening = null;
-function openBoard() {
+function boardTargetUrl(base, target) {
+  if (!target || (!target.taskId && !target.planId)) return base;
+  const params = new URLSearchParams({
+    from: 'reminder',
+    intent: target.intent === 'focus' ? 'focus' : 'open',
+    request: crypto.randomUUID(),
+  });
+  if (target.taskId) params.set('task', target.taskId);
+  if (target.planId) params.set('plan', target.planId);
+  if (target.day) params.set('day', target.day);
+  return `${base.split('#')[0]}#${params}`;
+}
+function openBoard(target) {
   // Serialize requests from the bubble and toolbar to avoid duplicate tabs.
-  if (boardOpening) return boardOpening;
+  if (boardOpening)
+    return target?.taskId || target?.planId
+      ? boardOpening.then(tab =>
+          chrome.tabs.update(tab.id, {
+            active: true,
+            url: boardTargetUrl(tab.url || chrome.runtime.getURL('index.html'), target),
+          }),
+        )
+      : boardOpening;
   boardOpening = (async () => {
     const url = chrome.runtime.getURL('index.html');
     const tabs = await chrome.tabs.query({ url: `${url}*` });
     const candidates = tabs.filter(tab => (tab.url || tab.pendingUrl || '').split(/[?#]/)[0] === url && tab.id != null);
     const existing = candidates.find(tab => tab.active) || candidates[0];
     if (existing) {
-      const tab = await chrome.tabs.update(existing.id, { active: true });
+      const tab = await chrome.tabs.update(existing.id, {
+        active: true,
+        ...(target?.taskId || target?.planId ? { url: boardTargetUrl(existing.url || url, target) } : {}),
+      });
       if (existing.windowId != null) await chrome.windows.update(existing.windowId, { focused: true });
       return tab;
     }
-    return chrome.tabs.create({ url });
+    return chrome.tabs.create({ url: boardTargetUrl(url, target) });
   })().finally(() => {
     boardOpening = null;
   });
   return boardOpening;
 }
-chrome.action.onClicked.addListener(openBoard);
+chrome.action.onClicked.addListener(() => openBoard());
 
 async function ensureOffscreen() {
   if (await chrome.offscreen.hasDocument()) return;
@@ -37,10 +60,14 @@ async function playAlert(variant) {
   }
 }
 
+function isBoardSender(sender) {
+  return typeof sender?.url === 'string' && sender.url.split(/[?#]/)[0] === chrome.runtime.getURL('index.html');
+}
+
 // Content scripts display the floating timer and must not access saved API keys.
 chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type === 'CELEBRATE_SOUND' && _sender.url === chrome.runtime.getURL('index.html')) {
+  if (message?.type === 'CELEBRATE_SOUND' && isBoardSender(_sender)) {
     void chrome.storage.local.get('soundEnabled').then(({ soundEnabled }) => {
       if (soundEnabled !== false) return playAlert('success');
     });
@@ -74,7 +101,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       'GMAIL_SEND',
     ].includes(message?.type)
   ) {
-    if (_sender.url !== chrome.runtime.getURL('index.html')) return;
+    if (!isBoardSender(_sender)) return;
     (['GMAIL_', 'GOOGLE_', 'CALENDAR_', 'TASKS_'].some(prefix => message.type.startsWith(prefix))
       ? handleGoogle(message)
       : handleGroq(message)
@@ -92,7 +119,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
   if (message?.type === 'SET_BUBBLE_SETTINGS') {
-    if (_sender.url !== chrome.runtime.getURL('index.html') && !_sender.tab) return;
+    if (!isBoardSender(_sender) && !_sender.tab) return;
     const preferences = normalizeBubblePreferences(message.preferences);
     chrome.storage.local
       .set({ bubblePreferences: preferences })
@@ -330,7 +357,9 @@ async function reconcileReminders() {
     tasks = [],
     weeklyPlans = [],
     reminderAlerted = {},
-  } = await chrome.storage.local.get(['tasks', 'weeklyPlans', 'reminderAlerted']);
+    reminderTargets = {},
+    reminderSnoozes = {},
+  } = await chrome.storage.local.get(['tasks', 'weeklyPlans', 'reminderAlerted', 'reminderTargets', 'reminderSnoozes']);
   const now = new Date();
   const today = reminderDay(now);
   let next = Infinity;
@@ -339,7 +368,13 @@ async function reconcileReminders() {
   for (const task of tasks) {
     if (!task?.id || task.column === 'done' || task.archivedAt || weeklyPlans.some(plan => plan.id === task.planId))
       continue;
-    candidates.push({ source: `task:${task.id}`, name: task.name, day: task.reminderDate, time: task.reminderTime });
+    candidates.push({
+      source: `task:${task.id}`,
+      taskId: task.id,
+      name: task.name,
+      day: task.reminderDate,
+      time: task.reminderTime,
+    });
   }
   for (const plan of weeklyPlans) {
     if (!plan?.id || !plan.reminderTime || !Array.isArray(plan.weekdays)) continue;
@@ -354,7 +389,7 @@ async function reconcileReminders() {
           : plan.generatedDates?.includes(day)
       )
         continue;
-      candidates.push({ source: `plan:${plan.id}`, name: plan.name, day, time: plan.reminderTime });
+      candidates.push({ source: `plan:${plan.id}`, planId: plan.id, name: plan.name, day, time: plan.reminderTime });
     }
   }
   for (const candidate of candidates) {
@@ -367,16 +402,29 @@ async function reconcileReminders() {
     }
     const marker = `${candidate.day}T${candidate.time}`;
     if (candidate.day !== today || alerted[candidate.source] === marker) continue;
-    await chrome.notifications.create(`scheduled:${candidate.source}`, {
-      type: 'basic',
-      iconUrl: chrome.runtime.getURL('icon128.png'),
-      title: 'Hora da tarefa programada',
-      message: `${String(candidate.name || 'Tarefa').slice(0, 100)} · ${candidate.time}. Abra o quadro para começar.`,
-      silent: false,
-    });
+    reminderTargets[`scheduled:${candidate.source}`] = candidate;
+    await chrome.storage.local.set({ reminderTargets });
+    await showScheduledReminder(candidate);
     alerted[candidate.source] = marker;
     await chrome.storage.local.set({ reminderAlerted: alerted });
   }
+  for (const [source, snooze] of Object.entries(reminderSnoozes)) {
+    if (!validReminderTarget(snooze, tasks, weeklyPlans) || now.getTime() - snooze.until > 24 * 60 * 60 * 1000) {
+      delete reminderSnoozes[source];
+      continue;
+    }
+    if (snooze.delivered) continue;
+    if (snooze.until > now.getTime()) {
+      next = Math.min(next, snooze.until);
+      continue;
+    }
+    reminderTargets[`scheduled:${source}`] = snooze;
+    await chrome.storage.local.set({ reminderTargets });
+    await showScheduledReminder(snooze);
+    reminderSnoozes[source] = { ...snooze, delivered: true };
+    await chrome.storage.local.set({ reminderSnoozes });
+  }
+  await chrome.storage.local.set({ reminderSnoozes });
   // Keep same-day markers even after completing/deleting a task to prevent duplicates on undo.
   for (const [source, marker] of Object.entries(reminderAlerted)) {
     if (typeof marker === 'string' && marker.startsWith(today)) alerted[source] ??= marker;
@@ -386,8 +434,78 @@ async function reconcileReminders() {
   if (Number.isFinite(next)) await chrome.alarms.create('scheduled-task-check', { when: next });
 }
 queueReminders();
-chrome.notifications.onClicked.addListener(notificationId => {
-  if (notificationId.startsWith('scheduled:')) return openBoard();
+async function showScheduledReminder(target) {
+  await chrome.notifications.create(`scheduled:${target.source}`, {
+    type: 'basic',
+    iconUrl: chrome.runtime.getURL('icon128.png'),
+    title: 'Hora da tarefa programada',
+    message: `${String(target.name || 'Tarefa').slice(0, 100)} · ${target.time}. Abra a tarefa ou adie por 10 minutos.`,
+    buttons: [{ title: 'Abrir para iniciar foco' }, { title: 'Adiar 10 min' }],
+    silent: false,
+  });
+}
+function validReminderTarget(target, tasks, plans) {
+  if (!target || !Number.isFinite(reminderTimestamp(target.day, target.time))) return false;
+  if (target.taskId) {
+    const task = tasks.find(task => task.id === target.taskId);
+    return (
+      !!task &&
+      !task.archivedAt &&
+      task.column !== 'done' &&
+      task.reminderDate === target.day &&
+      task.reminderTime === target.time
+    );
+  }
+  const plan = plans.find(plan => plan.id === target.planId);
+  if (
+    !plan ||
+    plan.reminderTime !== target.time ||
+    target.day < plan.startsOn ||
+    (plan.endsOn && target.day > plan.endsOn) ||
+    !plan.weekdays.includes(new Date(`${target.day}T12:00:00`).getDay())
+  )
+    return false;
+  const occurrences = tasks.filter(task => task.planId === plan.id && task.occurrenceDate === target.day);
+  return occurrences.length
+    ? occurrences.some(task => task.column !== 'done' && !task.archivedAt)
+    : !plan.generatedDates?.includes(target.day);
+}
+async function openReminder(notificationId, intent = 'open') {
+  if (!notificationId.startsWith('scheduled:')) return;
+  const { reminderTargets = {} } = await chrome.storage.local.get('reminderTargets');
+  const target = reminderTargets[notificationId];
+  return openBoard(target ? { ...target, intent } : undefined);
+}
+chrome.notifications.onClicked.addListener(notificationId => openReminder(notificationId));
+chrome.notifications.onButtonClicked.addListener(async (notificationId, index) => {
+  if (!notificationId.startsWith('scheduled:')) return;
+  if (index === 0) return openReminder(notificationId, 'focus');
+  if (index !== 1) return;
+  remindersPending = remindersPending
+    .catch(() => {})
+    .then(async () => {
+      const {
+        reminderTargets = {},
+        reminderSnoozes = {},
+        tasks = [],
+        weeklyPlans = [],
+      } = await chrome.storage.local.get(['reminderTargets', 'reminderSnoozes', 'tasks', 'weeklyPlans']);
+      const target = reminderTargets[notificationId];
+      if (!validReminderTarget(target, tasks, weeklyPlans)) return;
+      await chrome.storage.local.set({
+        reminderSnoozes: {
+          ...reminderSnoozes,
+          [target.source]: {
+            ...target,
+            until: Date.now() + 10 * 60 * 1000,
+            delivered: false,
+          },
+        },
+      });
+      await chrome.notifications.clear(notificationId);
+      return reconcileReminders();
+    });
+  return remindersPending;
 });
 
 const GROQ_URL = 'https://api.groq.com/openai/v1';
@@ -1038,6 +1156,18 @@ async function replaceBrokenAttachments(settings, task, failed, working, seen) {
     return [];
   } // Sources are optional; a failed retry never invalidates the task proposal.
 }
+function workflowContextForAI(value) {
+  const profile = value?.profile === 'study' ? 'study' : 'general';
+  return {
+    perfil: profile,
+    objetivo: typeof value?.goal === 'string' ? value.goal.trim().slice(0, 500) : '',
+    orientacao:
+      profile === 'study'
+        ? 'Organize o estudo em etapas de compreensão, prática de questões e revisão quando pertinentes ao pedido. Respeite disciplina e assunto informados. Não invente edital, banca, conteúdo de fontes nem garantia de aprendizado. Restrições explícitas do pedido têm prioridade sobre o perfil.'
+        : 'Organize o trabalho conforme o pedido e as restrições explícitas do usuário.',
+  };
+}
+
 async function handleGroq(message) {
   if (message.type === 'CHECK_ATTACHMENT') return { check: await checkAttachment(message.url) };
   if (message.type === 'AI_ATTACHMENT_SUMMARY') {
@@ -1361,7 +1491,10 @@ async function handleGroq(message) {
           content:
             'Você analisa a distribuição dos slices de uma única tarefa. Responda em português brasileiro em até duas frases objetivas. Aponte desproporções, estimativas ausentes e muitos slices (8 ou mais) quando relevante; sugira dividir ou agrupar sem editar nada. Não invente tempos. Retorne JSON com um único campo insight (string).',
         },
-        { role: 'user', content: JSON.stringify(clean) },
+        {
+          role: 'user',
+          content: JSON.stringify({ ...clean, contexto_de_uso: workflowContextForAI(message.workflow) }),
+        },
       ],
       response_format: {
         type: 'json_schema',
@@ -1478,6 +1611,7 @@ async function handleGroq(message) {
         role: 'user',
         content: JSON.stringify({
           pedido: input,
+          contexto_de_uso: workflowContextForAI(message.workflow),
           areas_existentes: areas,
           proposta_anterior: previous,
           comentario: feedback,

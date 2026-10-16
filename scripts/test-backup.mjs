@@ -8,6 +8,7 @@ const item = {
   difficulty: 1,
   estimate: 30,
   deadline: '',
+  resumePoint: { sliceId: 'slice-1', stoppedAt: 'Página 18', nextStep: 'Exercício 4', savedAt: 100 },
   plannedFor: '2026-10-05',
   plannedOrder: 2,
   reminderDate: '2026-10-05',
@@ -37,6 +38,18 @@ const data = {
   breakPreferences: ['Água'],
   wipLimits: { doing: 5, late: null },
   breakDurations: { short: 5, long: 15 },
+  workflow: { profile: 'study', goal: 'Concurso' },
+  dayClosures: [
+    {
+      id: '2026-10-05',
+      day: '2026-10-05',
+      closedAt: 100,
+      completedTaskIds: ['one'],
+      decisions: [],
+      focusSeconds: 200,
+      plannedMinutes: 30,
+    },
+  ],
   areas: ['Programação'],
   session: { phase: 'running', token: 'never-export-this-session' },
 };
@@ -53,6 +66,15 @@ assert.equal(backup.data.tasks[0].files, undefined);
 assert(!serialized.includes('aula.pdf'));
 
 const imported = parseBackup(serialized);
+assert.equal(imported.data.tasks[0].resumePoint.nextStep, 'Exercício 4');
+assert.equal(imported.data.workflow.profile, 'study');
+assert.equal(imported.data.dayClosures[0].focusSeconds, 200);
+const legacyData = { ...backup.data };
+delete legacyData.dayClosures;
+delete legacyData.workflow;
+const legacy = parseBackup(JSON.stringify({ ...backup, data: legacyData }));
+assert.deepEqual(legacy.data.dayClosures, []);
+assert.equal(legacy.data.workflow.profile, 'general');
 assert.equal(imported.data.tasks[0].plannedFor, '2026-10-05');
 assert.equal(imported.data.tasks[0].plannedOrder, 2);
 assert.equal(imported.data.tasks[0].reminderDate, '2026-10-05');

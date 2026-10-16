@@ -30,9 +30,15 @@ import {
 } from './aiSettings';
 import { verifiedAIModels, type ListedAIModel } from './aiModelCatalog';
 import AttachmentPreview, { type AttachmentInfo } from './AttachmentPreview';
-import LocalMaterials from './LocalMaterials';
 import FocusTaskMaterials from './FocusTaskMaterials';
 import DailyPlan from './DailyPlan';
+import WorkflowSettings from './WorkflowSettings';
+import { workflowContext, type WorkflowSettings as WorkflowPreferences } from './workflowProfiles';
+import FirstTaskGuide from './FirstTaskGuide';
+import DayClosing from './DayClosing';
+import { closeDay, type DayClosure } from './dayClosure';
+import { latestResumable, resumeSlice, saveResumePoint, type ResumePoint } from './continuity';
+import { reminderDestination, canMaterializeReminder } from './reminderNavigation';
 import { planTask, movePlannedTask } from './dailyPlan';
 import VoiceRecorder from './VoiceRecorder';
 import { appendTaskTranscript } from './voiceTranscription';
@@ -92,6 +98,7 @@ export type Task = {
   archivedAt?: number;
   planId?: string;
   occurrenceDate?: string;
+  resumePoint?: ResumePoint;
   plannedFor?: string;
   plannedOrder?: number;
   reminderDate?: string;
@@ -155,6 +162,8 @@ export type Data = {
   wipLimits: { doing: number; late: number | null };
   breakDurations: { short: number; long: number };
   areas: string[];
+  dayClosures: DayClosure[];
+  workflow: WorkflowPreferences;
 };
 const columns: { id: Column; label: string }[] = [
   { id: 'todo', label: 'A fazer' },
@@ -171,6 +180,8 @@ const initial: Data = {
   wipLimits: { doing: 5, late: null },
   breakDurations: { short: 5, long: 15 },
   areas: ['Programação', 'Estudo', 'Escrita', 'Organização'],
+  dayClosures: [],
+  workflow: { profile: 'general', goal: '' },
 };
 const id = () =>
   typeof crypto !== 'undefined' && crypto.randomUUID
@@ -283,6 +294,13 @@ function App() {
   const [stepNotice, setStepNotice] = useState('');
   const [breakType, setBreakType] = useState('Descanso');
   const [error, setError] = useState('');
+  const [showDayClosing, setShowDayClosing] = useState(false);
+  const [firstTaskId, setFirstTaskId] = useState<string | null>(null);
+  const [firstTaskDismissed, setFirstTaskDismissed] = useState(true);
+  const [firstTaskCreating, setFirstTaskCreating] = useState(false);
+  const [reminderIntent, setReminderIntent] = useState<string | null>(null);
+  const [linkHash, setLinkHash] = useState(window.location.hash);
+  const handledReminder = useRef('');
   const [restart, setRestart] = useState<Task | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showBubbleSettings, setShowBubbleSettings] = useState(false);
@@ -342,13 +360,28 @@ function App() {
 
   useEffect(() => {
     chrome.storage.local
-      .get(['tasks', 'session', 'history', 'breakPreferences', 'weeklyPlans', 'wipLimits', 'breakDurations', 'areas'])
+      .get([
+        'tasks',
+        'session',
+        'history',
+        'breakPreferences',
+        'weeklyPlans',
+        'wipLimits',
+        'breakDurations',
+        'areas',
+        'dayClosures',
+        'workflow',
+        'firstTaskId',
+        'firstTaskDismissed',
+      ])
       .then(stored => {
         const tasks = (stored.tasks as Task[] | undefined) ?? [];
         const weeklyPlans = (stored.weeklyPlans as WeeklyPlan[] | undefined) ?? [];
         const generated = materializeToday(tasks, weeklyPlans, new Date(), newOccurrence);
         setData({
           tasks: generated.tasks,
+          dayClosures: (stored.dayClosures as DayClosure[] | undefined) ?? [],
+          workflow: workflowContext(stored.workflow as WorkflowPreferences | undefined),
           weeklyPlans: generated.plans,
           session: (stored.session as Session | undefined) ?? null,
           history: (stored.history as HistoryEntry[] | undefined) ?? [],
@@ -366,6 +399,8 @@ function App() {
           ]),
         );
         void pruneLocalFiles(referenced).catch(() => {});
+        setFirstTaskId(typeof stored.firstTaskId === 'string' ? stored.firstTaskId : null);
+        setFirstTaskDismissed(stored.firstTaskDismissed === true || (!stored.firstTaskId && tasks.length > 0));
         setReady(true);
       });
     getAISettings().then(setAiSettings);
@@ -399,6 +434,54 @@ function App() {
       chrome.storage.onChanged.removeListener(onSessionChange);
     };
   }, []);
+  useEffect(() => {
+    const changed = () => setLinkHash(window.location.hash);
+    window.addEventListener('hashchange', changed);
+    return () => window.removeEventListener('hashchange', changed);
+  }, []);
+  useEffect(() => {
+    if (!ready || handledReminder.current === linkHash) return;
+    const destination = reminderDestination(linkHash);
+    if (!destination) return;
+    let item = destination.taskId
+      ? data.tasks.find(task => task.id === destination.taskId)
+      : data.tasks.find(task => task.planId === destination.planId && task.occurrenceDate === destination.day);
+    if (!item && destination.planId && destination.day) {
+      const plan = data.weeklyPlans.find(plan => plan.id === destination.planId);
+      const date = dateFromDay(destination.day);
+      // An explicit reminder click can materialize yesterday's snoozed occurrence; never fill a backlog.
+      if (canMaterializeReminder(plan, destination.day, new Date()) && plan) {
+        setData(old => {
+          const generated = materializeToday(
+            old.tasks,
+            old.weeklyPlans.filter(candidate => candidate.id === plan.id),
+            date,
+            newOccurrence,
+          );
+          return {
+            ...old,
+            tasks: generated.tasks,
+            weeklyPlans: old.weeklyPlans.map(
+              candidate => generated.plans.find(updated => updated.id === candidate.id) ?? candidate,
+            ),
+          };
+        });
+        return;
+      }
+    }
+    handledReminder.current = linkHash;
+    if (!item || item.archivedAt) {
+      setToast('Esta tarefa do lembrete não está mais disponível.');
+      return;
+    }
+    setSelectedTask(item.id);
+    setTaskTab('details');
+    setScope('whole');
+    setSelectedSlices([]);
+    setReminderIntent(destination.intent === 'focus' ? item.id : null);
+    setShowStatistics(false);
+    setView('today');
+  }, [ready, linkHash, data.tasks, data.weeklyPlans]);
   useEffect(() => {
     if (!toast) return;
     const timeout = window.setTimeout(
@@ -719,6 +802,7 @@ function App() {
   });
 
   function openTaskDetails(taskId: string) {
+    setReminderIntent(null);
     setTaskTab('details');
     setSelectedTask(taskId);
   }
@@ -890,6 +974,7 @@ function App() {
       await waitForAISettingsSave();
       const response = (await chrome.runtime.sendMessage({
         type: 'GROQ_TASK_PROPOSAL',
+        workflow: workflowContext(data.workflow),
         input: taskInput,
         previous: comment && proposal ? proposalContext(proposal, proposalSource, proposalEditedEstimates) : null,
         feedback: comment,
@@ -918,13 +1003,14 @@ function App() {
     );
   }
   async function requestSliceInsight(item: Task) {
-    if (!item.slices.length) return setSliceInsight('Adicione pelo menos um slice para receber uma análise.');
+    if (!item.slices.length) return setSliceInsight('Adicione pelo menos uma etapa para receber uma análise.');
     setInsightBusy(true);
     setSliceInsight('');
     try {
       await waitForAISettingsSave();
       const response = (await chrome.runtime.sendMessage({
         type: 'AI_SLICE_INSIGHT',
+        workflow: workflowContext(data.workflow),
         task: {
           name: item.name,
           estimate: item.estimate,
@@ -934,7 +1020,7 @@ function App() {
       if (response.error || !response.insight) throw Error(response.error || 'A IA não retornou uma sugestão.');
       setSliceInsight(response.insight);
     } catch (reason) {
-      setSliceInsight(reason instanceof Error ? reason.message : 'Não foi possível analisar os slices.');
+      setSliceInsight(reason instanceof Error ? reason.message : 'Não foi possível analisar as etapas.');
     } finally {
       setInsightBusy(false);
     }
@@ -1127,17 +1213,33 @@ function App() {
       attachments,
     };
     update(old => ({ ...old, tasks: [...old.tasks, item] }));
+    if (firstTaskCreating) {
+      setFirstTaskId(item.id);
+      setFirstTaskCreating(false);
+      void chrome.storage.local.set({ firstTaskId: item.id, firstTaskDismissed: false });
+    }
     setProposal(null);
     setName('');
-    openTaskDetails(item.id);
-    setToast('Proposta aceita. Só os anexos verificados foram salvos.');
+    if (firstTaskCreating) setSelectedTask(null);
+    else openTaskDetails(item.id);
+    setToast(
+      firstTaskCreating
+        ? 'Tarefa criada. Agora escolha um dia para ela no guia.'
+        : 'Proposta aceita. Só os anexos verificados foram salvos.',
+    );
   }
   function startFocus(item: Task) {
     return startFocusTasks([{ taskId: item.id, minutes: item.estimate }], item);
   }
-  function startFocusTasks(steps: Array<{ taskId: string; minutes: number }>, item?: Task) {
+  function startFocusTasks(
+    steps: Array<{ taskId: string; minutes: number }>,
+    item?: Task,
+    resumeIds?: string[] | null,
+  ) {
+    const focusScope = resumeIds === null ? 'whole' : resumeIds ? 'slices' : scope;
+    const focusSlices = resumeIds ?? selectedSlices;
     if (active) return setError('Encerre o ciclo ou descanso atual antes de iniciar outro.');
-    if (item && scope === 'slices' && selectedSlices.length === 0) return setError('Escolha ao menos um slice.');
+    if (item && focusScope === 'slices' && focusSlices.length === 0) return setError('Escolha ao menos uma etapa.');
     if (
       !steps.length ||
       steps.some(step => !Number.isInteger(step.minutes) || step.minutes < 1 || step.minutes > 480) ||
@@ -1175,8 +1277,8 @@ function App() {
         stepStartedAt: t,
         stepEndsAt: t + steps[0].minutes * 60000,
         warnedMinutes: [],
-        scope: item ? scope : 'whole',
-        selectedSliceIds: item && scope === 'slices' ? selectedSlices : [],
+        scope: item ? focusScope : 'whole',
+        selectedSliceIds: item && focusScope === 'slices' ? focusSlices : [],
         breakType: '',
         creditedSeconds: 0,
         excludedSeconds: 0,
@@ -1318,6 +1420,15 @@ function App() {
           kind === 'completed' && (active.scope === 'whole' || (slices.length > 0 && slices.every(s => s.done)));
         return {
           ...t,
+          ...(kind === 'interrupted'
+            ? {
+                resumePoint: saveResumePoint(
+                  t,
+                  { sliceId: t.resumePoint?.sliceId ?? active.selectedSliceIds[0] ?? resumeSlice(t)?.id },
+                  Date.now(),
+                ).resumePoint,
+              }
+            : {}),
           slices,
           completedAt: done ? Date.now() : t.completedAt,
           column: kind === 'failed' ? ('late' as Column) : done ? ('done' as Column) : t.column,
@@ -1487,10 +1598,10 @@ function App() {
           </section>
         </div>
       )}
-      {!tipsDismissed && data.tasks.length === 0 && (
+      {!tipsDismissed && firstTaskDismissed && data.tasks.length === 0 && (
         <aside className="first-use" aria-label="Primeiros passos">
           <span className="eyebrow">PRIMEIROS PASSOS</span>
-          <p>Crie uma tarefa, ajuste o tempo e os slices nos detalhes e inicie seu primeiro ciclo de foco.</p>
+          <p>Crie uma tarefa, ajuste o tempo e os etapas nos detalhes e inicie seu primeiro ciclo de foco.</p>
           <button className="first-use-tour" onClick={startTutorial}>
             Ver tutorial
           </button>
@@ -1504,6 +1615,69 @@ function App() {
           </button>
         </aside>
       )}
+      {!firstTaskDismissed && (
+        <FirstTaskGuide
+          task={data.tasks.find(task => task.id === firstTaskId)}
+          history={data.history}
+          active={!!active}
+          onCreate={() => {
+            setFirstTaskCreating(true);
+            openManualDraft();
+          }}
+          onPlan={() => {
+            if (firstTaskId) update(old => ({ ...old, tasks: planTask(old.tasks, firstTaskId, today) }));
+          }}
+          onStart={() => {
+            const item = data.tasks.find(task => task.id === firstTaskId);
+            if (item) startFocusTasks([{ taskId: item.id, minutes: item.estimate }], item, null);
+          }}
+          onRecord={() => {
+            if (firstTaskId) {
+              setSelectedTask(firstTaskId);
+              setTaskTab('materials');
+            }
+          }}
+          onDismiss={() => {
+            setFirstTaskDismissed(true);
+            void chrome.storage.local.set({ firstTaskDismissed: true });
+          }}
+        />
+      )}
+      {!active &&
+        (() => {
+          const item = latestResumable(data.tasks);
+          if (!item) return null;
+          const slice = resumeSlice(item);
+          return (
+            <section className="resume-card" aria-label="Retomar de onde parou">
+              <span className="eyebrow">RETOMAR DE ONDE PAROU</span>
+              <h2>{item.name}</h2>
+              {slice && <p>Etapa: {slice.name}</p>}
+              <p>Onde parei: {item.resumePoint?.stoppedAt || 'Ponto de retomada salvo na interrupção.'}</p>
+              <p>Próximo passo: {item.resumePoint?.nextStep || 'Revise os materiais e escolha a próxima ação.'}</p>
+              <button
+                onClick={() => {
+                  setSelectedTask(item.id);
+                  setTaskTab('materials');
+                }}
+              >
+                Abrir contexto e materiais
+              </button>
+              <button
+                className="primary"
+                onClick={() =>
+                  startFocusTasks(
+                    [{ taskId: item.id, minutes: slice?.estimateMinutes ?? item.estimate }],
+                    item,
+                    slice ? [slice.id] : null,
+                  )
+                }
+              >
+                Retomar foco{slice ? ' na próxima etapa' : ''}
+              </button>
+            </section>
+          );
+        })()}
       {active && (
         <section className="focus" aria-label="Ciclo atual">
           <div className="focus-top">
@@ -1540,7 +1714,7 @@ function App() {
                 {activeTask?.description ||
                   (active.scope === 'whole'
                     ? 'Tarefa inteira'
-                    : `${active.selectedSliceIds.length} slices · tempo compartilhado`)}
+                    : `${active.selectedSliceIds.length} etapas · tempo compartilhado`)}
               </p>
               {!!active.steps && !['break', 'break-done'].includes(phase ?? '') && (
                 <p className="cycle-step-summary">
@@ -1612,7 +1786,7 @@ function App() {
                     <p>
                       {active?.scope === 'whole'
                         ? 'Tempo associado à tarefa inteira.'
-                        : `Tempo compartilhado entre ${active?.selectedSliceIds.length ?? 0} slices.`}
+                        : `Tempo compartilhado entre ${active?.selectedSliceIds.length ?? 0} etapas.`}
                     </p>
                     <div className="focus-progress-line">
                       <span
@@ -2066,7 +2240,7 @@ function App() {
                     <small>Nova área: será adicionada quando você criar a tarefa.</small>
                   )}
                 </label>
-                <h3>Slices sugeridos</h3>
+                <h3>Etapas sugeridas</h3>
                 {proposal.slices.map((slice, index) => (
                   <div className="proposal-slice" key={index}>
                     <input
@@ -2089,7 +2263,7 @@ function App() {
                     </button>
                   </div>
                 ))}
-                <button onClick={() => setProposal({ ...proposal, slices: [...proposal.slices, ''] })}>+ Slice</button>
+                <button onClick={() => setProposal({ ...proposal, slices: [...proposal.slices, ''] })}>+ Etapa</button>
               </div>
             ) : (
               <div className="proposal-pane">
@@ -2417,6 +2591,21 @@ function App() {
             )}
             {settingsTab === 'board' && (
               <>
+                <button
+                  onClick={() => {
+                    setFirstTaskId(null);
+                    setFirstTaskDismissed(false);
+                    setShowSettings(false);
+                    void chrome.storage.local.set({ firstTaskId: null, firstTaskDismissed: false });
+                  }}
+                >
+                  Guiar uma tarefa real desde o começo
+                </button>
+                <WorkflowSettings
+                  value={data.workflow}
+                  onChange={workflow => update(old => ({ ...old, workflow }))}
+                  onAddArea={addArea}
+                />
                 <h3>Limite orientativo de tarefas</h3>
                 <p className="settings-hint">
                   O WIP indica quantas tarefas você mantém em andamento. O limite só avisa; você continua livre para
@@ -2914,6 +3103,30 @@ function App() {
         </div>
       </nav>
       {!showStatistics && view === 'today' && (
+        <div className="day-close-access">
+          <button onClick={() => setShowDayClosing(true)}>Fechar o dia / revisar pendências</button>
+          {data.dayClosures.some(closure => closure.day === today) && <span>Fechamento de hoje salvo.</span>}
+        </div>
+      )}
+      {showDayClosing && (
+        <DayClosing
+          data={data}
+          today={today}
+          onCancel={() => setShowDayClosing(false)}
+          onSave={(day, choices) => {
+            const result = closeDay(latestData.current, day, choices, Date.now());
+            if (result.error) {
+              setError(result.error);
+              return false;
+            }
+            setData(result.data);
+            setShowDayClosing(false);
+            setToast('Dia fechado. Os destinos escolhidos foram salvos.');
+            return true;
+          }}
+        />
+      )}
+      {!showStatistics && view === 'today' && (
         <DailyPlan
           tasks={data.tasks}
           day={today}
@@ -3373,7 +3586,7 @@ function App() {
                   setToast('Programação salva. As próximas ocorrências usam os detalhes atuais da tarefa.');
                 }}
               />
-              <h3>Slices</h3>
+              <h3>Etapas</h3>
               <div className="slices">
                 {task.slices.map(slice => (
                   <div className="slice-editor" key={slice.id}>
@@ -3389,7 +3602,7 @@ function App() {
                         }
                       />
                       <input
-                        aria-label={`Nome do slice ${slice.name}`}
+                        aria-label={`Nome da etapa ${slice.name}`}
                         value={slice.name}
                         maxLength={140}
                         onChange={e => {
@@ -3430,7 +3643,7 @@ function App() {
                     </label>
                     <button
                       type="button"
-                      aria-label={`Remover slice ${slice.name}`}
+                      aria-label={`Remover etapa ${slice.name}`}
                       onClick={() => {
                         setSliceInsight('');
                         changeTask(task.id, x => ({ ...x, slices: x.slices.filter(s => s.id !== slice.id) }));
@@ -3455,12 +3668,12 @@ function App() {
                 }}
                 className="add-slice"
               >
-                <input placeholder="Nome do slice" value={sliceDraft} onChange={e => setSliceDraft(e.target.value)} />
+                <input placeholder="Nome da etapa" value={sliceDraft} onChange={e => setSliceDraft(e.target.value)} />
                 <button>Adicionar</button>
               </form>
               <div className="ai-create-actions">
                 <button disabled={insightBusy} onClick={() => void requestSliceInsight(task)}>
-                  <AIIcon /> {insightBusy ? 'Analisando…' : 'Analisar distribuição dos slices'}
+                  <AIIcon /> {insightBusy ? 'Analisando…' : 'Analisar distribuição das etapas'}
                 </button>
                 <button
                   className="ai-model-switch"
@@ -3468,11 +3681,15 @@ function App() {
                   disabled={insightBusy}
                   onClick={cycleAIChoice}
                   title={`Alternar modelo de IA · atual: ${aiSettings.provider} / ${aiSettings.model || 'nenhum'}`}
-                  aria-label="Alternar modelo de IA para analisar os slices"
+                  aria-label="Alternar modelo de IA para analisar as etapas"
                 >
                   <AIIcon />
                 </button>
               </div>
+              <small>
+                Ao analisar, são enviados nome, estimativa e etapas desta tarefa, além do perfil e objetivo
+                configurados. Anotações e arquivos não acompanham este pedido.
+              </small>
               {sliceInsight && (
                 <p className="slice-insight" role="status">
                   {sliceInsight}
@@ -3485,7 +3702,7 @@ function App() {
                 </label>
                 <label>
                   <input type="radio" checked={scope === 'slices'} onChange={() => setScope('slices')} /> Selecionar
-                  slices
+                  etapas
                 </label>
               </div>
               {scope === 'slices' && (
@@ -3533,53 +3750,13 @@ function App() {
               hidden={taskTab !== 'materials'}
               className="task-detail-panel"
             >
-              <p className="materials-hint">Abra a tarefa ou uma etapa para consultar suas anotações e arquivos.</p>
-              <details className="materials-section" name={`materials-${task.id}`}>
-                <summary>
-                  Tarefa inteira{' '}
-                  <small>
-                    {task.notes?.trim() ? 'Com anotações · ' : ''}
-                    {task.files?.length ?? 0} arquivo(s)
-                  </small>
-                </summary>
-                <LocalMaterials
-                  label="Tarefa inteira"
-                  notes={task.notes ?? ''}
-                  files={task.files ?? []}
-                  onNotes={notes => changeTask(task.id, x => ({ ...x, notes }))}
-                  onFiles={change => changeTask(task.id, x => ({ ...x, files: change(x.files ?? []) }))}
-                />
-              </details>
-              {task.slices.map((slice, index) => (
-                <details className="materials-section" name={`materials-${task.id}`} key={slice.id}>
-                  <summary>
-                    <span>
-                      {index + 1}. {slice.name || 'Etapa sem nome'}
-                    </span>
-                    <small>
-                      {slice.notes?.trim() ? 'Com anotações · ' : ''}
-                      {slice.files?.length ?? 0} arquivo(s)
-                    </small>
-                  </summary>
-                  <LocalMaterials
-                    label={`Etapa ${slice.name}`}
-                    notes={slice.notes ?? ''}
-                    files={slice.files ?? []}
-                    onNotes={notes =>
-                      changeTask(task.id, x => ({
-                        ...x,
-                        slices: x.slices.map(s => (s.id === slice.id ? { ...s, notes } : s)),
-                      }))
-                    }
-                    onFiles={change =>
-                      changeTask(task.id, x => ({
-                        ...x,
-                        slices: x.slices.map(s => (s.id === slice.id ? { ...s, files: change(s.files ?? []) } : s)),
-                      }))
-                    }
-                  />
-                </details>
-              ))}
+              <p className="materials-hint">Etapas, ponto de retomada e arquivos da tarefa.</p>
+              <FocusTaskMaterials
+                key={task.id}
+                task={task}
+                initialTarget={resumeSlice(task)?.id ?? 'task'}
+                onChange={change => changeTask(task.id, change)}
+              />
               {!!task.attachments?.length && (
                 <>
                   <h3>Anexos</h3>
@@ -3597,10 +3774,16 @@ function App() {
                 </>
               )}
             </div>
+            {reminderIntent === task.id && (
+              <p role="status">
+                Tarefa aberta pelo lembrete. Confira os detalhes e confirme o início abaixo.
+                {active ? ' Já existe um ciclo ativo; ele será preservado.' : ''}
+              </p>
+            )}
             <div className="task-actions">
               <button
                 className="primary"
-                disabled={!!active || !!task.archivedAt}
+                disabled={!!active || !!task.archivedAt || task.column === 'done'}
                 onClick={() => {
                   startFocus(task);
                   if (!active) setSelectedTask(null);

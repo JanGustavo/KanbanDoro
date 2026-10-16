@@ -1,6 +1,8 @@
 import type { Data, HistoryEntry, Task } from './main';
 import type { FocusBlocking } from './focusBlocking';
 import type { WeeklyPlan } from './schedule';
+import type { DayClosure } from './dayClosure';
+import { workflowContext } from './workflowProfiles.ts';
 import { APP_VERSION } from './appVersion.ts';
 import { MAX_LOCAL_FILE_BYTES, type LocalFile } from './localFiles.ts';
 import { normalizeDomain } from './focusBlocking.ts';
@@ -15,7 +17,15 @@ export type Backup = {
   timeZone: string;
   data: Pick<
     Data,
-    'tasks' | 'history' | 'weeklyPlans' | 'breakPreferences' | 'wipLimits' | 'breakDurations' | 'areas'
+    | 'tasks'
+    | 'history'
+    | 'weeklyPlans'
+    | 'breakPreferences'
+    | 'wipLimits'
+    | 'breakDurations'
+    | 'areas'
+    | 'dayClosures'
+    | 'workflow'
   > & {
     focusBlocking: FocusBlocking;
     soundEnabled: boolean;
@@ -141,6 +151,15 @@ function readTask(value: unknown, includeFiles = false): Task {
     archivedAt: optional(t.archivedAt, v => num(v)),
     planId: optional(t.planId, identifier),
     occurrenceDate: optional(t.occurrenceDate, date),
+    resumePoint: optional(t.resumePoint, value => {
+      const point = obj(value);
+      return {
+        sliceId: optional(point.sliceId, identifier),
+        stoppedAt: str(point.stoppedAt, 2000),
+        nextStep: str(point.nextStep, 2000),
+        savedAt: num(point.savedAt),
+      };
+    }),
     plannedFor: optional(t.plannedFor, date),
     plannedOrder: optional(t.plannedOrder, v => num(v)),
     reminderDate: optional(t.reminderDate, date),
@@ -185,6 +204,26 @@ function readPlan(value: unknown): WeeklyPlan {
   };
 }
 
+function readDayClosure(value: unknown): DayClosure {
+  const record = obj(value);
+  const day = date(record.day);
+  if (!day || record.id !== day) throw Error('Identificador de fechamento inválido.');
+  return {
+    id: day,
+    day,
+    closedAt: num(record.closedAt),
+    completedTaskIds: list(record.completedTaskIds).map(identifier),
+    decisions: list(record.decisions).map(value => {
+      const item = obj(value);
+      const choice = str(item.choice, 10);
+      if (!['tomorrow', 'backlog', 'keep'].includes(choice)) throw Error('Destino de pendência inválido.');
+      return { taskId: identifier(item.taskId), choice: choice as DayClosure['decisions'][number]['choice'] };
+    }),
+    focusSeconds: num(record.focusSeconds),
+    plannedMinutes: num(record.plannedMinutes),
+  };
+}
+
 export function makeBackup(
   data: Data,
   focusBlocking: FocusBlocking,
@@ -200,6 +239,8 @@ export function makeBackup(
       tasks: data.tasks,
       history: data.history,
       weeklyPlans: data.weeklyPlans,
+      dayClosures: data.dayClosures ?? [],
+      workflow: data.workflow ?? { profile: 'general', goal: '' },
       breakPreferences: data.breakPreferences,
       wipLimits: data.wipLimits,
       breakDurations: data.breakDurations,
@@ -238,6 +279,18 @@ export function parseBackup(text: string, includeFiles = false): Backup {
       tasks: uniqueIds(list(d.tasks).map(value => readTask(value, includeFiles))),
       history: uniqueIds(list(d.history).map(readHistory)),
       weeklyPlans: uniqueIds(list(d.weeklyPlans, 5000).map(readPlan)),
+      dayClosures: uniqueIds(list(d.dayClosures ?? [], 50_000).map(readDayClosure)),
+      workflow:
+        d.workflow === undefined
+          ? workflowContext()
+          : (() => {
+              const settings = obj(d.workflow);
+              if (!['general', 'study'].includes(String(settings.profile))) throw Error('Perfil de uso inválido.');
+              return workflowContext({
+                profile: settings.profile as 'general' | 'study',
+                goal: str(settings.goal, 500),
+              });
+            })(),
       breakPreferences: list(d.breakPreferences, 100).map(v => str(v, 80)),
       areas: [
         ...new Set(
@@ -294,6 +347,16 @@ export function mergeBackup(current: Backup, incoming: Backup): Backup {
         ...incoming.data.history.filter(entry => !localHistory.has(entry.id) && !localTasks.has(entry.taskId)),
       ],
       weeklyPlans: [...plans.values()],
+      dayClosures: [
+        ...current.data.dayClosures,
+        ...incoming.data.dayClosures.filter(
+          closure =>
+            !current.data.dayClosures.some(local => local.day === closure.day) &&
+            ![...closure.completedTaskIds, ...closure.decisions.map(item => item.taskId)].some(taskId =>
+              localTasks.has(taskId),
+            ),
+        ),
+      ],
       areas: [...new Set([...current.data.areas, ...incoming.data.areas])],
     },
   };

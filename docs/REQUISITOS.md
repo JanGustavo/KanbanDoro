@@ -32,6 +32,17 @@ Este documento é vivo. Uma solução melhor pode substituir a regra anterior de
 - Um aviso por fonte, data e horário; concluir, arquivar ou apagar a ocorrência a silencia. Editar o horário substitui o próximo aviso. Não existe preenchimento retroativo: ao reabrir o navegador, apenas lembretes do dia atual podem aparecer. Horário local do navegador; sistema suspenso, navegador fechado ou notificações desativadas podem impedir entrega pontual.
 - Avisos de prazo às 9h permanecem independentes dos lembretes de execução, pois prazo e horário planejado têm significados diferentes.
 
+
+## Continuidade e perfis (16/10/2026)
+
+- Ponto de retomada na tarefa: etapa de referência, onde parou, próximo passo e data. Editável no foco e nos materiais; interrupção salva referência automaticamente. Tarefas concluídas/arquivadas não aparecem como sugestão de retomada. Etapas removidas/concluídas usam a próxima pendente como fallback.
+- Fechamento por dia do plano com decisões obrigatórias para todas as pendências: dia seguinte, fila ou manter. Bloqueado durante sessão/pausa, sem transferência automática nem duplicação de tarefas. Preservar o resumo local e permitir consultá-lo separado do estado atual do quadro.
+- Notificação abre tarefa/ocorrência específica e oferece abrir para confirmar foco ou adiar dez minutos. Persistir e reconciliar adiamentos; conclusão/arquivo/exclusão ou alteração da programação invalida os destinos correspondentes. Preservar o ciclo ativo e permitir reabrir o mesmo destino em outra notificação.
+- Primeiro uso acompanha uma tarefa real até planejamento, registro de foco e resultado/próximo passo. Pode ser dispensado e reiniciado, sem dados de exemplo.
+- Perfis declarativos compartilham um núcleo. Geral e Estudo · base têm IDs validados; objetivo opcional limitado a 500 caracteres. Estudo orienta propostas e análise de etapas, sem modificar tarefas existentes ou enviar dados ao selecionar o perfil. Não altera o contrato privado de agregados da revisão semanal.
+- JSON/ZIP preservam retomada, fechamentos e perfil, com padrões para backups antigos. Mesclar preserva o perfil local e ignora resumos importados que possam atribuir tarefas com IDs colidentes ao histórico local.
+- Detalhes e plano de adaptadores futuros, incluindo limites atuais da API NotebookLM Enterprise: [WORKFLOW_PROFILES.md](WORKFLOW_PROFILES.md).
+
 ## Sessões
 
 - Um ciclo escolhe tarefa inteira ou subconjunto de slices. Tempo de seleção múltipla permanece compartilhado. Concluir o escopo de slices marca apenas os slices selecionados; a tarefa só vai para Concluído se todos os slices estiverem completos. Concluir a tarefa inteira move o card para Concluído.

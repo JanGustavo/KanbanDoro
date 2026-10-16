@@ -1,21 +1,35 @@
 import { useId, useState } from 'react';
 import type { Task } from './main';
 import LocalMaterials from './LocalMaterials';
+import ResumePointEditor from './ResumePointEditor';
+import { saveResumePoint } from './continuity';
 
 export default function FocusTaskMaterials({
   task,
   onChange,
+  initialTarget,
 }: {
   task: Task;
+  initialTarget?: string;
   onChange: (change: (current: Task) => Task) => void;
 }) {
   const panelId = useId();
-  const [target, setTarget] = useState<string | null>(null);
+  const [target, setTarget] = useState<string | null>(
+    () =>
+      initialTarget ??
+      (task.resumePoint?.sliceId && task.slices.some(slice => slice.id === task.resumePoint?.sliceId && !slice.done)
+        ? task.resumePoint.sliceId
+        : null),
+  );
   const slice = task.slices.find(item => item.id === target);
   const materials = target === 'task' ? task : slice;
   const label = target === 'task' ? 'Tarefa inteira' : `Etapa ${slice?.name ?? ''}`;
   return (
     <div className="focus-materials">
+      <details className="resume-details">
+        <summary>Onde parei e próximo passo</summary>
+        <ResumePointEditor task={task} onChange={onChange} />
+      </details>
       <div className="focus-slice-list" aria-label="Etapas e materiais da tarefa">
         {task.slices.map(item => (
           <div className="focus-slice-row" key={item.id}>
@@ -40,7 +54,10 @@ export default function FocusTaskMaterials({
               className="focus-materials-button"
               aria-expanded={target === item.id}
               aria-controls={panelId}
-              onClick={() => setTarget(old => (old === item.id ? null : item.id))}
+              onClick={() => {
+                setTarget(old => (old === item.id ? null : item.id));
+                if (!item.done) onChange(current => saveResumePoint(current, { sliceId: item.id }, Date.now()));
+              }}
             >
               Anexar / anotar<span className="sr-only"> na etapa {item.name}</span>
               {!!item.files?.length && ` · ${item.files.length} arquivo(s)`}
