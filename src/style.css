@@ -3953,3 +3953,92 @@ header p {
     flex-basis: 100%;
   }
 }
+
+.resume-card,
+.first-task-guide {
+  margin: 18px 0;
+  padding: 20px;
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: #262125;
+}
+.resume-card p,
+.first-task-guide p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+.resume-card button,
+.first-task-guide button {
+  margin: 6px 8px 6px 0;
+}
+.first-task-guide li {
+  margin: 8px 0;
+}
+.first-task-guide small {
+  display: block;
+  color: var(--color-muted);
+  margin-top: 12px;
+}
+.resume-details {
+  margin: 12px 0;
+}
+.resume-details > summary {
+  cursor: pointer;
+  color: var(--color-kanban);
+  padding: 8px 0;
+}
+.resume-editor,
+.workflow-settings {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  min-width: 0;
+}
+.resume-editor label,
+.workflow-settings label,
+.closing-task {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.resume-editor p,
+.workflow-settings p {
+  margin: 0;
+  line-height: 1.5;
+}
+.resume-editor textarea {
+  min-height: 70px;
+  width: 100%;
+}
+.resume-editor select,
+.workflow-settings select,
+.workflow-settings input {
+  width: 100%;
+  min-width: 0;
+}
+.closing-task {
+  margin: 18px 0;
+}
+.workflow-settings small,
+.closing-task small {
+  color: var(--color-muted);
+  line-height: 1.5;
+}
+.workflow-areas button {
+  margin: 8px 8px 0 0;
+}
+.day-close-access {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0;
+}
+.day-close-access span {
+  color: var(--color-muted);
+  font-size: 0.85rem;
+}

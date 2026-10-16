@@ -27,6 +27,8 @@ let tasks = [];
 let deadlineAlerted = {};
 let weeklyPlans = [];
 let reminderAlerted = {};
+let reminderTargets = {};
+let reminderSnoozes = {};
 const reminderNotifications = [];
 const scheduledAlarms = {};
 const requests = [];
@@ -85,6 +87,8 @@ const chrome = {
         deadlineAlerted,
         weeklyPlans,
         reminderAlerted,
+        reminderTargets,
+        reminderSnoozes,
         focusBlocking,
         soundEnabled,
         kanbandoro_ai_settings: aiSettings,
@@ -93,6 +97,8 @@ const chrome = {
       set: async item => {
         if ('bubblePreferences' in item) bubblePreferences = item.bubblePreferences;
         if ('google_connection_session' in item) googleSession = item.google_connection_session;
+        if ('reminderTargets' in item) reminderTargets = item.reminderTargets;
+        if ('reminderSnoozes' in item) reminderSnoozes = item.reminderSnoozes;
         if ('reminderAlerted' in item) reminderAlerted = item.reminderAlerted;
         if ('deadlineAlerted' in item) deadlineAlerted = item.deadlineAlerted;
         if ('session' in item) {
@@ -126,6 +132,8 @@ const chrome = {
     update: async (id, props) => {
       if (props.url === 'chrome://newtab/' && id === 42) newTabNavigations++;
       if (props.active) boardActivations.push(id);
+      const current = boardTabs.find(tab => tab.id === id);
+      if (current) Object.assign(current, props);
       return { id, ...props };
     },
     create: async props => {
@@ -164,6 +172,12 @@ const chrome = {
     },
   },
   notifications: {
+    clear: async () => true,
+    onButtonClicked: {
+      addListener(fn) {
+        listeners.notificationButton = fn;
+      },
+    },
     onClicked: {
       addListener(fn) {
         listeners.notificationClick = fn;
@@ -201,6 +215,7 @@ vm.runInNewContext(readFileSync('public/background.js', 'utf8'), {
   Date: WorkerDate,
   AbortSignal,
   URL,
+  URLSearchParams,
   crypto: webcrypto,
   TextEncoder,
   TextDecoder,
@@ -712,16 +727,45 @@ await listeners.alarm({ name: 'scheduled-task-check' });
 assert.equal(reminderNotifications.length, 3, 'edited routine time replaces the original reminder time');
 await listeners.alarm({ name: 'scheduled-task-check' });
 assert.equal(reminderNotifications.length, 3, 'future occurrences must not overwrite today’s delivered marker');
+await listeners.notificationButton('scheduled:plan:routine', 0);
+assert(
+  boardTabs.some(tab => tab.url.includes('plan=routine') && tab.url.includes('intent=focus')),
+  'notification action navigates to the actual routine without starting a session',
+);
+const firstReminderUrl = boardTabs.find(tab => tab.url.includes('plan=routine')).url;
+await listeners.notificationButton('scheduled:plan:routine', 0);
+assert.notEqual(
+  boardTabs.find(tab => tab.url.includes('plan=routine')).url,
+  firstReminderUrl,
+  'repeated notifications must produce a new navigation request',
+);
+const sessionBeforeSnooze = session;
+await listeners.notificationButton('scheduled:plan:routine', 1);
+assert.equal(reminderSnoozes['plan:routine'].until, reminderNow + 600000);
+assert.equal(scheduledAlarms['scheduled-task-check'], reminderNow + 600000);
+reminderNow += 600001;
+await listeners.alarm({ name: 'scheduled-task-check' });
+assert.equal(reminderNotifications.length, 4, 'snoozed reminders return once after ten minutes');
+await listeners.alarm({ name: 'scheduled-task-check' });
+assert.equal(reminderNotifications.length, 4, 'snooze survives reconciliation without duplicate delivery');
+assert.equal(session, sessionBeforeSnooze, 'reminder actions never replace the active session');
+await listeners.notificationButton('scheduled:plan:routine', 1);
+tasks = tasks.map(task => (task.planId === 'routine' ? { ...task, column: 'done' } : task));
+reminderNow += 600001;
+await listeners.alarm({ name: 'scheduled-task-check' });
+assert.equal(reminderNotifications.length, 4, 'finishing a task cancels its pending snooze');
+assert.equal(reminderSnoozes['plan:routine'], undefined);
+
 const focusedBeforeReminder = focusedWindows.length;
 await listeners.notificationClick('scheduled:plan:routine');
 assert.equal(focusedWindows.length, focusedBeforeReminder + 1, 'clicking a reminder reuses and focuses the board');
 weeklyPlans = [{ ...weeklyPlans[0], id: 'finished', reminderTime: '10:00' }];
 tasks = [{ id: 'finished-task', planId: 'finished', occurrenceDate: '2026-10-05', column: 'done' }];
 await listeners.alarm({ name: 'scheduled-task-check' });
-assert.equal(reminderNotifications.length, 3, 'completed weekly occurrences are silent');
+assert.equal(reminderNotifications.length, 4, 'completed weekly occurrences are silent');
 tasks = [];
 await listeners.alarm({ name: 'scheduled-task-check' });
-assert.equal(reminderNotifications.length, 3, 'deleted weekly occurrences are silent');
+assert.equal(reminderNotifications.length, 4, 'deleted weekly occurrences are silent');
 weeklyPlans = [{ ...weeklyPlans[0], id: 'ended', endsOn: '2026-10-04' }];
 await listeners.alarm({ name: 'scheduled-task-check' });
 assert.equal(scheduledAlarms['scheduled-task-check'], undefined, 'ended routines clear their alarm');
@@ -779,6 +823,7 @@ const spokenRequest = 'Ah, cara, eu queria fazer uma API, sabe, para implementar
 const draft = await aiMessage({
   type: 'GROQ_TASK_PROPOSAL',
   input: spokenRequest,
+  workflow: { profile: 'study', goal: 'Concurso judiciário', arbitrary: 'DO-NOT-SEND' },
   previous: { description: 'Implementar rotas', slices: [] },
   feedback: 'Interprete a fala e organize a tarefa.',
   areas: ['Programação', 'Estudo'],
@@ -789,6 +834,16 @@ const spokenPayload = requests
   .map(request => JSON.parse(request.options.body))
   .find(body => JSON.parse(body.messages[1].content).pedido === spokenRequest);
 assert(spokenPayload, 'the full spoken request must reach the model');
+const context = JSON.parse(spokenPayload.messages[1].content).contexto_de_uso;
+assert.equal(context.perfil, 'study');
+assert.equal(context.objetivo, 'Concurso judiciário');
+assert.match(context.orientacao, /questões/);
+assert(!JSON.stringify(context).includes('DO-NOT-SEND'));
+const deepLinkedAI = await aiMessage(
+  { type: 'GROQ_TASK_PROPOSAL', input: 'Organizar estudo' },
+  'index.html#from=reminder&task=one',
+);
+assert(deepLinkedAI.proposal, 'opening by reminder must not revoke the board’s AI permissions');
 const prior = JSON.parse(JSON.parse(spokenPayload.messages[1].content).proposta_anterior);
 assert(!('name' in prior), 'manual requests do not impose a copied title');
 assert(spokenPayload.messages[0].content.includes('Nunca copie a transcrição inteira como título'));
