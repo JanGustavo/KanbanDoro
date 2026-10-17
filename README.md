@@ -22,24 +22,21 @@ Ao atualizar a extensão, recarregue também as abas que já estavam abertas. O 
 
 O aviso automático de prazo usa notificações locais às 9h do dia previsto, uma vez por tarefa e data. Se o navegador estiver fechado, a extensão avisa ao abrir dentro das 24 horas seguintes; não acumula avisos antigos. Tarefas concluídas ou arquivadas não notificam. O aviso não muda a coluna da tarefa.
 
-
 Nos **Detalhes da tarefa → Recorrência e lembrete**, transforme uma tarefa existente em **Só na semana escolhida** ou **Toda semana (fixa)**, defina dias, data inicial e horário opcional e clique em **Salvar programação**. Fixa significa repetir continuamente. A conversão preserva a tarefa e seu histórico; salvar uma rotina atualiza os detalhes das próximas ocorrências. **Uma vez** encerra a repetição, mantendo as tarefas já criadas. Criação manual/assistida também oferece horário; tarefas únicas escolhem a data do lembrete.
 
 O lembrete usa o horário local do navegador e funciona com a aba do quadro fechada, inclusive para rotinas ainda sem ocorrência gerada. Clicar no aviso abre o quadro. Conclusão, arquivo ou exclusão da ocorrência silencia o aviso daquele dia. Se o navegador estiver fechado, avisa ao reabrir no mesmo dia; dias anteriores não acumulam avisos. O Chrome pode atrasar alarmes durante suspensão, e as notificações precisam estar habilitadas no sistema. O aviso de prazo às 9h continua separado do lembrete de execução. Os novos campos entram nos backups JSON e ZIP.
 
 Em **Modo foco**, acima do quadro, o modo sem distrações fica desligado por padrão. Essencial bloqueia algumas redes e jogos; Intenso amplia a lista; Meu perfil permite importar uma das listas e editá-la. É possível liberar domínios necessários ao trabalho. O bloqueio só vale para a navegação principal enquanto o ciclo está em foco, nunca nas pausas: uma tela escura aparece por cinco segundos e depois tenta abrir uma nova guia (ou uma guia vazia se o navegador impedir a navegação). Fechar o navegador, terminar o ciclo ou desligar o perfil libera os sites. O bloqueio é uma ferramenta de apoio, não um controle de acesso impossível de desativar. A extensão usa regras temporárias `declarativeNetRequest` e não envia o histórico de navegação a nenhum servidor; recomendações de tema escuro não alteram a aparência dos sites.
 
-
 No ciclo atual, cada etapa oferece **Anexar / anotar**. Concluir uma etapa abre seus materiais imediatamente, com anotações, entrada por voz e imagens/arquivos locais. O destino aparece no cabeçalho; os arquivos continuam disponíveis nos detalhes da tarefa e no backup ZIP. A tarefa inteira também tem um atalho de materiais. Esses controles aparecem durante o foco e nos modais de decisão e conclusão, sem precisar procurar o card no quadro. Anexar não pausa nem encerra o cronômetro; os limites de 20 arquivos por tarefa/etapa e 10 MB por arquivo continuam valendo.
 
 Em **Hoje → Plano para hoje**, escolha tarefas da fila, organize a ordem e acompanhe minutos estimados pendentes e conclusões. Também é possível clicar em **Planejar hoje** no card. O plano inclui todas as áreas, persiste ao reabrir o quadro e entra no backup JSON/ZIP. **Montar ciclo com este plano** copia as tarefas pendentes para o construtor; ajuste os minutos reservados e confirme o início. Tarefas em atraso também podem compor o ciclo. Retirar do plano preserva a tarefa e seu histórico. Compromissos do dia anterior não são transferidos automaticamente: o painel sinaliza pendências anteriores para você escolher o que retomar.
-
 
 **Retomada e fechamento diário:** no foco ou nos materiais, abra **Onde parei e próximo passo** para guardar seu contexto. Interromper também salva uma referência de etapa. Sem ciclo ativo, o painel **Retomar de onde parou** oferece materiais e foco na próxima etapa pendente. Em **Hoje → Fechar o dia / revisar pendências**, escolha o destino de cada pendência; o fechamento mantém as tarefas originais e guarda um resumo local. Encerre o ciclo/pausa antes de fechar o dia.
 
 **Lembretes com ação:** o corpo do aviso abre a tarefa certa. Os botões permitem abrir para confirmar o foco ou adiar por dez minutos, sem substituir um ciclo ativo. Em rotinas, o destino aponta para a ocorrência correspondente. A entrega nativa e a presença de botões dependem do navegador/sistema.
 
-**Primeira tarefa e perfis:** uma instalação vazia acompanha seu primeiro fluxo usando uma tarefa real, sem criar exemplos. Você pode dispensar o guia ou recomeçar em **Preferências → Quadro**. Nessa tela, **Perfil de uso → Estudo · base** acrescenta contexto de estudo aos pedidos de proposta e análise de etapas, com objetivo opcional e disciplinas sugeridas. Só adicione as disciplinas que usar; nenhuma tarefa existente é substituída. O perfil e o objetivo só são enviados quando você pede essas análises. Veja o funcionamento e o plano de expansão em [docs/WORKFLOW_PROFILES.md](docs/WORKFLOW_PROFILES.md).
+**Primeira tarefa e modo estudo:** uma instalação vazia acompanha seu primeiro fluxo usando uma tarefa real, sem criar exemplos. Você pode dispensar o guia ou recomeçar em **Preferências → Quadro**. O modo estudo organiza matérias como áreas e tópicos como tarefas; define objetivo, data da prova e meta diária; acompanha os minutos focados e cria uma fila local de revisões. Ao revisar, tente recuperar o tópico de memória e avalie como foi: a próxima revisão se ajusta de amanhã até intervalos maiores. Progresso e lembranças entram nos backups. Veja os limites e o funcionamento em [docs/WORKFLOW_PROFILES.md](docs/WORKFLOW_PROFILES.md).
 
 ## Produto
 
@@ -167,7 +164,6 @@ O botão **Bolha** no cabeçalho abre opções de exibição (expandida, recolhi
 O ícone da extensão usa um relógio e contorno vinho durante o foco, pausa em amarelo e alerta quando uma decisão é necessária. O texto FOCO/PAUSA não cobre mais a marca.
 
 A publicação também pode ser automática: um commit na `main` que altera a versão em `package.json` dispara o workflow de release. Ele só cria a tag/release após validar versões, compilar com OAuth/API remotos, testar e empacotar apenas `dist/`. Commits sem mudança de versão não publicam. O fluxo `make release VERSION=...` por tag continua disponível.
-
 
 ## Revisão semanal e gerenciamento de áreas
 

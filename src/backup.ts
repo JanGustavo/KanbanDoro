@@ -2,7 +2,8 @@ import type { Data, HistoryEntry, Task } from './main';
 import type { FocusBlocking } from './focusBlocking';
 import type { WeeklyPlan } from './schedule';
 import type { DayClosure } from './dayClosure';
-import { workflowContext } from './workflowProfiles.ts';
+import { normalizeWorkflowSettings } from './workflowProfiles.ts';
+import type { StudyReview } from './studyMode.ts';
 import { APP_VERSION } from './appVersion.ts';
 import { MAX_LOCAL_FILE_BYTES, type LocalFile } from './localFiles.ts';
 import { normalizeDomain } from './focusBlocking.ts';
@@ -26,6 +27,7 @@ export type Backup = {
     | 'areas'
     | 'dayClosures'
     | 'workflow'
+    | 'studyReviews'
   > & {
     focusBlocking: FocusBlocking;
     soundEnabled: boolean;
@@ -169,6 +171,9 @@ function readTask(value: unknown, includeFiles = false): Task {
 
 function readHistory(value: unknown): HistoryEntry {
   const h = obj(value);
+  const workflowProfile = optional(h.workflowProfile, v => str(v, 10));
+  if (workflowProfile !== undefined && !['general', 'study'].includes(workflowProfile))
+    throw Error('Perfil do registro de foco inválido.');
   return {
     id: identifier(h.id),
     taskId: identifier(h.taskId),
@@ -177,6 +182,7 @@ function readHistory(value: unknown): HistoryEntry {
     at: num(h.at),
     sliceIds: list(h.sliceIds, 1000).map(identifier),
     cycleId: optional(h.cycleId, v => str(v, 120)),
+    workflowProfile: workflowProfile as HistoryEntry['workflowProfile'],
   };
 }
 
@@ -240,7 +246,8 @@ export function makeBackup(
       history: data.history,
       weeklyPlans: data.weeklyPlans,
       dayClosures: data.dayClosures ?? [],
-      workflow: data.workflow ?? { profile: 'general', goal: '' },
+      workflow: normalizeWorkflowSettings(data.workflow),
+      studyReviews: data.studyReviews ?? [],
       breakPreferences: data.breakPreferences,
       wipLimits: data.wipLimits,
       breakDurations: data.breakDurations,
@@ -282,15 +289,21 @@ export function parseBackup(text: string, includeFiles = false): Backup {
       dayClosures: uniqueIds(list(d.dayClosures ?? [], 50_000).map(readDayClosure)),
       workflow:
         d.workflow === undefined
-          ? workflowContext()
+          ? normalizeWorkflowSettings()
           : (() => {
               const settings = obj(d.workflow);
               if (!['general', 'study'].includes(String(settings.profile))) throw Error('Perfil de uso inválido.');
-              return workflowContext({
+              const dailyGoalMinutes = optional(settings.dailyGoalMinutes, v => num(v, 15, 720));
+              if (dailyGoalMinutes !== undefined && !Number.isInteger(dailyGoalMinutes))
+                throw Error('Meta diária de estudo inválida.');
+              return normalizeWorkflowSettings({
                 profile: settings.profile as 'general' | 'study',
                 goal: str(settings.goal, 500),
+                examDate: optional(settings.examDate, date),
+                dailyGoalMinutes,
               });
             })(),
+      studyReviews: uniqueIds(list(d.studyReviews ?? [], 50_000).map(readStudyReview)),
       breakPreferences: list(d.breakPreferences, 100).map(v => str(v, 80)),
       areas: [
         ...new Set(
@@ -314,7 +327,31 @@ export function parseBackup(text: string, includeFiles = false): Backup {
   if (backup.data.history.some(entry => !taskIds.has(entry.taskId))) {
     throw Error('O backup contém eventos vinculados a tarefas ausentes.');
   }
+  if (backup.data.studyReviews.some(review => !taskIds.has(review.taskId)))
+    throw Error('O backup contém revisões vinculadas a tarefas ausentes.');
   return backup;
+}
+
+function readStudyReview(value: unknown): StudyReview {
+  const review = obj(value);
+  const rating = optional(review.lastRating, v => str(v, 10));
+  if (rating !== undefined && !['again', 'hard', 'good', 'easy'].includes(rating))
+    throw Error('Avaliação de revisão inválida.');
+  const dueDate = date(review.dueDate);
+  const intervalDays = num(review.intervalDays, 1, 90);
+  const repetitions = num(review.repetitions, 0, 100_000);
+  if (!dueDate || !Number.isInteger(intervalDays) || !Number.isInteger(repetitions))
+    throw Error('Agendamento de revisão inválido.');
+  return {
+    id: identifier(review.id),
+    taskId: identifier(review.taskId),
+    dueDate,
+    intervalDays,
+    repetitions,
+    lastRating: rating as StudyReview['lastRating'],
+    lastRecall: optional(review.lastRecall, v => str(v, 2000)),
+    lastReviewedAt: optional(review.lastReviewedAt, v => num(v)),
+  };
 }
 
 function readDomain(value: unknown): string {
@@ -355,6 +392,14 @@ export function mergeBackup(current: Backup, incoming: Backup): Backup {
             ![...closure.completedTaskIds, ...closure.decisions.map(item => item.taskId)].some(taskId =>
               localTasks.has(taskId),
             ),
+        ),
+      ],
+      studyReviews: [
+        ...current.data.studyReviews,
+        ...incoming.data.studyReviews.filter(
+          review =>
+            !localTasks.has(review.taskId) &&
+            !current.data.studyReviews.some(local => local.taskId === review.taskId || local.id === review.id),
         ),
       ],
       areas: [...new Set([...current.data.areas, ...incoming.data.areas])],

@@ -22,7 +22,6 @@ import {
   selectAIModel,
   toggleAIModel,
   nextAIChoice,
-  savedAIChoices,
   emptyAISettings,
   AI_PROVIDERS,
   type AISettings,
@@ -33,7 +32,14 @@ import AttachmentPreview, { type AttachmentInfo } from './AttachmentPreview';
 import FocusTaskMaterials from './FocusTaskMaterials';
 import DailyPlan from './DailyPlan';
 import WorkflowSettings from './WorkflowSettings';
-import { workflowContext, type WorkflowSettings as WorkflowPreferences } from './workflowProfiles';
+import {
+  normalizeWorkflowSettings,
+  workflowContext,
+  workflowProfiles,
+  type WorkflowSettings as WorkflowPreferences,
+} from './workflowProfiles';
+import StudyDashboard from './StudyDashboard';
+import { ensureStudyReview, rateStudyReview, type RecallRating, type StudyReview } from './studyMode';
 import FirstTaskGuide from './FirstTaskGuide';
 import DayClosing from './DayClosing';
 import { closeDay, type DayClosure } from './dayClosure';
@@ -56,6 +62,7 @@ import Connections from './Connections';
 import SupportPix from './SupportPix';
 import Statistics from './Statistics';
 import NumberStepper from './NumberStepper';
+import AutoGrowTextarea from './AutoGrowTextarea';
 import TaskScheduleEditor from './TaskScheduleEditor';
 import { saveTaskSchedule } from './taskScheduling';
 import { GuidedTour, type TourStep } from './guidedTour';
@@ -125,6 +132,7 @@ type Session = {
   pauseEndsAt?: number;
   warnedMinutes?: number[];
   postFocusCompleted?: boolean;
+  studyReview?: boolean;
 };
 export type HistoryEntry = {
   id: string;
@@ -134,6 +142,7 @@ export type HistoryEntry = {
   at: number;
   sliceIds: string[];
   cycleId?: string;
+  workflowProfile?: WorkflowPreferences['profile'];
 };
 type Proposal = {
   name: string;
@@ -164,6 +173,7 @@ export type Data = {
   areas: string[];
   dayClosures: DayClosure[];
   workflow: WorkflowPreferences;
+  studyReviews: StudyReview[];
 };
 const columns: { id: Column; label: string }[] = [
   { id: 'todo', label: 'A fazer' },
@@ -181,7 +191,8 @@ const initial: Data = {
   breakDurations: { short: 5, long: 15 },
   areas: ['Programação', 'Estudo', 'Escrita', 'Organização'],
   dayClosures: [],
-  workflow: { profile: 'general', goal: '' },
+  workflow: { profile: 'general', goal: '', dailyGoalMinutes: 120, examDate: '' },
+  studyReviews: [],
 };
 const id = () =>
   typeof crypto !== 'undefined' && crypto.randomUUID
@@ -227,12 +238,12 @@ const tourSteps: TourStep[] = [
   {
     selector: '#tour-tools',
     title: 'Organize seu ambiente',
-    description: 'Filtre por área, ajuste o bloqueio de sites no Modo foco e programe tarefas semanais.',
+    description: 'Abra Opções do quadro para filtrar por área, ajustar o bloqueio de sites e ver as rotinas.',
   },
   {
     selector: '#tour-header-tools',
     title: 'Volte quando precisar',
-    description: 'Abra a bolha do cronômetro, consulte Connections e configure pausas, IA e o quadro em Preferências.',
+    description: 'No menu Mais você encontra a bolha, Connections, preferências, tutorial e apoio.',
   },
 ];
 const tourStorage = {
@@ -308,7 +319,8 @@ function App() {
   const [showSupport, setShowSupport] = useState(false);
   const [settingsTab, setSettingsTab] = useState<'breaks' | 'board' | 'ai' | 'data'>('breaks');
   const [showFocusMode, setShowFocusMode] = useState(false);
-  const [headerTab, setHeaderTab] = useState(0);
+  const [moduleSelectorOpen, setModuleSelectorOpen] = useState(false);
+  const moduleSelectorRef = useRef<HTMLDivElement>(null);
   const [wipHelp, setWipHelp] = useState(false);
   const [creatingArea, setCreatingArea] = useState(false);
   const [importPreview, setImportPreview] = useState<Backup | null>(null);
@@ -346,6 +358,7 @@ function App() {
     kind: 'delete' | 'archive';
     task: Task;
     history: HistoryEntry[];
+    studyReviews?: StudyReview[];
     message: string;
   } | null>(null);
   const [view, setView] = useState<ViewMode>('today');
@@ -371,6 +384,7 @@ function App() {
         'areas',
         'dayClosures',
         'workflow',
+        'studyReviews',
         'firstTaskId',
         'firstTaskDismissed',
       ])
@@ -381,7 +395,8 @@ function App() {
         setData({
           tasks: generated.tasks,
           dayClosures: (stored.dayClosures as DayClosure[] | undefined) ?? [],
-          workflow: workflowContext(stored.workflow as WorkflowPreferences | undefined),
+          workflow: normalizeWorkflowSettings(stored.workflow as WorkflowPreferences | undefined),
+          studyReviews: (stored.studyReviews as StudyReview[] | undefined) ?? [],
           weeklyPlans: generated.plans,
           session: (stored.session as Session | undefined) ?? null,
           history: (stored.history as HistoryEntry[] | undefined) ?? [],
@@ -517,6 +532,23 @@ function App() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [ready, proposal, selectedTask, showSettings, showConnections, showBubbleSettings]);
+  useEffect(() => {
+    if (!moduleSelectorOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !moduleSelectorRef.current?.contains(event.target)) {
+        setModuleSelectorOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setModuleSelectorOpen(false);
+    };
+    window.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [moduleSelectorOpen]);
   useEffect(() => {
     if (!stepNotice) return;
     const timeout = window.setTimeout(() => setStepNotice(''), 10_000);
@@ -885,12 +917,14 @@ function App() {
       kind: 'delete',
       task: item,
       history: latestData.current.history.filter(entry => entry.taskId === item.id),
+      studyReviews: latestData.current.studyReviews.filter(review => review.taskId === item.id),
       message,
     });
     update(old => ({
       ...old,
       tasks: old.tasks.filter(task => task.id !== item.id),
       history: old.history.filter(entry => entry.taskId !== item.id),
+      studyReviews: old.studyReviews.filter(review => review.taskId !== item.id),
     }));
     setSelectedTask(null);
     setToast(message);
@@ -913,6 +947,13 @@ function App() {
         history: [
           ...old.history,
           ...undo.history.filter(entry => !old.history.some(existing => existing.id === entry.id)),
+        ],
+        studyReviews: [
+          ...old.studyReviews,
+          ...(undo.studyReviews ?? []).filter(
+            review =>
+              !old.studyReviews.some(existing => existing.id === review.id || existing.taskId === review.taskId),
+          ),
         ],
       }));
     setUndo(null);
@@ -1235,6 +1276,7 @@ function App() {
     steps: Array<{ taskId: string; minutes: number }>,
     item?: Task,
     resumeIds?: string[] | null,
+    studyReview = false,
   ) {
     const focusScope = resumeIds === null ? 'whole' : resumeIds ? 'slices' : scope;
     const focusSlices = resumeIds ?? selectedSlices;
@@ -1251,7 +1293,10 @@ function App() {
       steps.some(
         step =>
           !data.tasks.some(
-            task => task.id === step.taskId && !task.archivedAt && ['todo', 'doing', 'late'].includes(task.column),
+            task =>
+              task.id === step.taskId &&
+              !task.archivedAt &&
+              (studyReview || ['todo', 'doing', 'late'].includes(task.column)),
           ),
       )
     )
@@ -1259,7 +1304,9 @@ function App() {
     const t = Date.now();
     update(old => ({
       ...old,
-      tasks: old.tasks.map(x => (steps.some(step => step.taskId === x.id) ? { ...x, column: 'doing' } : x)),
+      tasks: old.tasks.map(x =>
+        steps.some(step => step.taskId === x.id) && !studyReview ? { ...x, column: 'doing' } : x,
+      ),
       session: {
         taskId: steps[0].taskId,
         phase: 'running',
@@ -1282,6 +1329,7 @@ function App() {
         breakType: '',
         creditedSeconds: 0,
         excludedSeconds: 0,
+        studyReview,
       },
     }));
     setCycleSelection([]);
@@ -1301,6 +1349,7 @@ function App() {
       at: Date.now(),
       sliceIds: s.selectedSliceIds,
       cycleId: s.steps ? String(s.startedAt) : undefined,
+      workflowProfile: old.workflow.profile,
     };
     return {
       ...old,
@@ -1410,14 +1459,17 @@ function App() {
     );
     update(old => {
       const credited = credit(old, kind);
+      const studyReview = active.studyReview === true;
       const tasks = credited.tasks.map(t => {
         if (t.id !== active.taskId) return t;
         const slices =
-          kind === 'completed' && active.scope === 'slices'
+          kind === 'completed' && !studyReview && active.scope === 'slices'
             ? t.slices.map(s => (active.selectedSliceIds.includes(s.id) ? { ...s, done: true } : s))
             : t.slices;
         const done =
-          kind === 'completed' && (active.scope === 'whole' || (slices.length > 0 && slices.every(s => s.done)));
+          !studyReview &&
+          kind === 'completed' &&
+          (active.scope === 'whole' || (slices.length > 0 && slices.every(s => s.done)));
         return {
           ...t,
           ...(kind === 'interrupted'
@@ -1431,8 +1483,14 @@ function App() {
             : {}),
           slices,
           completedAt: done ? Date.now() : t.completedAt,
-          column: kind === 'failed' ? ('late' as Column) : done ? ('done' as Column) : t.column,
-          failures: t.failures + (kind === 'failed' ? 1 : 0),
+          column: studyReview
+            ? t.column
+            : kind === 'failed'
+              ? ('late' as Column)
+              : done
+                ? ('done' as Column)
+                : t.column,
+          failures: t.failures + (kind === 'failed' && !studyReview ? 1 : 0),
         };
       });
       const completion =
@@ -1449,6 +1507,7 @@ function App() {
                   at: Date.now(),
                   sliceIds: [],
                   cycleId: String(active.startedAt),
+                  workflowProfile: old.workflow.profile,
                 },
               ],
             }
@@ -1456,6 +1515,10 @@ function App() {
       return {
         ...completion,
         tasks,
+        studyReviews:
+          old.workflow.profile === 'study' && kind === 'completed'
+            ? ensureStudyReview(old.studyReviews, active.taskId, localDay(new Date()), id)
+            : old.studyReviews,
         session:
           kind === 'completed' || kind === 'failed'
             ? {
@@ -1467,6 +1530,24 @@ function App() {
             : null,
       };
     });
+  }
+  function startStudyReview(item: Task) {
+    startFocusTasks([{ taskId: item.id, minutes: Math.min(25, item.estimate) }], item, null, true);
+  }
+  function recordStudyRecall(reviewId: string, rating: RecallRating, recall: string) {
+    update(old => ({
+      ...old,
+      studyReviews: rateStudyReview(old.studyReviews, reviewId, rating, recall, localDay(new Date()), Date.now()),
+    }));
+    const label =
+      rating === 'again'
+        ? 'amanhã'
+        : rating === 'hard'
+          ? 'em breve'
+          : rating === 'good'
+            ? 'em alguns dias'
+            : 'na próxima semana';
+    setToast(`Lembrança registrada. Este tópico volta ${label}.`);
   }
   function startBreak() {
     if (!active) return;
@@ -1497,50 +1578,109 @@ function App() {
             <span className="brand-doro">Doro</span>
           </h1>
           <p>Organize a tarefa. Dê tempo ao que importa.</p>
+          <div className="module-selector-wrap" ref={moduleSelectorRef}>
+            <button
+              type="button"
+              className="module-selector-trigger"
+              aria-expanded={moduleSelectorOpen}
+              aria-haspopup="dialog"
+              onClick={() => setModuleSelectorOpen(open => !open)}
+            >
+              <span>Módulo</span>
+              <strong>{data.workflow.profile === 'study' ? 'Estudo' : 'Geral'}</strong>
+              <span aria-hidden="true">⌄</span>
+            </button>
+            {moduleSelectorOpen && (
+              <section className="module-selector-menu" role="dialog" aria-label="Escolher módulo">
+                <span className="eyebrow">COMO VOCÊ VAI USAR O QUADRO?</span>
+                <p>O módulo ajusta a tela de hoje e as sugestões ao seu objetivo.</p>
+                {workflowProfiles.map(profile => (
+                  <button
+                    type="button"
+                    key={profile.id}
+                    aria-pressed={data.workflow.profile === profile.id}
+                    onClick={() => {
+                      if (data.workflow.profile !== profile.id) {
+                        update(old => ({
+                          ...old,
+                          workflow: normalizeWorkflowSettings({ ...old.workflow, profile: profile.id }),
+                        }));
+                        setToast(`Módulo ${profile.label} ativado.`);
+                      }
+                      setModuleSelectorOpen(false);
+                    }}
+                  >
+                    <strong>{profile.label}</strong>
+                    <span>{profile.description}</span>
+                    {data.workflow.profile === profile.id && <span className="module-selected">Ativo</span>}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className="module-selector-settings"
+                  onClick={() => {
+                    setModuleSelectorOpen(false);
+                    setSettingsTab('board');
+                    setShowSettings(true);
+                  }}
+                >
+                  Ajustar objetivo e metas nas Preferências
+                </button>
+              </section>
+            )}
+          </div>
         </div>
         <div className="header-actions">
-          <div
-            className="header-nav slide-tabs"
-            id="tour-header-tools"
-            aria-label="Ferramentas"
-            style={{ '--tab-count': 3, '--active-index': headerTab } as React.CSSProperties}
-          >
-            <button
-              onClick={() => {
-                setHeaderTab(0);
-                setShowBubbleSettings(true);
-              }}
-            >
-              Bolha
-            </button>
-            <button
-              onClick={() => {
-                setHeaderTab(1);
-                setShowConnections(true);
-              }}
-            >
-              Connections
-            </button>
-            <button
-              onClick={() => {
-                setHeaderTab(2);
-                setSettingsTab('breaks');
-                setShowSettings(true);
-              }}
-            >
-              Preferências
-            </button>
+          <div className="status">
+            <span>{active ? '● Foco em andamento' : '○ Pronto para focar'}</span>
+            <small>◷ {todayCycles} hoje</small>
           </div>
-          <button className="tour-launch" aria-label="Abrir tutorial" title="Rever o tutorial" onClick={startTutorial}>
-            ?
-          </button>
-          <button className="support-launch" onClick={() => setShowSupport(true)}>
-            ♥ Apoiar
-          </button>
-          <span className="pomodoro-count" title="Ciclos de foco concluídos hoje">
-            ◷ {todayCycles} hoje
-          </span>
-          <div className="status">{active ? '● Ciclo ativo' : '○ Pronto para começar'}</div>
+          <details className="header-menu" id="tour-header-tools">
+            <summary>Mais</summary>
+            <div className="header-menu-panel" aria-label="Mais opções">
+              <button
+                onClick={event => {
+                  event.currentTarget.closest('details')?.removeAttribute('open');
+                  setShowBubbleSettings(true);
+                }}
+              >
+                Ajustar bolha do cronômetro
+              </button>
+              <button
+                onClick={event => {
+                  event.currentTarget.closest('details')?.removeAttribute('open');
+                  setShowConnections(true);
+                }}
+              >
+                Connections
+              </button>
+              <button
+                onClick={event => {
+                  event.currentTarget.closest('details')?.removeAttribute('open');
+                  setSettingsTab('breaks');
+                  setShowSettings(true);
+                }}
+              >
+                Preferências
+              </button>
+              <button
+                onClick={event => {
+                  event.currentTarget.closest('details')?.removeAttribute('open');
+                  startTutorial();
+                }}
+              >
+                Ver tutorial
+              </button>
+              <button
+                onClick={event => {
+                  event.currentTarget.closest('details')?.removeAttribute('open');
+                  setShowSupport(true);
+                }}
+              >
+                Apoiar o projeto
+              </button>
+            </div>
+          </details>
         </div>
       </header>
       {error && (
@@ -2023,7 +2163,8 @@ function App() {
         </div>
       )}
       <form className="create" id="tour-create" onSubmit={addTask}>
-        <input
+        <AutoGrowTextarea
+          className="next-task-input"
           aria-label="Nome da tarefa"
           placeholder="Qual é a próxima tarefa?"
           value={name}
@@ -2033,9 +2174,10 @@ function App() {
             if (value.trim()) openManualDraft(value);
           }}
           onKeyDown={e => {
-            if (e.key === 'Enter' && e.ctrlKey) {
+            if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
-              void requestProposal();
+              if (e.ctrlKey || e.metaKey) void requestProposal();
+              else openManualDraft(name);
             }
           }}
         />
@@ -2048,30 +2190,16 @@ function App() {
             disabled={aiBusy || !name.trim()}
             onClick={() => void requestProposal()}
           >
-            <AIIcon /> {aiBusy ? 'Consultando…' : 'Propor com IA'}
+            <AIIcon /> {aiBusy ? 'Consultando…' : 'Criar com IA'}
           </button>
-          <button
-            className="ai-model-switch"
-            type="button"
-            disabled={aiBusy}
-            onClick={cycleAIChoice}
-            title={
-              savedAIChoices(aiSettings).length > 1
-                ? `Alternar modelo · atual: ${aiSettings.provider} / ${aiSettings.model}`
-                : 'Configurar modelos de IA'
-            }
-            aria-label={
-              savedAIChoices(aiSettings).length > 1
-                ? `Alternar modelo de IA; atual ${aiSettings.provider} ${aiSettings.model}`
-                : 'Configurar modelos de IA'
-            }
+          <span
+            className="ai-active-label"
+            title={aiSettings.model ? `Modelo atual: ${aiSettings.model}` : 'Configure a IA em Preferências → IA'}
+            aria-live="polite"
           >
-            <AIIcon />
-          </button>
-          <span className="ai-active-label" aria-live="polite">
             {aiSettings.model
-              ? `${AI_PROVIDERS[aiSettings.provider as Exclude<AIProvider, ''>]} · ${aiSettings.model}`
-              : 'IA sem modelo ativo'}
+              ? `IA · ${AI_PROVIDERS[aiSettings.provider as Exclude<AIProvider, ''>]}`
+              : 'IA não configurada'}
           </span>
         </div>
       </form>
@@ -2144,7 +2272,7 @@ function App() {
               <div className="proposal-pane">
                 <label>
                   Nome{' '}
-                  <input
+                  <AutoGrowTextarea
                     autoFocus
                     className="task-name"
                     value={proposal.name}
@@ -2153,7 +2281,7 @@ function App() {
                       setProposal({ ...proposal, name: e.target.value });
                     }}
                     onKeyDown={e => {
-                      if (e.key === 'Enter' && e.ctrlKey) {
+                      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                         e.preventDefault();
                         proposeFromDraft();
                       }
@@ -3075,32 +3203,48 @@ function App() {
             ))}
           </div>
         </div>
-        <div className="board-tools" id="tour-tools">
-          {!showStatistics && (
-            <label className="skill-filter">
-              Área{' '}
-              <select
-                aria-label="Filtrar por habilidade ou área"
-                value={skillFilter}
-                onChange={event => setSkillFilter(event.target.value)}
-              >
-                <option value="">Todas as áreas</option>
-                {skills.map(skill => (
-                  <option value={skill} key={skill}>
-                    {skill}
-                  </option>
-                ))}
-                <option value="__without_skill__">Sem área</option>
-              </select>
-            </label>
-          )}
-          <button className="focus-toggle" onClick={() => setShowFocusMode(true)}>
-            ◷ Modo foco
-          </button>
-          <button className="weekly-toggle" aria-expanded={weeklyOpen} onClick={() => setWeeklyOpen(open => !open)}>
-            ↻ Rotinas semanais
-          </button>
-        </div>
+        <details className="board-tools-menu" id="tour-tools">
+          <summary>Opções do quadro</summary>
+          <div className="board-tools-panel">
+            {!showStatistics && (
+              <label className="skill-filter">
+                <span>Filtrar por área</span>
+                <select
+                  aria-label="Filtrar por habilidade ou área"
+                  value={skillFilter}
+                  onChange={event => setSkillFilter(event.target.value)}
+                >
+                  <option value="">Todas as áreas</option>
+                  {skills.map(skill => (
+                    <option value={skill} key={skill}>
+                      {skill}
+                    </option>
+                  ))}
+                  <option value="__without_skill__">Sem área</option>
+                </select>
+              </label>
+            )}
+            <button
+              className="focus-toggle"
+              onClick={event => {
+                event.currentTarget.closest('details')?.removeAttribute('open');
+                setShowFocusMode(true);
+              }}
+            >
+              Bloqueio durante o foco
+            </button>
+            <button
+              className="weekly-toggle"
+              aria-expanded={weeklyOpen}
+              onClick={event => {
+                event.currentTarget.closest('details')?.removeAttribute('open');
+                setWeeklyOpen(open => !open);
+              }}
+            >
+              {weeklyOpen ? 'Fechar rotinas' : 'Rotinas semanais'}
+            </button>
+          </div>
+        </details>
       </nav>
       {!showStatistics && view === 'today' && (
         <div className="day-close-access">
@@ -3141,6 +3285,19 @@ function App() {
             setCycleMinutes(Object.fromEntries(tasks.map(task => [task.id, task.estimate])));
             setToast('Plano levado ao ciclo. Ajuste os minutos reservados antes de iniciar.');
           }}
+        />
+      )}
+      {!showStatistics && view === 'today' && data.workflow.profile === 'study' && (
+        <StudyDashboard
+          tasks={data.tasks}
+          history={data.history}
+          reviews={data.studyReviews}
+          today={today}
+          goalMinutes={data.workflow.dailyGoalMinutes ?? 120}
+          examDate={data.workflow.examDate}
+          active={!!active}
+          onStartReview={startStudyReview}
+          onRate={recordStudyRecall}
         />
       )}
       {!!cycleSelection.length && !showStatistics && view !== 'archive' && (
@@ -3475,7 +3632,7 @@ function App() {
               ✕
             </button>
             <span className="eyebrow">DETALHES DA TAREFA</span>
-            <input
+            <AutoGrowTextarea
               className="task-name"
               aria-label="Nome"
               value={task.name}

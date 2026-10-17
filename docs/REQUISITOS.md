@@ -13,7 +13,6 @@ Este documento é vivo. Uma solução melhor pode substituir a regra anterior de
 - Preferências → Dados oferece exportação local em JSON versionado e importação com validação e prévia. O arquivo inclui tarefas, histórico, rotinas e preferências, mas exclui chaves de IA, tokens Google e sessão ativa. Importar exige encerrar a sessão, baixar e confirmar uma cópia atual do quadro antes de gravar. Mesclar por ID mantém a tarefa local e descarta eventos importados ligados a IDs de tarefa colidentes; substituir exige confirmação adicional.
 - O modal manual e o de proposta permitem tarefa única, dias selecionados somente na semana da data inicial ou recorrência nos mesmos dias de todas as semanas. Ao abrir o quadro em um dia agendado, gerar uma ocorrência independente no máximo uma vez naquele dia; excluir uma ocorrência não a recria. Dias com a extensão fechada não são preenchidos retroativamente. Excluir a programação preserva ocorrências passadas.
 
-
 ## Plano para hoje e materiais no foco
 
 - Motivação: filtrar conclusões do dia não define prioridades; anexar resultados aos slices exigia sair do foco e procurar a tarefa e a etapa nos detalhes.
@@ -32,15 +31,14 @@ Este documento é vivo. Uma solução melhor pode substituir a regra anterior de
 - Um aviso por fonte, data e horário; concluir, arquivar ou apagar a ocorrência a silencia. Editar o horário substitui o próximo aviso. Não existe preenchimento retroativo: ao reabrir o navegador, apenas lembretes do dia atual podem aparecer. Horário local do navegador; sistema suspenso, navegador fechado ou notificações desativadas podem impedir entrega pontual.
 - Avisos de prazo às 9h permanecem independentes dos lembretes de execução, pois prazo e horário planejado têm significados diferentes.
 
-
 ## Continuidade e perfis (16/10/2026)
 
 - Ponto de retomada na tarefa: etapa de referência, onde parou, próximo passo e data. Editável no foco e nos materiais; interrupção salva referência automaticamente. Tarefas concluídas/arquivadas não aparecem como sugestão de retomada. Etapas removidas/concluídas usam a próxima pendente como fallback.
 - Fechamento por dia do plano com decisões obrigatórias para todas as pendências: dia seguinte, fila ou manter. Bloqueado durante sessão/pausa, sem transferência automática nem duplicação de tarefas. Preservar o resumo local e permitir consultá-lo separado do estado atual do quadro.
 - Notificação abre tarefa/ocorrência específica e oferece abrir para confirmar foco ou adiar dez minutos. Persistir e reconciliar adiamentos; conclusão/arquivo/exclusão ou alteração da programação invalida os destinos correspondentes. Preservar o ciclo ativo e permitir reabrir o mesmo destino em outra notificação.
 - Primeiro uso acompanha uma tarefa real até planejamento, registro de foco e resultado/próximo passo. Pode ser dispensado e reiniciado, sem dados de exemplo.
-- Perfis declarativos compartilham um núcleo. Geral e Estudo · base têm IDs validados; objetivo opcional limitado a 500 caracteres. Estudo orienta propostas e análise de etapas, sem modificar tarefas existentes ou enviar dados ao selecionar o perfil. Não altera o contrato privado de agregados da revisão semanal.
-- JSON/ZIP preservam retomada, fechamentos e perfil, com padrões para backups antigos. Mesclar preserva o perfil local e ignora resumos importados que possam atribuir tarefas com IDs colidentes ao histórico local.
+- Perfis declarativos compartilham um núcleo. Geral e Estudo têm IDs validados; Estudo acompanha objetivo, data da prova, meta diária, foco por matéria e revisões com recuperação ativa e intervalos adaptativos. Avaliações e meta são locais; apenas perfil e objetivo vão nos pedidos explícitos de IA.
+- JSON/ZIP preservam retomada, fechamentos, configurações de estudo e revisões, com padrões para backups antigos. Mesclar preserva o perfil local e evita atribuir revisões importadas a tarefas locais com IDs colidentes.
 - Detalhes e plano de adaptadores futuros, incluindo limites atuais da API NotebookLM Enterprise: [WORKFLOW_PROFILES.md](WORKFLOW_PROFILES.md).
 
 ## Sessões

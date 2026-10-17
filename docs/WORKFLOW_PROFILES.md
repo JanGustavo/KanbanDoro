@@ -30,14 +30,16 @@ Em instalação vazia, o guia acompanha criar uma tarefa, planejar, registrar te
 
 ## Base de perfis, sem versões separadas
 
-O núcleo continua único: tarefas, etapas, áreas, ciclos, continuidade e backups. `src/workflowProfiles.ts` define um catálogo declarativo de perfis conhecidos. `WorkflowSettings` permite escolher um perfil e um objetivo. O contrato validado pelo service worker é `{ profile, goal }`, com IDs conhecidos e limite de 500 caracteres para o objetivo. Perfis desconhecidos não executam código nem inserem instruções de sistema arbitrárias.
+O núcleo continua único: tarefas, etapas, áreas, ciclos, continuidade e backups. `src/workflowProfiles.ts` define perfis declarativos conhecidos. O contrato enviado à IA continua restrito a perfil e objetivo; a meta, a data da prova e as revisões são dados locais. Perfis desconhecidos não executam código nem inserem instruções de sistema arbitrárias.
 
 - **Geral:** mantém o planejamento habitual.
-- **Estudo · base:** acrescenta contexto de estudo aos pedidos explícitos de proposta e análise de etapas, orientando compreensão, prática e revisão quando pertinentes. Permite adicionar áreas como Direito Penal, Administrativo e Constitucional, sem substituir áreas existentes. O pedido específico do usuário prevalece.
+- **Estudo:** mantém o mesmo quadro, mas dá uma unidade útil ao estudo: uma área representa a matéria, uma tarefa representa o tópico, e as etapas dividem esse tópico. Define uma meta diária de foco e uma data de prova opcional; o painel de hoje mostra tempo realizado, revisões vencidas e as próximas revisões. O objetivo também contextualiza propostas da IA, sem classificar tarefas por conta própria.
 
-O perfil é global e opcional. Alterá-lo não reclassifica tarefas antigas, muda cronômetros ou envia dados à IA. Perfil e objetivo acompanham apenas a proposta de tarefa e a análise de etapas solicitadas; não são acrescentados à revisão semanal, que preserva seu contrato de agregados. As preferências e o ponto de retomada entram nos backups JSON e ZIP com valores padrão para arquivos antigos.
+Quando um bloco de foco é concluído no perfil de estudo, um tópico novo recebe uma revisão inicial para o dia seguinte. Na revisão, o estudante tenta explicar o assunto sem consultar o material e marca se não lembrou, lembrou com esforço, lembrou ou foi fácil. A resposta fica no navegador; a escolha ajusta o próximo intervalo. É possível revisar uma tarefa concluída em um novo bloco de até 25 minutos sem reabri-la no quadro nem alterar seu estado. O painel mostra os minutos por matéria dos últimos sete dias; só contabiliza blocos registrados no perfil Estudo. As revisões e preferências entram nos backups JSON e ZIP, com valores padrão para arquivos antigos.
 
-Esta base ainda não oferece currículo por edital, banco de questões, revisões espaçadas, perfis baixados da internet ou um gerenciador de plugins. O caminho proposto para expandir é adicionar perfis versionados no catálogo, validar o contrato correspondente no worker e oferecer sugestões revisáveis. “Skills” de estudo podem ser estratégias declarativas como leitura, questões e revisão, mantendo separadas as informações da tarefa e as instruções do aplicativo. Novas permissões e conexões pertencem a adaptadores explícitos, não ao simples ato de trocar de perfil.
+O perfil pode ser ligado ou desligado sem apagar ou reclassificar tarefas. Meta diária, data da prova e avaliações não são enviadas à IA. O perfil e o objetivo só entram em pedidos que o usuário inicia, como proposta de tarefa e análise de etapas. A meta padrão é 120 minutos e pode ser ajustada entre 15 e 720 minutos.
+
+A 1.0 não depende de currículo de edital, banco de questões ou integração com serviços externos. Eles ampliariam o produto, mas não são necessários para o ciclo inicial de planejar, estudar, registrar o que foi aprendido e voltar ao tópico no intervalo escolhido. Novas integrações exigem adaptadores explícitos; não são ativadas pela troca de perfil.
 
 ## Integrações futuras e NotebookLM
 

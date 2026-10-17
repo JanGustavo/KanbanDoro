@@ -97,13 +97,11 @@ export function weeklyAIPayload(review: ReturnType<typeof weeklyReview>, previou
     week: value.week,
     completed: value.completed.length,
     focusMinutes: Math.round(value.focusSeconds / 60),
-    areas: value.areas
-      .slice(0, 50)
-      .map(area => ({
-        ...area,
-        plannedMinutes: Math.round(area.plannedMinutes),
-        actualMinutes: Math.round(area.actualMinutes),
-      })),
+    areas: value.areas.slice(0, 50).map(area => ({
+      ...area,
+      plannedMinutes: Math.round(area.plannedMinutes),
+      actualMinutes: Math.round(area.actualMinutes),
+    })),
   });
   return {
     current: compact(review),

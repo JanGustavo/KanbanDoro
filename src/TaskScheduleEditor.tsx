@@ -22,10 +22,10 @@ export default function TaskScheduleEditor({
   });
   const [message, setMessage] = useState('');
   return (
-    <fieldset className="schedule-choice">
+    <fieldset className="schedule-choice task-schedule-editor">
       <legend>Recorrência e lembrete</legend>
-      <label>
-        Repetição{' '}
+      <label className="schedule-field">
+        <span>Repetição</span>
         <select
           value={choice.mode}
           onChange={e => {
@@ -39,8 +39,8 @@ export default function TaskScheduleEditor({
         </select>
       </label>
       {(choice.mode !== 'once' || choice.reminderTime) && (
-        <label>
-          {choice.mode === 'once' ? 'Dia do lembrete' : 'Começar em'}{' '}
+        <label className="schedule-field">
+          <span>{choice.mode === 'once' ? 'Dia do lembrete' : 'Começar em'}</span>
           <input
             type="date"
             value={choice.startDate}
@@ -49,7 +49,7 @@ export default function TaskScheduleEditor({
         </label>
       )}
       {choice.mode !== 'once' && (
-        <div className="weekdays" role="group" aria-label="Dias de repetição da tarefa">
+        <div className="weekdays schedule-weekdays" role="group" aria-label="Dias de repetição da tarefa">
           {days.map((day, index) => (
             <label key={day}>
               <input
@@ -69,33 +69,36 @@ export default function TaskScheduleEditor({
           ))}
         </div>
       )}
-      <label>
-        Horário do lembrete (opcional){' '}
+      <label className="schedule-field schedule-reminder-time">
+        <span>
+          Horário do lembrete <small>opcional</small>
+        </span>
         <input
           type="time"
           value={choice.reminderTime}
           onChange={e => setChoice(old => ({ ...old, reminderTime: e.target.value }))}
         />
       </label>
-      <p>
+      <p className="schedule-description">
         {choice.mode === 'weekly'
           ? 'Uma tarefa independente por dia escolhido, toda semana, até você parar a repetição.'
           : choice.mode === 'selected-days'
             ? 'Repete só até o domingo da semana escolhida.'
             : 'Sem novas ocorrências.'}
       </p>
-      <small>
+      <small className="schedule-note">
         Horário local do navegador. O lembrete funciona com o quadro fechado. Se o navegador estiver fechado, avisa ao
         reabrir no mesmo dia.
       </small>
       {plan && (
-        <p>
+        <p className="schedule-note schedule-current-plan">
           Salvar atualiza as próximas ocorrências com o nome, descrição, área, estimativa, links e slices atuais. O
           histórico e as outras tarefas já criadas são preservados. Escolha Uma vez para parar esta rotina.
         </p>
       )}
       <button
         type="button"
+        className="schedule-save"
         onClick={() => {
           if (choice.mode !== 'once' || choice.reminderTime) {
             const start = dateFromDay(choice.startDate);
@@ -122,9 +125,13 @@ export default function TaskScheduleEditor({
           setMessage('Programação salva.');
         }}
       >
-        Salvar programação
+        Salvar recorrência
       </button>
-      <p role="status">{message}</p>
+      {message && (
+        <p className="schedule-message" role="status">
+          {message}
+        </p>
+      )}
     </fieldset>
   );
 }
