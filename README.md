@@ -1,176 +1,88 @@
 <div align="center">
-  <img src="./public/icon.svg" alt="KanbanDoro Logo" width="128" height="128" />
+  <img src="./public/icon.svg" alt="Logo do KanbanDoro" width="96" height="96" />
+  <h1>KanbanDoro</h1>
+  <p><strong>Organize a tarefa. Dê tempo ao que importa.</strong></p>
+  <p>Kanban, ciclos de foco e assistência de IA em uma extensão para o navegador.</p>
+  <p>
+    <a href="https://github.com/JanGustavo/KanbanDoro/releases">Baixar extensão</a> ·
+    <a href="#comece-por-aqui">Como instalar</a> ·
+    <a href="./docs/GUIA-DE-USO.md">Guia de uso</a> ·
+    <a href="./docs/DESENVOLVIMENTO.md">Desenvolvimento</a>
+  </p>
 </div>
 
-# KanbanDoro
+![Quadro do KanbanDoro com tarefas organizadas nas quatro colunas](./docs/images/quadro.webp)
 
-Extensão Manifest V3 que reúne Kanban, ciclos de foco vinculados a tarefas e assistência de IA. Versão 0.9.0. Backup completo, revisão semanal e gerenciamento de áreas.
+> Capturas com tarefas de exemplo, geradas a partir da interface da versão 1.0.0 em uma execução com APIs do Chrome simuladas. As imagens não demonstram conexões com contas ou chamadas reais de IA.
 
-## Rodar o esqueleto
+## Por que usar?
 
-1. Execute `npm install` e `npm run build`.
-2. No Chrome/Chromium, abra `chrome://extensions`, habilite o modo de desenvolvedor e carregue a pasta `dist` como extensão sem compactação.
-3. Clique no ícone da extensão para abrir o quadro. Tarefas, rotinas, slices e sessões ficam em `chrome.storage.local` no próprio navegador.
+Transforme uma tarefa grande em etapas menores, escolha o próximo passo e reserve um tempo para executá-lo. Ao terminar, acompanhe o foco registrado e decida o que ajustar no próximo ciclo.
 
-Para copiar o quadro entre perfis ou guardar uma cópia, vá a **Preferências → Dados → Exportar ZIP completo**. O ZIP inclui os dados validados e os arquivos de tarefas e etapas, com um manifesto de integridade SHA-256; limites de 100 arquivos e 128 MB (10 MB por arquivo). A prévia mostra arquivos e tamanho descompactado, e dados ausentes ou corrompidos impedem a restauração. Os arquivos importados recebem novos IDs, sem sobrescrever arquivos locais. Se a gravação do quadro falhar, os novos arquivos são removidos. O JSON de até 16 MB continua disponível para dados textuais, sem arquivos binários. O arquivo versionado inclui tarefas, slices, histórico, rotinas, áreas personalizadas e preferências de quadro, pausa e bloqueio. Ele não inclui chaves de IA, credenciais Google ou sessão de foco ativa. A importação valida o JSON ou ZIP e mostra quantidades antes de gravar. Antes de **Mesclar** ou **Substituir**, baixe uma cópia do quadro atual e confirme que o arquivo foi salvo; se o quadro mudar, baixe outra cópia. **Mesclar** preserva a tarefa local quando o ID já existe e descarta eventos importados associados a esse ID, pois podem pertencer a outra tarefa; reúne as datas de ocorrência das rotinas. **Substituir** também pede confirmação. Encerre o foco ou a pausa antes de importar; o quadro recarrega após salvar.
+| Para…              | Você pode…                                                                             |
+| ------------------ | -------------------------------------------------------------------------------------- |
+| Organizar o dia    | Distribuir tarefas no Kanban e montar um plano em ordem de execução.                   |
+| Manter o foco      | Iniciar ciclos por tarefa ou por etapas, com pausas e bloqueio opcional de distrações. |
+| Retomar o trabalho | Guardar onde parou, o próximo passo, anotações e arquivos.                             |
+| Estudar            | Separar matérias e tópicos, definir uma meta diária e acompanhar revisões.             |
+| Planejar com IA    | Revisar propostas de tarefas e etapas antes de aceitar a criação.                      |
+| Entender seu ritmo | Consultar tempo de foco, conclusões e revisão semanal.                                 |
 
-Para validar alterações localmente, execute `npm ci` e `npm run validate` (ou `make validate`): compila, faz lint e executa os testes. `npm test` também funciona sem build anterior: prepara o script de conteúdo em `.test-dist` e testa o service worker diretamente em `public/background.js`. Os testes não modificam a pasta `dist` nem sua configuração OAuth. Sem variáveis de Connections, a validação compila com Connections desabilitadas; para usar a extensão com o servidor público, rode `npm run build:remote` após validar. PRs recebem a mesma validação automática no GitHub.
+## Comece por aqui
 
-Ao atualizar a extensão, recarregue também as abas que já estavam abertas. O botão **Mostrar bolha** tenta instalar o script na aba ativa, inclusive quando ela foi aberta antes da extensão. O navegador bloqueia scripts em páginas internas ou restritas. A instalação solicita acesso aos sites para exibir a bolha sobre eles.
+### 1. Instale a extensão
 
-**Implementado neste marco:** quadro local editável, slices, registro de foco, rotinas semanais, filtro por dia/semana, arquivo e exclusão de tarefas, uma sessão por vez, duas extensões com teto combinado de 50%, tentativa falha, interrupção e pausa com confirmação. O badge indica foco ativo, pausa ativa e vencimento. A bolha aparece nos sites permitidos e o aviso sonoro usa uma página offscreen. A criação assistida com Groq ou Gemini consulta modelos reais e abre um modal revisável; reescrever a proposta reapresenta o modal animado. **Ainda pendente:** ligação das tarefas/sessões do quadro à API, ajuda contextual da IA, voz local em tempo real e sincronização. A revisão semanal local já oferece análise opcional de IA após prévia e confirmação. As Connections já consultam o backend; as tarefas e sessões do quadro ainda ficam locais.
+1. Abra as [Releases](https://github.com/JanGustavo/KanbanDoro/releases) e baixe o ZIP da extensão na versão desejada.
+2. Extraia o ZIP em uma pasta que você pretende manter no computador.
+3. Abra `chrome://extensions` ou `brave://extensions` e ative o **Modo do desenvolvedor**.
+4. Clique em **Carregar sem compactação** e escolha a pasta que contém o `manifest.json`.
+5. Clique no ícone do KanbanDoro para abrir seu quadro.
 
-O aviso automático de prazo usa notificações locais às 9h do dia previsto, uma vez por tarefa e data. Se o navegador estiver fechado, a extensão avisa ao abrir dentro das 24 horas seguintes; não acumula avisos antigos. Tarefas concluídas ou arquivadas não notificam. O aviso não muda a coluna da tarefa.
+Prefere compilar? Veja [instalação a partir do código](./docs/GUIA-DE-USO.md#instalar-a-partir-do-código).
 
-Nos **Detalhes da tarefa → Recorrência e lembrete**, transforme uma tarefa existente em **Só na semana escolhida** ou **Toda semana (fixa)**, defina dias, data inicial e horário opcional e clique em **Salvar programação**. Fixa significa repetir continuamente. A conversão preserva a tarefa e seu histórico; salvar uma rotina atualiza os detalhes das próximas ocorrências. **Uma vez** encerra a repetição, mantendo as tarefas já criadas. Criação manual/assistida também oferece horário; tarefas únicas escolhem a data do lembrete.
+### 2. Crie sua primeira tarefa
 
-O lembrete usa o horário local do navegador e funciona com a aba do quadro fechada, inclusive para rotinas ainda sem ocorrência gerada. Clicar no aviso abre o quadro. Conclusão, arquivo ou exclusão da ocorrência silencia o aviso daquele dia. Se o navegador estiver fechado, avisa ao reabrir no mesmo dia; dias anteriores não acumulam avisos. O Chrome pode atrasar alarmes durante suspensão, e as notificações precisam estar habilitadas no sistema. O aviso de prazo às 9h continua separado do lembrete de execução. Os novos campos entram nos backups JSON e ZIP.
+Clique em **+ Criar tarefa**, dê um nome e defina uma estimativa. Se fizer sentido, adicione etapas, área, prazo ou recorrência. Você pode começar com uma tarefa simples e ajustar depois.
 
-Em **Modo foco**, acima do quadro, o modo sem distrações fica desligado por padrão. Essencial bloqueia algumas redes e jogos; Intenso amplia a lista; Meu perfil permite importar uma das listas e editá-la. É possível liberar domínios necessários ao trabalho. O bloqueio só vale para a navegação principal enquanto o ciclo está em foco, nunca nas pausas: uma tela escura aparece por cinco segundos e depois tenta abrir uma nova guia (ou uma guia vazia se o navegador impedir a navegação). Fechar o navegador, terminar o ciclo ou desligar o perfil libera os sites. O bloqueio é uma ferramenta de apoio, não um controle de acesso impossível de desativar. A extensão usa regras temporárias `declarativeNetRequest` e não envia o histórico de navegação a nenhum servidor; recomendações de tema escuro não alteram a aparência dos sites.
+<details>
+<summary>Ver a tela de criação</summary>
 
-No ciclo atual, cada etapa oferece **Anexar / anotar**. Concluir uma etapa abre seus materiais imediatamente, com anotações, entrada por voz e imagens/arquivos locais. O destino aparece no cabeçalho; os arquivos continuam disponíveis nos detalhes da tarefa e no backup ZIP. A tarefa inteira também tem um atalho de materiais. Esses controles aparecem durante o foco e nos modais de decisão e conclusão, sem precisar procurar o card no quadro. Anexar não pausa nem encerra o cronômetro; os limites de 20 arquivos por tarefa/etapa e 10 MB por arquivo continuam valendo.
+![Formulário de criação com nome, descrição, estimativa e etapas](./docs/images/criar-tarefa.webp)
 
-Em **Hoje → Plano para hoje**, escolha tarefas da fila, organize a ordem e acompanhe minutos estimados pendentes e conclusões. Também é possível clicar em **Planejar hoje** no card. O plano inclui todas as áreas, persiste ao reabrir o quadro e entra no backup JSON/ZIP. **Montar ciclo com este plano** copia as tarefas pendentes para o construtor; ajuste os minutos reservados e confirme o início. Tarefas em atraso também podem compor o ciclo. Retirar do plano preserva a tarefa e seu histórico. Compromissos do dia anterior não são transferidos automaticamente: o painel sinaliza pendências anteriores para você escolher o que retomar.
+</details>
 
-**Retomada e fechamento diário:** no foco ou nos materiais, abra **Onde parei e próximo passo** para guardar seu contexto. Interromper também salva uma referência de etapa. Sem ciclo ativo, o painel **Retomar de onde parou** oferece materiais e foco na próxima etapa pendente. Em **Hoje → Fechar o dia / revisar pendências**, escolha o destino de cada pendência; o fechamento mantém as tarefas originais e guarda um resumo local. Encerre o ciclo/pausa antes de fechar o dia.
+### 3. Escolha o próximo passo e foque
 
-**Lembretes com ação:** o corpo do aviso abre a tarefa certa. Os botões permitem abrir para confirmar o foco ou adiar por dez minutos, sem substituir um ciclo ativo. Em rotinas, o destino aponta para a ocorrência correspondente. A entrega nativa e a presença de botões dependem do navegador/sistema.
+Use **Planejar hoje** no card para montar seu plano. Abra uma tarefa para iniciar um ciclo individual ou selecione várias para montar um ciclo em sequência.
 
-**Primeira tarefa e modo estudo:** uma instalação vazia acompanha seu primeiro fluxo usando uma tarefa real, sem criar exemplos. Você pode dispensar o guia ou recomeçar em **Preferências → Quadro**. O modo estudo organiza matérias como áreas e tópicos como tarefas; define objetivo, data da prova e meta diária; acompanha os minutos focados e cria uma fila local de revisões. Ao revisar, tente recuperar o tópico de memória e avalie como foi: a próxima revisão se ajusta de amanhã até intervalos maiores. Progresso e lembranças entram nos backups. Veja os limites e o funcionamento em [docs/WORKFLOW_PROFILES.md](docs/WORKFLOW_PROFILES.md).
+![Ciclo de foco em andamento com cronômetro e etapas](./docs/images/foco.webp)
 
-## Produto
+Ao terminar o tempo reservado, escolha como continuar. O descanso e a retomada dependem da sua confirmação. Consulte as [regras dos ciclos e pausas](./docs/GUIA-DE-USO.md#produto).
 
-Ao abrir um quadro novo, **Ver tutorial** apresenta os controles principais sem criar dados de exemplo. O botão `?` no cabeçalho repete o percurso quando quiser. A lógica reutilizável e o contrato de armazenamento/eventos estão em [docs/TOUR.md](docs/TOUR.md).
+### 4. Revise e guarde seu progresso
 
-O quadro tem filtro por área e contraste próprio nas quatro colunas. **Preferências → Quadro** oferece metas orientativas de WIP (2, 5 ou 8 tarefas) e permite cadastrar áreas livres. A IA recebe apenas os nomes das áreas existentes, pode sugerir uma área nova na proposta e só a salva após você confirmar a criação da tarefa. Selecione tarefas de **A fazer** ou **Em andamento** para montar o próximo ciclo. No alto do quadro ficam filtro por área, **Modo foco** e rotinas; bolha, Connections e Preferências ficam agrupados no cabeçalho.
+Abra **Estatísticas** para acompanhar o tempo registrado e revisar a semana. Em **Preferências → Dados**, use **Exportar ZIP completo** para guardar também os arquivos anexados. O backup JSON inclui os dados textuais, mas não os arquivos binários.
 
-- Quadro: **A fazer**, **Em andamento**, **Em atraso** e **Concluído**. Prazo é opcional. Uma tarefa pode conter slices concluíveis.
-- Ciclo de foco: marque tarefas em **A fazer** ou **Em andamento** para o próximo ciclo (as de A fazer são movidas ao iniciar), ordene e escolha os minutos reservados a cada uma (ex.: 30 + 15 + 45). Esses minutos não mudam a estimativa total da tarefa. Um só relógio credita o tempo à tarefa ativa; se ela terminar cedo, o restante passa à próxima. Concluir a última encerra o foco antecipadamente e registra apenas o tempo usado. Ciclos antigos de uma tarefa permanecem compatíveis. Ainda é possível iniciar um ciclo individual para a tarefa inteira ou slices selecionados; o tempo dos slices selecionados continua compartilhado.
-- Decisão por tarefa: avisos discretos aos 5 e 2 minutos restantes aparecem por 10 segundos na página do quadro; ao acabar o tempo reservado, o relógio pausa e um modal pede **Concluí e avançar**, **Estender** ou **Abrir detalhes**. O tempo aguardando não é creditado. São permitidas duas extensões por tarefa, somadas até 50% da estimativa total dela. Em detalhes, **Não consegui terminar** registra tentativa falha e move somente a tarefa atual para **Em atraso**, avançando quando houver outra no ciclo. Prazo vencido aparece no card como aviso sem mover a tarefa. O descanso sempre depende de confirmação.
-- Pausa rápida dentro do foco: escolha de 1 a 30 minutos para um intervalo imprevisto. O relógio da tarefa congela, o bloqueio de sites é suspenso e a extensão avisa quando o intervalo acabar. O foco só volta ao clicar em **Retomar foco**; o tempo parado não entra no histórico.
-- Interrupção: evento separado da tentativa falha. O tempo já trabalhado permanece registrado; o usuário escolhe recomeçar ou adiar.
-- Descanso: categoria livre ou sugestões de água, comida, detox e descanso; cronômetro e som ao finalizar; foco seguinte depende de confirmação. Pausa curta e longa são configuráveis; a duração longa é escolhida automaticamente após cada quarto ciclo concluído, mas a pausa ainda depende do botão de confirmação.
-- WIP: limite configurável para **Em andamento** e, opcionalmente, **Em atraso**. A coluna e as estatísticas mostram quando foi ultrapassado, sem impedir mover tarefas. O cabeçalho mostra ciclos concluídos no dia; um ciclo com várias tarefas conta uma vez.
-- Insights dos slices: na edição da tarefa, defina opcionalmente minutos por slice e clique em **Analisar distribuição dos slices**. Nome, tempo total e etapas da tarefa atual, além do perfil e objetivo configurados, são enviados à IA; a resposta curta nunca altera a tarefa sozinha.
-- Criação: o botão manual e a proposta da IA abrem um modal com nome, descrição, tempo e opção **Uma vez**, **Só na semana escolhida** ou **Toda semana**. Para as duas últimas, defina data inicial e dias; a primeira termina no domingo da semana escolhida. Ao abrir o quadro em um dia programado, nasce uma tarefa independente. Reabrir o quadro ou apagar a tarefa daquele dia não cria outra ocorrência no mesmo dia. Não há geração retroativa para dias em que a extensão ficou fechada. O menu de programação mostra o calendário e oferece o mesmo modal de criação.
-- Conclusão e arquivo: "Hoje" e "Esta semana" mostram as concluídas no período e todas as pendentes; "Arquivo" filtra por data de conclusão. Arquivar preserva histórico; apagar remove também os registros de foco daquela tarefa, após confirmação. Apagar uma ocorrência não apaga sua rotina.
+## IA e conexões são opcionais
 
-## Proposta visual
+O quadro e os ciclos funcionam com dados locais, sem configurar IA ou conectar uma conta Google.
 
-Base neutra escura; vinho para foco e amarelo queimado para Kanban. Card com nome, dificuldade, tempo estimado, prazo opcional e uma faixa inferior com os slices, riscados conforme a conclusão.
+- **IA:** configure Groq, Gemini ou OpenAI em **Mais → Preferências → IA**. As propostas passam pela sua revisão; a disponibilidade e os custos dependem do provedor. [Configurar IA →](./docs/IA.md)
+- **Voz:** grave e revise uma transcrição antes de usar o texto. A transcrição utiliza a Groq e exige a chave desse provedor. [Como funciona →](./docs/GUIA-DE-USO.md#entrada-por-voz)
+- **Connections:** consulte Gmail, Calendar e Tasks e revise as ações antes de confirmar. Exige backend e OAuth configurados; não há sincronização automática do quadro. [Configurar Connections →](./docs/CONNECTIONS.md)
 
-## Arquitetura pretendida
+As tarefas ficam no armazenamento local da extensão; os arquivos anexados ficam no IndexedDB do perfil. Chaves de IA e credenciais Google não entram nos backups do quadro. Veja os [limites de backup e restauração](./docs/GUIA-DE-USO.md#backup-e-restauração) antes de trocar de perfil ou remover a extensão.
 
-Extensão em TypeScript/React, com quadro em página própria, badge no ícone e bolha leve injetada nos sites permitidos. O timer deve armazenar timestamps de início e fim e recalcular o estado após suspensão do service worker ou reinício do navegador. Backend FastAPI e SQLite com autenticação e endpoints preliminares de tarefas e sessões; as Connections usam o backend para OAuth e leitura das APIs Google, mas as tarefas e sessões ainda não o utilizam. Ao integrar, migraremos os dados locais explicitamente para evitar perda ou duplicação. Sem segredos embutidos no pacote da extensão.
+## Quer se aprofundar?
 
-A IA nunca muda a tarefa sem revisão: criação abre modal; ajuda comum responde e aponta riscos; resposta do tipo proposta entra na caixa de propostas, com aplicação após aceite. Durante foco ou descanso, propostas aguardam. Perguntas sobre uma tarefa recebem o JSON da tarefa; decisões podem receber histórico e estatísticas relevantes. O provedor padrão é configurável e a disponibilidade ou gratuidade de APIs externas não é presumida.
+| Documento                                           | O que você encontra                                                    |
+| --------------------------------------------------- | ---------------------------------------------------------------------- |
+| [Guia de uso](./docs/GUIA-DE-USO.md)                | Planejamento, tarefas, ciclos, pausas, lembretes, materiais e backup.  |
+| [IA](./docs/IA.md)                                  | Chaves, modelos, propostas, fontes e informações enviadas ao provedor. |
+| [Connections](./docs/CONNECTIONS.md)                | Integrações Google, permissões, OAuth e configuração local.            |
+| [Desenvolvimento](./docs/DESENVOLVIMENTO.md)        | Arquitetura, validação, API e publicação de versões.                   |
+| [Modo estudo e perfis](./docs/WORKFLOW_PROFILES.md) | Metas, matérias, tópicos e revisões.                                   |
+| [Backend](./backend/README.md)                      | Serviço FastAPI, banco e implantação.                                  |
+| [Requisitos](./docs/REQUISITOS.md)                  | Regras do produto e decisões em aberto.                                |
 
-**Gemini 3.x:** modelos Flash 3.x anunciados no catálogo usam a Interactions API com `store: false` e saída JSON validada; os 2.x seguem no caminho legado quando a chave tiver acesso. Gemini 2.5 pode aparecer no catálogo e ainda assim devolver 404 para chaves novas: use **Atualizar modelos**, selecione `gemini-3.8-flash` se aparecer e teste. O selo Free reflete o plano divulgado pelo provedor, não concede acesso automático para toda chave.
-
-**Versão 0.5:** o quadro ganhou uma moldura visível nas laterais e nas bordas superior e inferior. Ao concluir o ciclo, uma tela celebra o foco registrado e deixa escolher o tipo e a duração da pausa ou terminar sem pausa; a animação respeita a preferência de movimento reduzido do sistema. Nas propostas de IA, até seis endereços candidatos são verificados para apresentar no máximo três fontes diretas. A checagem também recusa páginas que respondem ao HEAD mas devolvem 404 ao abrir, além de algumas páginas 404 disfarçadas de sucesso. A IA pode sugerir buscas por localidade ou assunto, e o KanbanDoro constrói links de busca para web, vídeos e repositórios. Essas buscas são identificadas como exploração e não são tratadas como anexos verificados. O app não tem índice próprio nem API de busca em tempo real, portanto não garante links diretos para vagas específicas ou a atualização do conteúdo das fontes.
-
-Se a API Gemini devolver 503, a extensão aguarda brevemente e tenta mais uma vez. Se o serviço continuar indisponível, mostra um aviso para aguardar ou alternar para Groq; isso não indica uma chave inválida.
-
-Em **Preferências → IA**, cada modelo da lista tem **Habilitar/Desabilitar** para participar da alternância e **Usar agora** para se tornar o único modelo ativo. O modelo em uso aparece marcado na lista e identificado junto ao botão 🤖 no quadro. Desabilitar o ativo escolhe outro habilitado do mesmo provedor, se houver. As escolhas de Groq e Gemini e suas chaves são guardadas separadamente.
-
-**Teste de IA:** selecione Groq (diferente do Grok da xAI) ou Gemini em Preferências → IA, digite a chave daquele provedor e clique em **Salvar chave**. Depois clique em **Atualizar modelos**: a extensão consulta o catálogo do provedor escolhido e mostra os modelos em uma lista única, com o ativo destacado. Ao trocar a chave, salve e atualize o catálogo; modelos antes salvos podem não estar disponíveis para a nova chave. Se o Gemini devolver 404, a extensão mostra a mensagem de erro da API para distinguir modelo indisponível de recurso ausente. Escolher um modelo salva a seleção automaticamente, sem substituir a chave nem o modelo do outro provedor. Depois de escolher dois modelos, use o botão 🤖 ao lado de **Propor com IA** para alternar rapidamente entre os modelos salvos, inclusive de provedores diferentes com chaves configuradas. Descreva uma tarefa no quadro, clique em **Propor com IA** e revise nome, descrição, tempo, dificuldade, slices e anexos. É possível editar ou pedir uma reescrita por comentário; só **Aceitar e criar tarefa** grava a proposta. Em Anexos, os links HTTPS sugeridos são verificados antes de aparecer; se algum falhar, a IA tenta uma vez sugerir substitutos, que também passam pela verificação. Somente links confirmados aparecem na proposta; a resposta HTTP não confirma que a vaga ou o conteúdo ainda existe. As chaves ficam no armazenamento local restrito da extensão, não entram no prompt nem são enviadas ao backend KanbanDoro. O teste automatizado simula a API; para validar uma chamada real, use sua chave na extensão instalada.
-
-**Anexos:** para até três fontes sugeridas por proposta (documentação, artigos, repositórios GitHub ou vídeos públicos do YouTube), a extensão verifica o endereço HTTPS e tenta buscar título e descrição da própria página. A prévia aparece como card na proposta e nos detalhes da tarefa; sites que não permitem leitura continuam como links verificados, com aviso de prévia indisponível. **Resumir conteúdo** faz uma nova leitura somente após o clique e envia à IA até 3.600 caracteres de texto extraído daquela página, mais nome, objetivo e até cinco etapas da tarefa; a resposta deve relacionar a fonte ao trabalho pedido. O resumo fica salvo no card e no backup JSON. Cada leitura usa no máximo o início de 512 KiB do HTML, mesmo em páginas maiores, com tempo limitado, HTTPS público e checagem de redirecionamentos. Vídeos públicos do YouTube mostram o link e a prévia da página; o botão **Resumir vídeo com Gemini** envia a URL do vídeo ao modelo Gemini configurado somente após o clique. Groq não analisa o vídeo; a prévia da página nunca é apresentada como análise do áudio ou das imagens. A disponibilidade depende das cotas e do suporte do modelo Gemini escolhido. PDFs, páginas que exigem login e sites que dependem de JavaScript podem não gerar resumo. Se o site redirecionar sem revelar o destino para a extensão, o link fica sem verificação. Endereços que retornam 404 estão indisponíveis; ajuste ou remova o link sugerido antes de criar a tarefa. A existência de uma página não confirma que o seu conteúdo está correto ou atualizado.
-
-Após **Atualizar modelos**, a lista aparece diretamente abaixo do seletor: clique no modelo desejado. O selo **Free** aparece somente para IDs de modelos confirmados nas tabelas públicas do [plano gratuito da Groq](https://console.groq.com/docs/rate-limits) ou dos [preços do Gemini](https://ai.google.dev/gemini-api/docs/pricing). A consulta de modelos continua dinâmica; as APIs de catálogo não informam se cada modelo é gratuito para aquela conta. O selo indica disponibilidade publicada no plano gratuito, sujeita a cotas, região e mudanças do provedor; a ausência de selo não indica necessariamente cobrança. A API da OpenAI fica fora deste fluxo porque não há um modelo de geração de texto com acesso gratuito estável confirmado para teste. Modelos GPT-OSS usados aqui são servidos **pela Groq**, usando uma chave da Groq. Ao atualizar o código da extensão, recarregue também a extensão em `chrome://extensions` ou `brave://extensions` para que a interface e o service worker usem a mesma versão.
-
-Ao começar a digitar no campo de criação, o formulário da tarefa abre para completar nome, etapas e prazo. Enter no campo vazio também abre o formulário; O botão **Propor com IA** no próprio formulário, ou Ctrl+Enter no nome, envia o nome, a descrição e os campos já preenchidos para uma proposta editável sem voltar ao quadro. O nome digitado ou transcrito é interpretado como pedido na primeira proposta: a IA deve sintetizar um título curto e organizar os detalhes na descrição e nas etapas, sem copiar a fala inteira. Nos formulários de criação e de edição, **Entrada por voz** permite escolher **Nome / pedido da tarefa** (padrão) ou **Descrição**; a transcrição acrescenta texto ao campo escolhido, sem apagar o outro campo nem enviar automaticamente à IA. Os valores iniciais de 25 minutos e dificuldade leve são apenas padrões do formulário manual: se você não os editar, eles não são enviados como restrições à IA. A IA estima o tempo total de todas as etapas e a dificuldade pelo pedido; valores escolhidos por você são preservados, e revisões de propostas mantêm as estimativas anteriores salvo quando você pedir reavaliação. Links indicados pela IA não são garantia de que a página existe: endereços adicionados manualmente que retornam 404 devem ser corrigidos ou removidos; 403 indica que o site recusou a verificação, sem provar que o link está quebrado. Alguns sites fazem redirecionamentos cujo destino o navegador não expõe à extensão; nesses casos, o link fica sem verificação e não é resumido. Em erros 400 da Groq, a interface mostra o motivo devolvido pela API para ajudar a identificar modelo ou parâmetros incompatíveis.
-
-## Connections: Gmail, Calendar e Tasks
-
-Na versão 0.6, **OpenAI** pode ser selecionada em Preferências → IA. A extensão consulta os modelos GPT-6 da conta, incluindo `gpt-6-luna` quando disponível, e usa a Responses API com resposta JSON validada. A chave OpenAI é salva separadamente das chaves Groq e Gemini no armazenamento local da extensão; não vai no código nem no ZIP. A chamada usa `store: false` e não ativa ferramentas externas. O serviço da OpenAI tem cobrança própria, distinta de qualquer assinatura do ChatGPT; só selecione e salve uma chave se quiser usar a API. Os modelos OpenAI não recebem selo Free.
-
-Para releases distribuídas a amigos, configure as variáveis **KANBANDORO_GOOGLE_CLIENT_ID** e **KANBANDORO_API_URL** em _Settings → Secrets and variables → Actions → Variables_ no repositório (ID OAuth Web público e `https://api.kanbandoro.jangustavo.me`). A workflow aborta se faltarem, para evitar gerar um ZIP com Connections desativadas. No computador do mantenedor, `make release VERSION=...` valida um build remoto antes de enviar a tag. Quem instalar o ZIP ainda precisa pedir acesso como usuário de teste do Google em Connections.
-
-Em **Connections**, o botão de solicitar acesso abre o Gmail Web com o ID desta instalação e o redirect OAuth; o visitante ainda precisa preencher a conta Google para ser adicionado como usuário de teste. O ID muda conforme a instalação, especialmente entre navegadores. O titular do projeto deve cadastrar o e-mail na tela de consentimento e o redirect no cliente OAuth Web, além de permitir a origem correspondente no backend.
-
-Nos detalhes de uma tarefa, **Materiais** aceita anotações e até 20 imagens/arquivos de 10 MB por tarefa ou por etapa. As imagens têm miniatura; qualquer arquivo pode ser baixado. O conteúdo binário fica no IndexedDB do perfil da extensão, e as referências na tarefa. O backup JSON inclui as anotações e os links, mas **não inclui os arquivos**. Use o ZIP completo antes de apagar a extensão, mudar seu ID ou trocar de perfil/navegador. A importação JSON não cria anexos binários inexistentes.
-
-O botão **Apoiar** abre um Pix opcional com R$ 5, R$ 10, R$ 20 ou valor personalizado. O QR só aparece se `PIX_KEY`, `PIX_RECEIVER_NAME` e `PIX_RECEIVER_CITY` estiverem configurados no `.env` do backend e a extensão tiver sido compilada com a URL da API. Depois de atualizar a API, execute novamente `scripts/deploy-site.sh` para liberar `/support/pix` no Nginx já protegido por HTTPS. A confirmação “Já contribuí” é uma mensagem de agradecimento do usuário, sem validação de pagamento. Confira os dados no banco antes de divulgar o QR.
-
-A extensão consulta mensagens do Gmail (até 10), eventos do Google Calendar (até 50, intervalo de até 31 dias) e listas/tarefas pendentes do Google Tasks (até 100 por página consultada). Cada item escolhido abre **uma proposta editável** no KanbanDoro. O painel Connections também recebe um pedido escrito, pede à IA configurada uma proposta de evento, tarefa do Google Tasks ou e-mail, e abre campos editáveis para revisão antes de gravar. E-mails exigem uma confirmação adicional antes do envio. É possível preencher tudo manualmente. Não existe sincronização nos dois sentidos nem execução em segundo plano; nenhuma mensagem consultada é enviada à IA automaticamente.
-
-Nos resultados de Calendar e Tasks, **Editar ou excluir no Google** abre uma revisão. Só os campos modificados são enviados, e a exclusão exige confirmação. Os eventos de dia inteiro podem ser excluídos, mas ainda não são editados nesta interface. Alterações feitas aqui afetam o item na conta Google; trazer o item ao quadro continua sendo uma ação separada.
-
-### Configuração local
-
-1. No Google Cloud, habilite **Gmail API**, **Google Calendar API** e **Google Tasks API**. Configure a tela de consentimento OAuth e, no modo de testes, adicione sua conta como usuário de teste.
-2. Obtenha o ID estável da extensão no navegador em `chrome://extensions` / `brave://extensions`. Crie um **cliente OAuth do tipo Aplicativo da Web** e cadastre como URI de redirecionamento autorizado `https://<ID-DA-EXTENSAO>.chromiumapp.org/`, exatamente como `chrome.identity.getRedirectURL()` mostra em Connections. Se o ID variar entre navegadores, cadastre todos os redirects no mesmo cliente Web e liste os demais IDs em `GOOGLE_EXTENSION_IDS`. O cliente anterior, do tipo Extensão do Chrome, não serve para esse fluxo.
-3. Em `backend/`, copie `.env.example` para `.env`, configure `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_EXTENSION_ID` e `GOOGLE_TOKEN_ENCRYPTION_KEY`. Gere a chave Fernet pelo comando do `.env.example`. Instale `python -m pip install -e '.[dev]'` e inicie `uvicorn app.main:app --host 127.0.0.1 --port 8000`.
-4. Para o servidor público, rode `npm run build:remote` na raiz **ou dentro de `backend/`**. Esse comando lê somente `GOOGLE_CLIENT_ID` de `backend/.env` e usa `https://api.kanbandoro.jangustavo.me`. Para desenvolver com o backend no próprio computador, rode `npm run build:local`, que usa `http://127.0.0.1:8000`; **o último build sobrescreve `dist`**, então não execute `build:local` depois do build remoto antes de carregar a extensão. Ambos imprimem a origem da API e gravam `dist/connections-config.json`: confira esse arquivo e recarregue `dist` em `chrome://extensions` ou `brave://extensions`. `npm run build` sozinho não lê o `.env` e gera a extensão sem Connections. Para outra origem, defina `KANBANDORO_API_URL` ao executar `npm run build:local`; `http://127.0.0.1` só alcança um servidor no mesmo computador.
-
-Para incluir Connections no ZIP da GitHub Release, cadastre `KANBANDORO_GOOGLE_CLIENT_ID` e `KANBANDORO_API_URL` como **variáveis do repositório** no GitHub antes de criar a tag; o segredo OAuth permanece apenas no `.env` do servidor. Sem essas variáveis a extensão é gerada sem Connections, mas segue utilizável para o quadro.
-
-O build grava apenas o ID público OAuth e a URL da API em `dist/connections-config.json`. O `manifest.json` mantém `identity` e adiciona somente a origem do backend em `host_permissions`; **não** define `oauth2` porque `launchWebAuthFlow` usa o cliente Web e constrói a URL OAuth explicitamente. O `client_secret` fica exclusivamente no backend. A extensão gera `state` e PKCE, recebe o código por `chromiumapp.org` e o entrega ao backend para a troca. O backend guarda o refresh token criptografado no SQLite e devolve uma sessão opaca; a extensão só solicita os dados resumidos para a interface. Ao desconectar, o servidor tenta revogar o consentimento e apaga a sessão e os tokens locais. Para proteção efetiva do SQLite, mantenha a chave Fernet separada dos backups do banco e faça backup dessa chave para preservar conexões.
-
-Os escopos solicitados juntos são `gmail.readonly`, `gmail.send`, `calendar.readonly`, `calendar.events` e `tasks`. Para **editar ou excluir eventos e tarefas no Google**, a tela de consentimento precisa incluir `https://www.googleapis.com/auth/calendar.events` e `https://www.googleapis.com/auth/tasks`; ambos já são solicitados pela extensão e exigidos pelo backend. Não é necessário cadastrar um escopo novo para esta atualização se eles já estiverem lá. A escrita requer nova autorização das conexões feitas antes da inclusão desses escopos: use **Atualizar permissões** no painel. O Google classifica `gmail.readonly` como restrito; para disponibilização pública, poderá exigir verificação OAuth. No modo de teste do Google, o refresh token pode expirar e exigir nova conexão. Defina uma conta de testes antes de testar com dados reais. Nenhum consentimento autoriza de antemão escopos futuros ainda não solicitados.
-
-## Fases
-
-1. **Base:** quadro, slices, persistência local e ciclos com histórico e recuperação.
-2. **Extensão completa:** bolha opcional nos sites permitidos, badge, alertas e preferências de pausa.
-3. **Integração:** migração local → servidor, ajuda contextual, contratos de IA para decisões e propostas com aprovação. O cadastro da API não recebe chaves de IA; a criação assistida usa Groq ou Gemini configurado na extensão.
-4. **Após histórico real:** score transparente de eficiência e WIP, voz local em tempo real, relatórios, formatos de exportação adicionais e modos da comunidade.
-
-As lacunas priorizadas para fechar a 1.0 estão em [docs/V1_READINESS.md](docs/V1_READINESS.md).
-
-Veja [docs/REQUISITOS.md](docs/REQUISITOS.md) para regras e decisões em aberto. Ideias novas dentro deste conceito podem substituir o desenho atual; registre a motivação e atualize requisitos antes da implementação.
-
-## API experimental
-
-Em `backend/`, execute `python -m pip install -e ".[dev]"`, configure `.env` a partir de `.env.example` e inicie com `uvicorn app.main:app --reload --host 127.0.0.1`. A documentação interativa está em `/docs`. Use `POST /auth/register`, `POST /auth/login` e o Bearer token nas demais rotas. O servidor mantém uma sessão ativa por conta e decide as transições pelo próprio relógio; o cliente não altera diretamente tempo, fase, pontuação ou histórico. `GET /sessions/active` retoma o estado. Os horários de sessão usam milissegundos desde a época Unix; campos de criação/histórico usam segundos.
-
-A API ainda cria tabelas com `create_all`; alterações futuras de esquema exigirão migrações antes de servir dados de produção. A chave informada na extensão fica em `chrome.storage.local` com acesso restrito aos contextos da extensão; a tela da bolha recebe somente estado do timer.
-
-Em **Preferências → IA**, Groq e Gemini têm campos de chave separados. Salve a chave do provedor, consulte os modelos Flash disponibilizados na sua conta Gemini ou os modelos compatíveis Groq e salve o modelo escolhido. Propostas de tarefas, propostas das Connections e insights de slices usam o mesmo JSON validado; a implementação da API Gemini usa `generateContent` e a chave no cabeçalho `x-goog-api-key`. A disponibilidade e as cotas do nível gratuito variam conforme a conta e o modelo. Nenhuma chave vai para o prompt.
-
-## Contexto para IA
-
-O histórico ainda não é enviado ao modelo. Quando essa etapa for ligada, o contexto deve ser montado para cada decisão: tarefa atual completa, resumo recente por tipo e dificuldade, estimativa versus tempo realizado e algumas ocorrências comparáveis. Um limite por quantidade de eventos e tamanho do JSON evita enviar toda a base a cada pergunta. O histórico estruturado pode ficar no SQLite existente; migrar para MongoDB não é necessário para montar esse recorte.
-
-## Publicar uma versão 0.x
-
-Depois de validar o PR e autorizar a publicação, atualize `package.json`, `package-lock.json` e `public/manifest.json` para a mesma versão. Um commit na `main` com mudança de versão dispara a publicação automática; por isso, PRs de implementação mantêm a versão atual até aprovação. O workflow valida, compila com OAuth/API remotos, testa e publica o ZIP contendo somente `dist/`. O comando `make release VERSION=...` continua disponível para o fluxo por tag, mas não deve ser repetido para uma tag já publicada. Versões 0.x são pré-lançamentos.
-
-### VPS e estatísticas
-
-O backend agora tem `compose.yaml` e `backend/Dockerfile` com SQLite em volume persistente, migração Alembic e porta ligada a `127.0.0.1:18080`. Consulte [backend/README.md](backend/README.md) antes de configurar a VPS. O painel **Estatísticas** mostra foco da semana, dias ativos, tarefas em andamento e atrasos, além de estimativas e resultados a partir das tarefas locais: você pode atribuir uma habilidade ou área na criação ou nos detalhes; tarefas antigas aparecem em “Sem categoria”. Ainda não existe sincronização de tarefas com o backend.
-
-### Página de apresentação
-
-A landing page estática mora em [`site/`](site/), com layout adaptável e a identidade vinho/amarelo da extensão. O endereço previsto é `kanbandoro.jangustavo.me`; um modelo de Nginx serve a página nesse subdomínio e expõe apenas as rotas Google em `api.kanbandoro.jangustavo.me`. Para os registros DNS e a publicação HTTPS, siga [`site/README.md`](site/README.md).
-
-### Entrada por voz
-
-O botão **🎙 Entrada por voz** permite gravar até dois minutos na criação de tarefas, no nome ou na descrição de uma proposta/tarefa e nas anotações da tarefa ou de suas etapas. Nos formulários de tarefa, escolha o destino da transcrição; o padrão é **Nome / pedido da tarefa**. Permita o microfone no navegador, clique em **Parar gravação** e depois em **Transcrever**. O texto é acrescentado ao campo para revisão; nenhuma tarefa ou proposta é enviada automaticamente.
-
-Esta primeira versão usa `whisper-large-v3-turbo` na Groq, com a chave Groq salva em **Preferências → IA**, mesmo quando outro provedor está selecionado para as propostas. A gravação não é em tempo real. O áudio só sai do navegador ao clicar em Transcrever, está sujeito às cotas da sua conta e não fica guardado pelo KanbanDoro nem entra no backup. Cancelar descarta o áudio local e interrompe a captura; após o envio, não desfaz o processamento já iniciado no provedor. Limite de 10 MB por gravação. Não há nova permissão no manifesto: a autorização do microfone é solicitada pelo navegador.
-
-### Confirmações e abertura do quadro
-
-As ações de exclusão, substituição de backup e envio de e-mail usam SweetAlert2 empacotado na extensão, com as cores da aplicação. A confirmação mostra a ação e suas consequências, começa com foco em Cancelar e permite sair com Escape. Os modais de tarefas, propostas e decisões do cronômetro mantêm seus fluxos próprios.
-
-O botão **Abrir** da bolha e o ícone da extensão reutilizam uma aba do KanbanDoro já aberta, inclusive em outra janela e com filtros/âncoras na URL. A janela é trazida para frente. Cliques simultâneos são agrupados para criar uma única aba quando ainda não há quadro aberto.
-
-### Bolha e indicador de foco (0.8)
-
-O botão **Bolha** no cabeçalho abre opções de exibição (expandida, recolhida ou oculta) e posição (esquerda/direita). As escolhas ficam salvas para as próximas abas e ciclos. Sem ciclo ativo, o painel explica quando a bolha aparecerá. Na bolha recolhida, clique ou use Enter/Espaço para expandir. Na expandida, clique no relógio ou em **Abrir quadro** para voltar à aba existente.
-
-O ícone da extensão usa um relógio e contorno vinho durante o foco, pausa em amarelo e alerta quando uma decisão é necessária. O texto FOCO/PAUSA não cobre mais a marca.
-
-A publicação também pode ser automática: um commit na `main` que altera a versão em `package.json` dispara o workflow de release. Ele só cria a tag/release após validar versões, compilar com OAuth/API remotos, testar e empacotar apenas `dist/`. Commits sem mudança de versão não publicam. O fluxo `make release VERSION=...` por tag continua disponível.
-
-## Revisão semanal e gerenciamento de áreas
-
-Em **Estatísticas → Revisão semanal**, escolha a semana para ver conclusões, foco registrado, lista de tarefas paradas e histórico local. O comparativo usa a semana anterior; pendências são o estado atual, sem reconstrução fictícia do quadro passado. Planejado versus realizado usa estimativas e tempo de foco **total das tarefas concluídas** no período, separado do foco registrado só naquela semana. Tarefas sem data de conclusão ou sem tempo medido são identificadas e não entram nas respectivas métricas. Amostras menores que três são pequenas; a mediana por área orienta uma revisão de estimativa, sem score de produtividade nem alteração automática.
-
-**Revisar semana com IA** mostra o JSON de agregados antes do envio. Somente ao confirmar são enviados totais, nomes das áreas e comparação de períodos ao provedor configurado. Não vão nomes/descrições das tarefas, notas, links, arquivos nem eventos individuais. A resposta JSON é validada e exibida como conselho; se os dados mudarem, a análise anterior fica oculta até nova solicitação. Nada é enviado automaticamente.
-
-Em **Preferências → Quadro → Áreas**, a lista também inclui áreas inferidas das tarefas/rotinas. Remover uma área pede confirmação e retira sua classificação do catálogo, das tarefas (inclusive arquivadas) e das rotinas, preservando o conteúdo e o histórico; essas tarefas passam a **Sem categoria** nas estatísticas. Apagar uma tarefa não apaga automaticamente uma área usada em outros lugares.
-
-Em **Modo foco → Meu perfil**, categorias podem ser ligadas/desligadas em conjunto, e a busca encontra sites ou categorias. Exceções continuam valendo para o domínio informado e seus subdomínios em qualquer perfil, sem liberar o domínio pai. Os controles em grupo preservam exceções e sites personalizados de outras categorias.
+Para contribuir, execute `npm ci` e `npm run validate`. O projeto usa React, TypeScript e Vite na extensão Manifest V3, com backend FastAPI. Tarefas e sessões do quadro ainda não são sincronizadas com a API.
